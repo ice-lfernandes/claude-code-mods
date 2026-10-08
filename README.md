@@ -23,9 +23,13 @@ The band shows on its own after the first response. Commands:
 
 ```
 /limits          open the pane: plan windows, context in tokens, the last 20 turns
-/limits hide     hide the band above the prompt
+/limits hide     hide the band above the prompt, in later sessions too
 /limits show     bring the band back
+/limits help     list the commands
 ```
+
+From 85% context the band and the pane show `compact`, which puts `/compact [focus]` in the
+prompt and runs nothing. `details` on the band opens the pane.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](screenshots/limits-meter.svg)
 

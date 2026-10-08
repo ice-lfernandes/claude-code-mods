@@ -173,6 +173,16 @@ painel calcula as linhas pelo `viewport.rows`, não por `e.props.scroll.bodyRows
 | 3.10 | Opções | `warnAt` e `dangerAt` (limites de cor), `cells` (quais células a banda mostra) e `density` |
 | 3.11 | Terminal estreito | Abaixo de 90 colunas, mini-barra de 1 célula (`▁▃▅▇█`) no lugar do percentual |
 
+**Status da Etapa 1 (2026-10-08, branch `feat/shared-ui`):** feita, versão `0.2.0`.
+
+- 3.1 sem emoji: o botão é só `compact` (pt `compactar`), na cor `warning`. Assim o limits-meter
+  não precisa da opção `icons`. Preenche `/compact [focus]` (pt `[foco]`) com a lacuna marcada.
+- 3.2 o botão da banda se chama `details` (pt `detalhes`) e abre o painel com foco.
+- 3.3 `hide` grava `hidden` no `$.store`; o `session.start` lê e aplica. `show` grava `false`.
+- 3.4 os três verbos do rodapé rodam direto: um desfaz o outro, nada se perde num clique.
+- 3.6 o painel ganhou a dica no topo, como os outros. `label()`, `resetIn()`, `alerts()` e
+  `summary()` recebem `lang`; textos em `hooks/words.ts`. A janela semanal vira `sem` em pt-BR.
+
 ### Testes e aceite
 
 - `tests/meter.test.ts`: `pace()` com amostras fixas, `tone()` novo, textos em pt-BR.
