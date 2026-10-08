@@ -14,6 +14,11 @@
       "name": "allowlist-coach",
       "source": "./allowlist-coach",
       "description": "Counts permission dialogs per rule and, after repeated approvals, offers to add the rule to permissions.allow, asking before it writes"
+    },
+    {
+      "name": "agent-watch",
+      "source": "./agent-watch",
+      "description": "Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish"
     }
   ]
 }
