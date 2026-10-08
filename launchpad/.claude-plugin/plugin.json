@@ -14,9 +14,9 @@
     "icons": {
       "type": "string",
       "title": "Icons in the terminal",
-      "description": "emoji reads best; symbol keeps columns aligned in terminals that draw emoji at odd widths",
-      "options": ["emoji", "symbol"],
-      "default": "emoji"
+      "description": "emoji reads best; symbol keeps columns aligned in terminals that draw emoji at odd widths; auto uses symbol in a JetBrains IDE's terminal and emoji elsewhere",
+      "options": ["auto", "emoji", "symbol"],
+      "default": "auto"
     },
     "showOnStart": {
       "type": "boolean",

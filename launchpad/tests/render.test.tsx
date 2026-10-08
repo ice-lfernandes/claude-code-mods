@@ -309,3 +309,13 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.unmount()
   })
 }
+
+test('a JetBrains terminal gets symbols on auto', async ($, on) => {
+  world(on, {}, { HOME: '/home/ana', LANG: 'pt_BR.UTF-8', TERMINAL_EMULATOR: 'JetBrains-JediTerm' })
+  await start($)
+  const ui = await row($)
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('⇲ Compactar conversa')
+  expect(drawn).not.toContain('🗜️')
+  await ui.unmount()
+})

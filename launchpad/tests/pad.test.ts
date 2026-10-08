@@ -23,6 +23,7 @@ import {
   parseAdd,
   parseProject,
   shownOf,
+  styleOf,
   tileLabel,
   WORDS,
 } from '../hooks/pad'
@@ -52,6 +53,25 @@ test('language: the option when it names one, else Portuguese for a pt LANG, els
   expect(langOf('auto', 'C')).toBe('en')
   expect(langOf('auto', 'ptx')).toBe('en')
   expect(langOf('auto', undefined)).toBe('en')
+})
+
+test('icons: the option when it names one, else symbols in a JetBrains terminal, else emoji', async () => {
+  expect(styleOf('emoji', 'JetBrains-JediTerm')).toBe('emoji')
+  expect(styleOf('symbol', undefined)).toBe('symbol')
+  expect(styleOf('auto', 'JetBrains-JediTerm')).toBe('symbol')
+  expect(styleOf(undefined, 'JetBrains-JediTerm')).toBe('symbol')
+  expect(styleOf('auto', undefined)).toBe('emoji')
+  expect(styleOf('auto', 'iTerm')).toBe('emoji')
+})
+
+test("with symbols, an emoji of the person's own gives way to the symbol of its kind", async () => {
+  const mine = parseAdd('🧾 Fechamento | /cost', 'u1')!
+  const agentPad = parseAdd('🕵️ Revisor | @revisor', 'u2')!
+  const glyphPad = parseAdd('★ Favorito | /cost', 'u3')!
+  expect(buttonLabel(mine, 'symbol')).toBe('⚙ Fechamento')
+  expect(buttonLabel(agentPad, 'symbol')).toBe('◉ Revisor')
+  expect(buttonLabel(glyphPad, 'symbol')).toBe('★ Favorito') // one cell: kept
+  expect(buttonLabel(mine, 'emoji')).toBe('🧾 Fechamento')
 })
 
 test('defaults in both languages are all commands or agents', async () => {

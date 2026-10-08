@@ -87,7 +87,7 @@ Set them in `/config` or under `pluginConfigs.launchpad` in settings.
 | Option | Values | Default |
 | --- | --- | --- |
 | `language` | `auto`, `pt-BR`, `en`: the default buttons and the messages. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise and when `LANG` is unset | `auto` |
-| `icons` | `emoji`, or `symbol` (`▤ ¶ ✎`) for terminals that draw emoji at odd widths | `emoji` |
+| `icons` | `auto`, `emoji`, or `symbol` (`⇲ ▥ ◔`) for terminals that draw emoji at odd widths. `auto` uses symbols in a JetBrains IDE's terminal (IntelliJ, PyCharm, ...: `TERMINAL_EMULATOR=JetBrains-JediTerm`), which gives many emoji one column, and emoji elsewhere | `auto` |
 | `showOnStart` | `false` shows the menu only on `/pad` | `true` |
 
 In the desktop app the buttons are native buttons and always use emoji.

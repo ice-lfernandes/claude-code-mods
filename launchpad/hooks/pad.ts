@@ -218,7 +218,13 @@ export const WORDS: Record<Lang, Words> = {
  */
 export const langOf = (option: unknown, systemLang?: string | null): Lang =>
   option === 'en' || option === 'pt-BR' ? option : /^pt([_.@-]|$)/i.test(systemLang ?? '') ? 'pt-BR' : 'en'
-export const styleOf = (v: unknown): IconStyle => (v === 'symbol' ? 'symbol' : 'emoji')
+/**
+ * The icon style: the `icons` option when it names one; on `auto` (or none), symbols in a
+ * JetBrains IDE's terminal (TERMINAL_EMULATOR=JetBrains-JediTerm), which gives many emoji one
+ * column where Claude Code counts two, and emoji everywhere else.
+ */
+export const styleOf = (option: unknown, terminal?: string | null): IconStyle =>
+  option === 'emoji' || option === 'symbol' ? option : /^JetBrains/i.test(terminal ?? '') ? 'symbol' : 'emoji'
 
 /** `/x` runs a command or skill, `@x` calls an agent; anything else is no button. */
 export const kindOf = (text: string): Kind | null => (/^\/[^\s/]/.test(text) ? 'command' : /^@[^\s@]/.test(text) ? 'agent' : null)
@@ -389,7 +395,15 @@ export const cells = (s: string): number => {
   return n
 }
 
-export const buttonLabel = (p: Pad, style: IconStyle) => `${glyph(p.icon, style)} ${p.label}`
+/**
+ * A button's icon and label. With symbols, an icon of the person's own that is not one cell wide
+ * (an emoji from /pad add or the project file) gives way to the symbol of the button's kind, so
+ * the columns stay aligned.
+ */
+export const buttonLabel = (p: Pad, style: IconStyle) => {
+  const icon = style === 'symbol' && !(p.icon in ICONS) && cells(p.icon) !== 1 ? (p.kind === 'agent' ? 'agent' : 'tool') : p.icon
+  return `${glyph(icon, style)} ${p.label}`
+}
 
 /**
  * A tile's label padded to the cells inside its border, a space each side: the whole row between

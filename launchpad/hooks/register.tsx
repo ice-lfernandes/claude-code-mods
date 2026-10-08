@@ -351,7 +351,7 @@ async function runPad($: EngineInterface, args: string): Promise<{ text?: string
 }
 
 export const register: Register = (on, options) => {
-  // The option alone until session.start can read the system's LANG.
+  // The options alone until session.start can read the system's LANG and which terminal this is.
   lang = langOf(options.language)
   style = styleOf(options.icons)
   const showOnStart = options.showOnStart !== false
@@ -361,6 +361,7 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     cwd = e.cwd
     lang = langOf(options.language, await $.env.get('LANG').catch(() => undefined))
+    style = styleOf(options.icons, await $.env.get('TERMINAL_EMULATOR').catch(() => undefined))
     w = WORDS[lang]
     await $.command.register({
       name: 'pad',
