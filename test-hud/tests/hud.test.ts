@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Run } from '../types'
-import { failingNames, fixed, fresh, greenText, parseRun, quietPass, record, redText, runnerOf, score, spark, statusText, trail, wholeCommand } from '../hooks/hud'
+import { durationSpark, failingNames, fixed, flaky, fresh, greenText, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, statusText, trail, wholeCommand } from '../hooks/hud'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
@@ -196,5 +196,46 @@ describe('runs', () => {
     for (let n = 1; n <= 35; n++) list = record(list, run(n, 0))
     expect(list.length).toBe(30)
     expect(list[0]!.n).toBe(6)
+  })
+})
+
+describe('stage 2', () => {
+  const A = 'a > fails now and then'
+  const B = 'b > always fails'
+
+  test('a test that failed, passed and failed again is flaky', async () => {
+    const list = [run(1, 2, { failures: [A, B] }), run(2, 1, { failures: [B] }), run(3, 2, { failures: [A, B] })]
+    expect([...flaky(list, list[2]!)]).toEqual([A])
+    // Not yet on run 2, nor for a run of another command.
+    expect([...flaky(list, list[1]!)]).toEqual([])
+    const other = [...list.slice(0, 2), run(3, 2, { failures: [A, B], fullCommand: 'npm test -- a' })]
+    expect([...flaky(other, other[2]!)]).toEqual([])
+  })
+
+  test('a run with no names, or with its names cut, says nothing about a pass', async () => {
+    const quiet = [run(1, 1, { failures: [A] }), run(2, 1), run(3, 1, { failures: [A] })]
+    expect([...flaky(quiet, quiet[2]!)]).toEqual([])
+    const cut = Array.from({ length: 20 }, (_, i) => `t${i}`)
+    const long = [run(1, 1, { failures: [A] }), run(2, 25, { failures: cut }), run(3, 1, { failures: [A] })]
+    expect([...flaky(long, long[2]!)]).toEqual([])
+  })
+
+  test('only the last 10 runs of the command count', async () => {
+    const list = [run(1, 1, { failures: [A] }), run(2, 0), ...Array.from({ length: 9 }, (_, i) => run(i + 3, 1, { failures: [A] }))]
+    expect(flaky(list, list.at(-1)!).size).toBe(0)
+    expect(flaky(list, list.at(-1)!, 11).size).toBe(1)
+  })
+
+  test('the duration sparkline scales from the shortest to the longest run', async () => {
+    const list = [10, 20, 15, 40].map((s, i) => run(i + 1, 0, { durationMs: s * 1000 }))
+    expect(durationSpark(list)).toBe('▁▃▂█')
+    expect(durationSpark([run(1, 0), run(2, 0)])).toBe('▄▄')
+  })
+
+  test('runners in the order they first ran, and the trail of one of them', async () => {
+    const list = [run(1, 1), run(2, 0, { runner: 'pytest' }), run(3, 0)]
+    expect(runnersOf(list)).toEqual(['vitest', 'pytest'])
+    expect(trail(list).map(r => r.n)).toEqual([1, 3])
+    expect(trail(list, 8, 'pytest').map(r => r.n)).toEqual([2])
   })
 })

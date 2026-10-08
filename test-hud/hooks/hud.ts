@@ -9,6 +9,8 @@ import { WORDS } from './words'
 
 const MAX_RUNS = 30
 const MAX_NAMES = 20
+/** How far back a test that fails, passes and fails again counts as flaky. */
+export const FLAKY_RUNS = 10
 /** The most of a command kept whole, for the prompt to run it again. */
 const MAX_COMMAND = 2000
 export const SPARK_RUNS = 8
@@ -184,7 +186,41 @@ export const fresh = (list: readonly Run[], run: Run): Set<string> => {
   return new Set(run.failures.filter(f => !prev.failures.includes(f)))
 }
 
+/** Runs of the same command as `run`, oldest first, up to `run`. */
+export const sameCommand = (list: readonly Run[], run: Run) =>
+  list.filter(r => r.runner === run.runner && r.fullCommand === run.fullCommand && r.n <= run.n)
+
+/** A run whose names say which tests failed: none failed, or the names are all there. */
+const isReadable = (r: Run) => r.failed === 0 || (r.failures.length > 0 && r.failures.length < MAX_NAMES)
+
+/**
+ * Failing tests of `run` that look flaky: over the command's last FLAKY_RUNS runs, the test
+ * failed, then passed, then failed again. Runs whose names were cut or unreadable say nothing.
+ */
+export const flaky = (list: readonly Run[], run: Run, size = FLAKY_RUNS): Set<string> => {
+  const runs = sameCommand(list, run).filter(isReadable).slice(-size)
+  const out = new Set<string>()
+  for (const name of run.failures) {
+    // 0: before its first failure, 1: failed, waiting for a pass, 2: passed, waiting for a fail.
+    let stage = 0
+    for (const r of runs) {
+      const failed = r.failures.includes(name)
+      if (stage === 0 && failed) stage = 1
+      else if (stage === 1 && !failed) stage = 2
+      else if (stage === 2 && failed) {
+        out.add(name)
+        break
+      }
+    }
+  }
+  return out
+}
+
+/** The runners of the runs, in the order they first ran. */
+export const runnersOf = (list: readonly Run[]) => [...new Set(list.map(r => r.runner))]
+
 const LEVELS = '▂▃▄▅▆▇█'
+const BARS = '▁▂▃▄▅▆▇█'
 
 /** Failures per run, oldest first: ▁ is a green run, ▂ to █ scale to the most failures. */
 export const spark = (list: readonly Run[]) => {
@@ -192,11 +228,17 @@ export const spark = (list: readonly Run[]) => {
   return list.map(r => (r.failed === 0 ? '▁' : LEVELS[Math.min(6, Math.ceil((r.failed / max) * 7) - 1)])).join('')
 }
 
-/** The last runs of the latest run's runner, for the sparkline. */
-export const trail = (list: readonly Run[], size = SPARK_RUNS) => {
-  const latest = list.at(-1)
-  return latest ? list.filter(r => r.runner === latest.runner).slice(-size) : []
+/** Durations per run, oldest first: ▁ the shortest, █ the longest; ▄ when all take as long. */
+export const durationSpark = (list: readonly Run[]) => {
+  const ms = list.map(r => r.durationMs)
+  const lo = Math.min(...ms)
+  const hi = Math.max(...ms)
+  return ms.map(d => (hi === lo ? '▄' : BARS[Math.round(((d - lo) / (hi - lo)) * 7)])).join('')
 }
+
+/** The last runs of a runner, the latest run's by default, for the sparklines. */
+export const trail = (list: readonly Run[], size = SPARK_RUNS, runner = list.at(-1)?.runner) =>
+  runner ? list.filter(r => r.runner === runner).slice(-size) : []
 
 /** "41/43", "2 failed", "pass". */
 export const score = (r: Run, lang: Lang = 'en') =>

@@ -16,10 +16,14 @@ The serious cousin of boss-fight: same idea, no boss.
 - **Toast when the suite turns green** after red runs, once: `Tests green: 43/43 (vitest)
   after 4 red runs in 12m 05s.` With the `regressionToast` option, also a toast when a runner
   turns red right after a green run.
-- **`/test-hud`** opens the pane: the last run with its failing tests by name (tests that were
-  not failing in the run before are marked `new`), the tests fixed since the run before, a
-  longer sparkline, and the last 10 runs. The command runs mid-turn. The name is not `/tests`,
-  which a user's own skill or command often takes.
+- **`/test-hud`** opens the pane: the last run with its failing tests by name, the tests
+  fixed since the run before, sparklines of failures and duration, and the last 10 runs. The
+  command runs mid-turn. The name is not `/tests`, which a user's own skill or command often
+  takes.
+  - A test that was not failing in the run before is marked `new`. A test that failed, then
+    passed, then failed again in the command's last 10 runs is marked `flaky?`.
+  - Press a run in the list to see it in the pane; `↩ latest run` goes back.
+  - With two runners or more in the session, tabs pick which runner the pane shows.
 - **Every press waits in the prompt.** A failing test puts "Investigate and fix the failure in
   ..." there, with the whole command that ran. `run again` asks for the same command, so the
   run goes through Bash and the pane reads it. The footer's `clear` puts `/test-hud clear`
@@ -35,6 +39,7 @@ In `/config`:
 | --- | --- | --- |
 | `language` | `auto` | `pt-BR` or `en` for the pane, the status line and the toasts. `auto` follows `LANG`: Portuguese for `pt_*`, English otherwise |
 | `regressionToast` | off | A toast when a runner turns red right after a green run |
+| `keepHistory` | off | Keep the last runs per project, so the next session in the same project starts with them. Demo runs are not kept |
 
 Counts come from the runner's own summary line. Failing test names come from the runner's
 failure lines, at most 20 per run. For mocha the mod reads counts only, no names. Gradle
@@ -60,8 +65,9 @@ It reads the Bash calls through the `tool.call` event, after they run. The hook 
 observes: it never changes a command or its result, and if it fails, the result stands.
 When an output is too long for Claude Code to show whole, the summary at its end is cut off.
 The mod then reads the full output from the file Claude Code saved under `tool-results/`. It
-reads no other file. It keeps the last 30 runs in the session's plugin state and nothing
-across sessions. It reads `LANG` for the `auto` language.
+reads no other file. It keeps the last 30 runs in the session's plugin state. Only with
+`keepHistory` does it keep them across sessions, in the plugin's store, under the project
+root. It reads `LANG` for the `auto` language.
 
 The test runner parser follows boss-fight from
 [OneWave-AI/claude-code-mods](https://github.com/OneWave-AI/claude-code-mods) (MIT).

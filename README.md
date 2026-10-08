@@ -77,7 +77,9 @@ The status line and the toast show on their own each time a test runner runs in 
 ```
 
 In the pane, press a failing test to ask Claude for a fix, or `run again` to ask for the same
-command: both put the request in the prompt and run nothing.
+command: both put the request in the prompt and run nothing. Press a run in the list to see it;
+failing tests that failed, passed and failed again are marked `flaky?`. With the `keepHistory`
+option the runs carry over to the next session in the same project.
 
 ![test-hud: the /test-hud pane, the status line and the green toast](screenshots/test-hud.svg)
 
