@@ -1,0 +1,12 @@
+{
+  "name": "lfernandes-mods",
+  "description": "Claude Code mods for everyday UX: plan limits, context, and what the agent is doing",
+  "owner": { "name": "Lucas Fernandes" },
+  "plugins": [
+    {
+      "name": "limits-meter",
+      "source": "./limits-meter",
+      "description": "Plan limits and context above the prompt: 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "limits-meter",
+  "version": "0.1.0",
+  "description": "Plan limits and context above the prompt: 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Lucas Fernandes"
+  },
+  "license": "MIT"
+}
