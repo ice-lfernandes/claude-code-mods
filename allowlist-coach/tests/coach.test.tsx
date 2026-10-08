@@ -6,6 +6,9 @@ const ROOT = '/repo'
 const FILE = '/repo/.claude/settings.local.json'
 const RULE = 'Bash(./mvnw test:*)'
 const NOW = Date.parse('2026-10-08T12:00:00Z')
+const SHARED = '/repo/.claude/settings.json'
+const ADD = 'Add to settings.local.json (just you)'
+const OPTIONS = [ADD, 'Add to settings.json (the whole team)', 'Not now', 'Never offer it']
 const SUGGESTIONS = [{ type: 'addRules', behavior: 'allow', destination: 'localSettings', rules: [{ toolName: 'Bash', ruleContent: './mvnw test:*' }] }]
 
 type World = {
@@ -68,7 +71,7 @@ function engine($, on, world: World, approve: (command: string) => boolean, deci
   return clock
 }
 
-const fresh = (): World => ({ files: {}, store: {}, toasts: [], notices: [], asked: [], fills: [], logs: [], closed: [], answer: 'Add' })
+const fresh = (): World => ({ files: {}, store: {}, toasts: [], notices: [], asked: [], fills: [], logs: [], closed: [], answer: ADD })
 const start = ($: any, surface = 'terminal') => $.session.start({ cwd: ROOT, surface, isInteractive: true } as never)
 const run = ($: any, args: string) => $.command.run({ command: 'allowlist', args, origin: { kind: 'composer' } } as never) as Promise<{ text?: string }>
 const mount = ($: any, surface = 'terminal', bodyRows = 30) =>
@@ -89,7 +92,8 @@ test('five approvals offer the rule once, and Add writes settings.local.json', a
 
   const answer = await run($, `allow ${RULE}`)
   expect(world.asked[0]!.question).toContain(RULE)
-  expect(world.asked[0]!.options).toEqual(['Add', 'Not now', 'Never offer it'])
+  expect(world.asked[0]!.question).toContain(`The line it adds to permissions.allow: "${RULE}"`)
+  expect(world.asked[0]!.options).toEqual(OPTIONS)
   expect(answer.text).toContain('added')
   expect(JSON.parse(world.files[FILE]!)).toEqual({ permissions: { deny: ['Bash(rm:*)'], allow: [RULE] } })
 
@@ -170,11 +174,12 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const pane = await mount($, surface)
     const shown = JSON.stringify(await pane.drawn())
-    expect(shown).toContain('Ready to allow')
+    expect(shown).toContain('▸ all 2')
+    expect(shown).toContain('ready 1')
     expect(shown).toContain(RULE)
     expect(shown).toContain('e.g. ./mvnw test -pl core · 12 min ago')
     expect(shown).toContain('●○○○○ 1/5')
-    expect(shown).toContain(' 2 counting')
+    expect(shown).toContain('counting  ')
 
     await pane.press({ key: 'verb:reset' })
     expect(world.fills).toEqual(['/allowlist reset'])
@@ -194,20 +199,129 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-test('the pane says how many rules did not fit', async ($, on) => {
+test('the list scrolls: buttons, the wheel and the range it shows', async ($, on) => {
   const world = fresh()
   engine($, on, world, () => true)
   await start($)
   for (let i = 0; i < 12; i++) await $.tool.call({ tool: 'Bash', command: `make target${i}` } as never)
   const pane = await mount($, 'terminal', 20)
-  // 20 rows: 9 for the rest of the pane, then two rows a rule.
-  expect(JSON.stringify(await pane.drawn())).toContain('+7 rules that did not fit the pane')
+  // 20 rows: 11 for the rest of the pane, then two rows a rule: 4 rules.
+  expect(JSON.stringify(await pane.drawn())).toContain('1–4 of 12')
+  await pane.press({ key: 'list:down' })
+  expect(JSON.stringify(await pane.drawn())).toContain('4–7 of 12')
+  await ($ as any).ui.scroll({ component: 'Pane', requestId: 'allowlist', by: 100 })
+  const drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('9–12 of 12')
+  expect(drawn).toContain('Bash(make target11)')
+  await pane.unmount()
+})
+
+test('tabs and the filter narrow the list; numbers stay those of the whole list', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'npm run lint' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'npm run build' } as never)
+  const pane = await mount($)
+  await pane.press({ key: 'tab:counting' })
+  let drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('▸ counting 2')
+  expect(drawn).not.toContain(RULE)
+  expect(drawn).toContain('Bash(npm run lint)')
+  await pane.press({ key: 'tab:all' })
+  await pane.input({ key: 'filter', kind: 'change', text: 'LINT' })
+  drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('Bash(npm run lint)')
+  expect(drawn).not.toContain('Bash(npm run build)')
+  expect(drawn).not.toContain(RULE)
+  await pane.press({ key: 'tab:refused' })
+  expect(JSON.stringify(await pane.drawn())).toContain('No rule matches.')
+  await pane.unmount()
+})
+
+test('a risky rule says why it is never offered', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'rm -rf build' } as never)
+  const pane = await mount($)
+  const drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('risky')
+  expect(drawn).toContain('(runs rm)')
+  expect(drawn).not.toContain('allow-1')
+  await pane.unmount()
+})
+
+test('the shared settings.json, and remove takes the rule back out after asking', async ($, on) => {
+  const world = fresh()
+  world.files[SHARED] = JSON.stringify({ permissions: { allow: ['Bash(ls:*)'] } })
+  engine($, on, world, () => true)
+  await start($)
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
+
+  world.answer = 'Add to settings.json (the whole team)'
+  expect((await run($, 'allow 1')).text).toBe(`allowlist-coach: added ${RULE} to permissions.allow in .claude/settings.json.`)
+  expect(JSON.parse(world.files[SHARED]!).permissions.allow).toEqual(['Bash(ls:*)', RULE])
+  expect(FILE in world.files).toBe(false)
+
+  const pane = await mount($)
+  expect(JSON.stringify(await pane.drawn())).toContain('remove from allow')
+  world.answer = 'Cancel'
+  await pane.press({ key: 'remove-1' })
+  expect(world.asked.at(-1)!.options).toEqual(['Cancel', 'Remove'])
+  expect(JSON.parse(world.files[SHARED]!).permissions.allow).toEqual(['Bash(ls:*)', RULE])
+  await pane.unmount()
+
+  world.answer = 'Remove'
+  expect((await run($, 'remove 1')).text).toContain('removed')
+  expect(JSON.parse(world.files[SHARED]!).permissions.allow).toEqual(['Bash(ls:*)'])
+  expect((await run($, '')).text).toContain('dismissed')
+})
+
+test('remove refuses a rule the coach did not add', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
+  expect((await run($, 'remove 1')).text).toContain('did not add')
+  expect(world.asked).toHaveLength(0)
+})
+
+test('reset <n> sets one rule back to zero, after asking', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'npm run lint' } as never)
+
+  world.answer = 'Cancel'
+  expect((await run($, 'reset 1')).text).toContain('nothing changed')
+  world.answer = 'Reset'
+  const pane = await mount($)
+  await pane.press({ key: 'zero-1' })
+  expect(world.asked.at(-1)!.question).toBe(`Reset the count of ${RULE} (3 approvals, 0 refusals)?`)
+  expect(world.toasts.at(-1)).toBe(`allowlist-coach: count of ${RULE} reset.`)
+  expect(JSON.stringify(await pane.drawn())).toContain('○○○○○ 0/5')
+  await pane.unmount()
+  expect((await run($, '')).text).toContain('Bash(npm run lint)')
+})
+
+test('the threshold option sets how many approvals an offer takes', { options: { threshold: 3 } }, async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
+  expect(world.notices[0]).toContain('●○○ 1/3')
+  expect(world.toasts.filter(t => t.includes(RULE))).toHaveLength(1)
+  const pane = await mount($)
+  expect(JSON.stringify(await pane.drawn())).toContain('after 3 approvals')
   await pane.unmount()
 })
 
 test('Portuguese from LANG: the dialog line, the questions and the pane', async ($, on) => {
   const world = fresh()
-  world.answer = 'Adicionar'
+  world.answer = 'Adicionar ao settings.local.json (só você)'
   engine($, on, world, () => true, undefined, { LANG: 'pt_BR.UTF-8' })
   await start($)
   for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
@@ -216,11 +330,11 @@ test('Portuguese from LANG: the dialog line, the questions and the pane', async 
   expect(world.toasts[0]).toContain('Você aprovou')
   const pane = await mount($)
   const shown = JSON.stringify(await pane.drawn())
-  expect(shown).toContain('Prontas para liberar')
+  expect(shown).toContain('prontas 1')
   expect(shown).toContain('liberar')
   expect(shown).toContain('Fechar')
   await pane.press({ key: 'allow-1' })
-  expect(world.asked[0]!.options).toEqual(['Adicionar', 'Agora não', 'Nunca oferecer'])
+  expect(world.asked[0]!.options).toEqual(['Adicionar ao settings.local.json (só você)', 'Adicionar ao settings.json (o time todo)', 'Agora não', 'Nunca oferecer'])
   expect(JSON.parse(world.files[FILE]!).permissions.allow).toEqual([RULE])
   await pane.unmount()
 })

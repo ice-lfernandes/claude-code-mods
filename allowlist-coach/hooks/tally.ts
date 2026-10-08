@@ -1,13 +1,27 @@
-import type { Configured, Entry } from '../types'
+import type { Configured, Entry, Tab } from '../types'
 import type { Lang } from './ui'
+import { clip } from './ui'
 import { WORDS } from './words'
 
-/** Approvals, with no refusal, before the coach offers a rule. */
+/** Approvals, with no refusal, before the coach offers a rule: the default of the `threshold` option. */
 export const THRESHOLD = 5
+
+let threshold = THRESHOLD
+
+/** Sets the approvals an offer takes, from the `threshold` option: a whole number from 2 to 20. */
+export const setThreshold = (option: unknown) => {
+  const n = Math.round(Number(option))
+  threshold = Number.isFinite(n) && option !== undefined && option !== null && option !== '' ? Math.max(2, Math.min(20, n)) : THRESHOLD
+}
+
+/** The approvals an offer takes now. */
+export const thresholdNow = () => threshold
 /** Entries kept per project; the least recent go first. */
 export const ENTRIES_KEPT = 200
 
 export const SETTINGS_FILE = '.claude/settings.local.json'
+/** The project's shared settings, committed with the code. */
+export const SHARED_FILE = '.claude/settings.json'
 
 type Suggestion = { type: string; behavior?: string; rules?: readonly { toolName: string; ruleContent?: string }[] }
 
@@ -47,6 +61,9 @@ export const exampleOf = (tool: string, input: unknown) => {
 
 const BROAD_TOOLS = new Set(['Bash', 'PowerShell', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'WebFetch'])
 
+/** Why a rule is never offered: the whole tool, a bare wildcard, a risky command, or a rule it cannot read. */
+export type Risk = { kind: 'tool' } | { kind: 'wildcard' } | { kind: 'command'; what: string } | { kind: 'unreadable' }
+
 const RISKY_COMMAND = [
   /^(sudo|su|doas)\b/,
   /^(rm|rmdir|dd|mkfs\S*|shred|truncate|chmod|chown|kill|pkill|killall|shutdown|reboot)\b/,
@@ -62,20 +79,30 @@ const RISKY_COMMAND = [
 ]
 
 /**
- * Whether a rule lets through more than one familiar command: a whole tool, a bare wildcard,
- * or a command that deletes, escalates, reaches the network or runs arbitrary code. Such a
- * rule is counted and shown, never offered.
+ * Why a rule lets through more than one familiar command, or null when it does not: a whole
+ * tool, a bare wildcard, or a command that deletes, escalates, reaches the network or runs
+ * arbitrary code (`what` is the part that matched). Such a rule is counted and shown, never
+ * offered.
  */
-export const isRisky = (rule: string) => {
+export const riskOf = (rule: string): Risk | null => {
   const match = /^([^(]+)(?:\((.*)\))?$/s.exec(rule)
-  if (!match) return true
+  if (!match) return { kind: 'unreadable' }
   const [, toolName, content] = match
-  if (content === undefined) return BROAD_TOOLS.has(toolName!)
+  if (content === undefined) return BROAD_TOOLS.has(toolName!) ? { kind: 'tool' } : null
   const body = content.trim()
-  if (body === '' || body === '*' || body === ':*' || body === '**' || body.startsWith('/**')) return true
-  if (toolName === 'Bash' || toolName === 'PowerShell') return RISKY_COMMAND.some(r => r.test(body))
-  return false
+  if (body === '' || body === '*' || body === ':*' || body === '**' || body.startsWith('/**')) return { kind: 'wildcard' }
+  if (toolName !== 'Bash' && toolName !== 'PowerShell') return null
+  for (const re of RISKY_COMMAND) {
+    const hit = re.exec(body)
+    if (hit) return { kind: 'command', what: clip(hit[0].replace(/\s+/g, ' ').trim(), 24) }
+  }
+  return null
 }
+
+export const isRisky = (rule: string) => riskOf(rule) !== null
+
+/** The first risk among an entry's rules. */
+export const riskOfEntry = (entry: Entry) => entry.rules.map(riskOf).find(r => r !== null) ?? null
 
 const sameRule = (a: string, b: string) => a.replace(/\s+/g, ' ') === b.replace(/\s+/g, ' ')
 const listed = (list: readonly string[], rule: string) => list.some(r => sameRule(r, rule))
@@ -92,7 +119,7 @@ export const status = (entry: Entry, configured: Configured): Status => {
   if (entry.state === 'dismissed') return 'dismissed'
   if (entry.rules.some(isRisky)) return 'risky'
   if (entry.denied > 0) return 'refused'
-  return entry.approved >= THRESHOLD ? 'ready' : 'counting'
+  return entry.approved >= threshold ? 'ready' : 'counting'
 }
 
 export const keyOf = (rules: readonly string[]) => rules.join(', ')
@@ -122,13 +149,17 @@ export const record = (
   return Object.fromEntries(keep.map(k => [k, next[k]!]))
 }
 
-export const setState = (entries: Record<string, Entry>, key: string, state: Entry['state']) =>
-  entries[key] ? { ...entries, [key]: { ...entries[key]!, state } } : entries
+export const setState = (entries: Record<string, Entry>, key: string, state: Entry['state'], file?: string) =>
+  entries[key] ? { ...entries, [key]: { ...entries[key]!, state, ...(file ? { file } : {}) } } : entries
+
+/** An entry's counts back to zero, as if its dialog had never been answered; the rest is kept. */
+export const zero = (entries: Record<string, Entry>, key: string) =>
+  entries[key] ? { ...entries, [key]: { ...entries[key]!, approved: 0, denied: 0, state: 'counting' as const } } : entries
 
 /** Approvals toward the offer: `●●●○○ 3/5`. */
 export const progress = (approved: number) => {
-  const done = Math.max(0, Math.min(THRESHOLD, approved))
-  return `${'●'.repeat(done)}${'○'.repeat(THRESHOLD - done)} ${done}/${THRESHOLD}`
+  const done = Math.max(0, Math.min(threshold, approved))
+  return `${'●'.repeat(done)}${'○'.repeat(threshold - done)} ${done}/${threshold}`
 }
 
 /** The line shown under an open dialog, or undefined when there is nothing to say yet. */
@@ -139,25 +170,44 @@ export const noticeFor = (entry: Entry | undefined, configured: Configured, lang
   if (s === 'risky') return w.noticeRisky(entry.approved)
   if (s === 'refused') return w.noticeRefused(entry.approved, entry.denied)
   if (s === 'ready' || s === 'dismissed') return w.noticeReady(entry.approved)
-  return w.noticeCounting(progress(entry.approved), THRESHOLD - entry.approved, keyOf(entry.rules))
+  return w.noticeCounting(progress(entry.approved), threshold - entry.approved, keyOf(entry.rules))
 }
+
+/** A settings file's permissions, read whole; throws on text that is not a JSON object. */
+const permissionsOf = (text: string, file: string) => {
+  const parsed: unknown = text.trim() === '' ? {} : JSON.parse(text)
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${file} is not a JSON object`)
+  const settings = parsed as Record<string, unknown>
+  const permissions = (settings.permissions ?? {}) as Record<string, unknown>
+  if (typeof permissions !== 'object' || Array.isArray(permissions)) throw new Error(`permissions in ${file} is not an object`)
+  if (permissions.allow !== undefined && !Array.isArray(permissions.allow)) throw new Error(`permissions.allow in ${file} is not a list`)
+  return { settings, permissions, allow: [...((permissions.allow as string[] | undefined) ?? [])] }
+}
+
+const write = (settings: Record<string, unknown>, permissions: Record<string, unknown>, allow: string[]) =>
+  `${JSON.stringify({ ...settings, permissions: { ...permissions, allow } }, null, 2)}\n`
 
 /**
  * The settings file's text with `rules` added to permissions.allow, or null when every rule is
  * there already. Throws on text that is not a JSON object, so a file it cannot read whole is
  * never rewritten.
  */
-export const addAllow = (text: string, rules: readonly string[]): string | null => {
-  const parsed: unknown = text.trim() === '' ? {} : JSON.parse(text)
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${SETTINGS_FILE} is not a JSON object`)
-  const settings = parsed as Record<string, unknown>
-  const permissions = (settings.permissions ?? {}) as Record<string, unknown>
-  if (typeof permissions !== 'object' || Array.isArray(permissions)) throw new Error(`permissions in ${SETTINGS_FILE} is not an object`)
-  if (permissions.allow !== undefined && !Array.isArray(permissions.allow)) throw new Error(`permissions.allow in ${SETTINGS_FILE} is not a list`)
-  const allow = [...((permissions.allow as string[] | undefined) ?? [])]
+export const addAllow = (text: string, rules: readonly string[], file = SETTINGS_FILE): string | null => {
+  const { settings, permissions, allow } = permissionsOf(text, file)
   const missing = rules.filter(r => !listed(allow, r))
   if (missing.length === 0) return null
-  return `${JSON.stringify({ ...settings, permissions: { ...permissions, allow: [...allow, ...missing] } }, null, 2)}\n`
+  return write(settings, permissions, [...allow, ...missing])
+}
+
+/**
+ * The settings file's text with `rules` taken out of permissions.allow, or null when none of
+ * them is there. Throws as addAllow does.
+ */
+export const removeAllow = (text: string, rules: readonly string[], file = SETTINGS_FILE): string | null => {
+  const { settings, permissions, allow } = permissionsOf(text, file)
+  const kept = allow.filter(a => !rules.some(r => sameRule(a, r)))
+  if (kept.length === allow.length) return null
+  return write(settings, permissions, kept)
 }
 
 export const toConfigured = (settings: { permissions?: { allow?: unknown; ask?: unknown; deny?: unknown } } | undefined): Configured => {
@@ -186,6 +236,15 @@ export const sorted = (entries: Record<string, Entry>, configured: Configured) =
   Object.entries(entries)
     .map(([key, entry]) => ({ key, entry, status: status(entry, configured) }))
     .sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || b.entry.approved - a.entry.approved || b.entry.lastAt - a.entry.lastAt)
+
+export const TABS: readonly Tab[] = ['all', 'ready', 'counting', 'refused']
+
+/** A sorted row the pane shows under a tab and a typed filter, which matches the rule or the call that asked. */
+export const shows = (row: { key: string; entry: Entry; status: Status }, tab: Tab, query: string) => {
+  if (tab !== 'all' && row.status !== tab) return false
+  const q = query.trim().toLowerCase()
+  return q === '' || row.key.toLowerCase().includes(q) || row.entry.example.toLowerCase().includes(q)
+}
 
 /**
  * The key an argument of /allowlist allow or dismiss names: a number as the pane numbers the

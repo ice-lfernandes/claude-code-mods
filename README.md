@@ -38,12 +38,17 @@ prompt and runs nothing. `details` on the band opens the pane.
 It counts on its own each time you answer a permission dialog. Commands:
 
 ```
-/allowlist             open the pane: rules ready to allow, then every counted rule, numbered
-/allowlist allow 1     add rule 1 to permissions.allow (asks first)
+/allowlist             open the pane: every counted rule, numbered, ready ones first
+/allowlist allow 1     add rule 1 to permissions.allow (asks first, and which file)
 /allowlist dismiss 2   stop offering rule 2
+/allowlist remove 1    take rule 1 back out of allow, when the coach added it (asks first)
+/allowlist reset 2     set rule 2's count back to zero (asks first)
 /allowlist reset       clear this project's counts (asks first)
 /allowlist help        list the commands
 ```
+
+The pane has tabs by status, a filter, and a scrolling list. A risky rule says why it is never
+offered.
 
 ![allowlist-coach: the line under the permission dialog, the toast and the /allowlist pane](screenshots/allowlist-coach.svg)
 
@@ -125,7 +130,7 @@ it makes.
 | Mod | Network | Runs processes | Files | Calls a model | Sends data anywhere |
 | --- | --- | --- | --- | --- | --- |
 | limits-meter | No | No | No | No | No |
-| allowlist-coach | No | No | Reads and writes `.claude/settings.local.json`, after you confirm | No | No |
+| allowlist-coach | No | No | Reads and writes `.claude/settings.local.json`, or `.claude/settings.json` when you pick it, after you confirm | No | No |
 | agent-watch | No | No | No | No | No |
 | test-hud | No | No | Reads Bash's saved copy of an output too long to show whole | No | No |
 
