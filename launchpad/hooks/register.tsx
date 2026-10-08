@@ -202,13 +202,14 @@ function showMenu($: EngineInterface) {
   $.command.run({ command: 'pad' }).catch(() => undefined)
 }
 
-/** Runs one of /pad's arguments from the row: its answer, if any, as a dim line in the transcript. */
+/** Runs one of /pad's arguments from the row: its answer, if any, as dim lines in the transcript. */
 async function pressVerb($: EngineInterface, a: (typeof PAD_ACTIONS)[number]) {
   const w = WORDS[lang]
   try {
     if (a.fill) return await fill($, a.fill(w))
     const { text } = await runPad($, a.verb)
-    if (text) $.ui.log(text)
+    // A log line is drawn as one row: a list or the help goes out a line at a time.
+    for (const line of text?.split('\n') ?? []) if (line.trim()) $.ui.log(line)
   } catch {
     $.ui.toast(w.failed(`/pad ${a.verb}`))
   }

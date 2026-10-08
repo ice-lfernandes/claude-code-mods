@@ -294,8 +294,10 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(w.opened).toEqual(['launchpad'])
     await ui.press({ key: 'cmd:list' })
     await ui.press({ key: 'cmd:help' })
-    expect(w.logs[0]).toContain('1. 🗜️ Compactar conversa  /compact')
-    expect(w.logs[1]).toContain('/pad configuration')
+    expect(w.logs[0]).toBe('1. 🗜️ Compactar conversa  /compact  (comando, padrão)') // one row a line
+    expect(w.logs[1]).toBe('2. 📊 Ver contexto  /context  (comando, padrão)')
+    expect(w.logs.some(l => l.includes('\n'))).toBe(false)
+    expect(w.logs).toContain('/pad configuration     abre o painel para escolher e ordenar os atalhos')
     expect(w.commands).toEqual([]) // run here, not as a command
     await ui.press({ key: 'cmd:add' })
     await ui.press({ key: 'cmd:remove' })
