@@ -40,6 +40,9 @@ def width(line): return sum(cells(t) for t, _ in line)
 
 ROUND = '╭╮╰╯─│'
 
+# The terminal's width for a row that wraps (flexWrap), when a section sets one; None: no wrap.
+WRAP = None
+
 def lines(node, style=None, avail=None):
     """Rows of spans for a tree. `avail` is the width a flexGrow Box stretches to."""
     style = style or {}
@@ -59,14 +62,27 @@ def lines(node, style=None, avail=None):
             if i and gap: out += [[] for _ in range(gap)]
             out += k
     else:
-        h = max((len(k) for k in kids), default=0)
-        out = [[] for _ in range(h)]
-        for i, k in enumerate(kids):
+        # A wrapping row breaks into runs that fit WRAP, each laid out as a row of its own.
+        runs, run, used = [], [], 0
+        for k in kids:
             w = max((width(l) for l in k), default=0)
-            for r in range(h):
-                l = k[r] if r < len(k) else []
-                if i and gap: out[r].append((' ' * gap, {}))
-                out[r] += l + [(' ' * (w - width(l)), {})]
+            if WRAP and p.get('flexWrap') == 'wrap' and run and used + gap + w > WRAP - pad * 2:
+                runs.append(run)
+                run, used = [], 0
+            used += (gap if run else 0) + w
+            run.append(k)
+        runs.append(run)
+        out = []
+        for run in runs:
+            h = max((len(k) for k in run), default=0)
+            rows = [[] for _ in range(h)]
+            for i, k in enumerate(run):
+                w = max((width(l) for l in k), default=0)
+                for r in range(h):
+                    l = k[r] if r < len(k) else []
+                    if i and gap: rows[r].append((' ' * gap, {}))
+                    rows[r] += l + [(' ' * (w - width(l)), {})]
+            out += rows
     if inner is not None:
         out = [l + [(' ' * max(0, inner - width(l)), {})] for l in out]
     if border:
@@ -201,6 +217,13 @@ open(f'{out}/test-hud.svg', 'w').write(svg([
     ('status line', 'raw', [plain('  ' + red, dimColor=True), plain('  ' + green, dimColor=True)]),
     ('toast when the suite turns green', 'toast', [plain(t) for t in d['TOAST']]),
 ], 60, 'test-hud'))
+def wrapped(s, cols):
+    """A tree laid out with its wrapping rows broken at `cols`, as a terminal that wide shows it."""
+    global WRAP
+    WRAP = cols
+    try: return trim(tree(s))
+    finally: WRAP = None
+
 # launchpad
 d = load(f'{snap}/launchpad.txt')
 menu = trim(tree(d['MENU'][0]))
@@ -215,5 +238,5 @@ for i, chunk in enumerate(textwrap.wrap(fill, cw - 6)):
 open(f'{out}/launchpad.svg', 'w').write(svg([
     ('welcome menu under the header, before the first request', 'raw', menu),
     ('after 🔍 Explorar código: the request waits, blank marked', 'raw', box(rows)),
-    ('/pad place prompt: the menu in a band above the prompt', 'raw', trim(tree(d['BAND'][0])) + box([plain('> ')])),
+    ('/pad place prompt: the menu in a band above the prompt', 'raw', wrapped(d['BAND'][0], cw) + box([plain('> ')])),
 ], 60, 'launchpad'))

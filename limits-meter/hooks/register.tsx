@@ -304,7 +304,7 @@ export const register: Register = (on, options) => {
             const isTop = list.length > 1 && t === top
             return (
               <Text key={`turn-${list.length - shown.length + i}`}>
-                <Text dimColor>{`#${String(list.length - shown.length + i + 1).padStart(2)} `}</Text>
+                <Text dimColor>{`#${list.length - shown.length + i + 1}`.padEnd(4)}</Text>
                 <Text color={isTop ? 'claude' : undefined} bold={isTop}>{tokens(t.input).padStart(8)}</Text>
                 <Text>{tokens(t.output).padStart(8)}</Text>
                 <Text color={t.cacheHit !== null && t.cacheHit < 0.5 ? 'warning' : undefined}>{pct(t.cacheHit === null ? null : t.cacheHit * 100).padStart(7)}</Text>
