@@ -1,6 +1,6 @@
 {
   "name": "lfernandes-mods",
-  "description": "Claude Code mods for everyday UX: plan limits, context, permissions, and what the agent is doing",
+  "description": "Claude Code mods for everyday UX: plan limits, context, permissions, test runs, and what the agent is doing",
   "owner": {
     "name": "Lucas Fernandes"
   },
@@ -19,6 +19,11 @@
       "name": "agent-watch",
       "source": "./agent-watch",
       "description": "Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish"
+    },
+    {
+      "name": "test-hud",
+      "source": "./test-hud",
+      "description": "Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green"
     }
   ]
 }

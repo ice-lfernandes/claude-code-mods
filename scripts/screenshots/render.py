@@ -156,4 +156,14 @@ open(f'{out}/agent-watch.svg', 'w').write(svg([
     ('status line while agents run', 'raw', status),
     ('toasts', 'toast', [plain(t) for t in d['TOAST']]),
 ], 60, 'agent-watch'))
+
+# test-hud
+d = load(f'{snap}/test-hud.txt')
+red = [x for x in d['STATUS'] if x.startswith('✗')][-1]
+green = d['STATUS'][-1]
+open(f'{out}/test-hud.svg', 'w').write(svg([
+    ('/tests', 'pane:Tests', trim(tree(d['PANE'][-1]))),
+    ('status line', 'raw', [plain('  ' + red, dimColor=True), plain('  ' + green, dimColor=True)]),
+    ('toast when the suite turns green', 'toast', [plain(t) for t in d['TOAST']]),
+], 60, 'test-hud'))
 print('ok')

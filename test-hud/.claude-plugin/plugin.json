@@ -1,0 +1,10 @@
+{
+  "name": "test-hud",
+  "version": "0.1.0",
+  "description": "Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Lucas Fernandes"
+  },
+  "license": "MIT"
+}
