@@ -1,0 +1,18 @@
+import { mock, test } from 'claude-code/testing'
+test('snap', async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: Date.parse('2026-10-08T12:00:00Z') })
+  on('ui.render', () => ({ type: 'Box', children: [] }) as never)
+  on('session.start', ($, e) => ({ cwd: e.cwd }) as never)
+  on('session.messages', () => ({ value: [] }) as never)
+  on('command.register', () => ({ value: undefined }) as never)
+  on('command.list', () => ({ value: ['compact', 'context', 'limits', 'resume', 'memory', 'model', 'help', 'pad'].map(name => ({ name, description: '', source: 'builtin' })) }) as never)
+  on('env.get', ($, e: any) => ({ value: ({ HOME: '/home/ana', LANG: 'pt_BR.UTF-8' } as Record<string, string>)[e.name] }) as never)
+  on('fs.list', () => ({ deny: 'ENOENT' }) as never)
+  on('fs.read', () => ({ deny: 'ENOENT' }) as never)
+  on('prompt.fill', ($, e: any) => (console.log('FILL', e.text), { isFilled: true, text: e.text, cursor: 0 }) as never)
+  await $.session.start({ cwd: '/home/ana/relatorios', surface: 'terminal', isInteractive: true } as never)
+  const ui = await $.ui.mount({ plugin: 'launchpad', surface: 'terminal', component: 'CommandOutput', props: { command: 'pad', args: '', text: 'Menu de atalhos do launchpad.', isErrored: false }, viewport: { columns: 78, rows: 40 } } as never)
+  console.log('MENU', JSON.stringify(await ui.drawn()))
+  await ui.press({ key: 'pad:explore' })
+})

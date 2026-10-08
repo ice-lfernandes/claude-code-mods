@@ -1,6 +1,6 @@
 {
   "name": "lfernandes-mods",
-  "description": "Claude Code mods for everyday UX: plan limits, context, permissions, test runs, and what the agent is doing",
+  "description": "Claude Code mods for everyday UX: plan limits, context, permissions, test runs, what the agent is doing, and one-click actions",
   "owner": {
     "name": "Lucas Fernandes"
   },
@@ -24,6 +24,11 @@
       "name": "test-hud",
       "source": "./test-hud",
       "description": "Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green"
+    },
+    {
+      "name": "launchpad",
+      "source": "./launchpad",
+      "description": "A welcome menu of one-click actions under the header: each button runs an installed command, skill or agent. Pick and order up to 8 with /pad configuration"
     }
   ]
 }

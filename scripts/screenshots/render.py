@@ -1,9 +1,9 @@
 """Turns the trees a mod drew (claude plugin test output) into terminal-style SVG images."""
-import json, sys, os
+import json, sys, os, textwrap, unicodedata
 from xml.sax.saxutils import escape
 
 FG, DIM, BG, CHROME, BORDER, CAP = '#d4d4d8', '#7c7c88', '#16161e', '#22222c', '#3a3a48', '#8a8aa0'
-COLORS = {'yellow': '#e5c07b', 'red': '#e06c75', 'green': '#98c379', 'cyan': '#56b6c2', 'blue': '#61afef', 'magenta': '#c678dd', 'gray': DIM}
+COLORS = {'claude': '#d97757', 'yellow': '#e5c07b', 'red': '#e06c75', 'green': '#98c379', 'cyan': '#56b6c2', 'blue': '#61afef', 'magenta': '#c678dd', 'gray': DIM}
 CW, LH, FS = 8.4, 20, 14
 
 def merge(style, props):
@@ -20,22 +20,39 @@ def spans(node, style):
     if isinstance(node, (str, int, float)): return [(str(node), style)]
     p = node.get('props') or {}
     if node['type'] == 'Button':
-        return [(p['label'] if p.get('plain') else f"[ {p['label']} ]", merge(style, {'color': 'cyan'}))]
+        return [(p['label'] if p.get('plain') else f"[ {p['label']} ]", merge(style, {'dimColor': True} if p.get('dimColor') else {'color': 'cyan'}))]
     out = []
     for c in node.get('children') or []:
         out += spans(c, merge(style, p))
     return out
 
-def width(line): return sum(len(t) for t, _ in line)
+def cells(t):
+    """Cells a string takes in a terminal: emoji two, variation selectors and joiners none."""
+    n = 0
+    for i, ch in enumerate(t):
+        o = ord(ch)
+        if o in (0xFE0F, 0x200D): continue
+        emoji = o >= 0x1F000 or unicodedata.east_asian_width(ch) in ('W', 'F') or (0x2190 <= o <= 0x2BFF and i + 1 < len(t) and t[i + 1] == '\uFE0F')
+        n += 2 if emoji else 1
+    return n
 
-def lines(node, style=None):
+def width(line): return sum(cells(t) for t, _ in line)
+
+ROUND = '╭╮╰╯─│'
+
+def lines(node, style=None, avail=None):
+    """Rows of spans for a tree. `avail` is the width a flexGrow Box stretches to."""
     style = style or {}
     if node is None or isinstance(node, bool): return []
     if isinstance(node, str) or node['type'] in ('Text', 'Button'): return [spans(node, style)]
     p = node.get('props') or {}
-    kids = [lines(c, style) for c in node.get('children') or [] if c not in (None, False, True)]
+    border = p.get('borderStyle')
+    pad, right = p.get('paddingX', 0), p.get('paddingRight', 0)
+    own = p['width'] if isinstance(p.get('width'), int) else (avail if p.get('flexGrow') else None)
+    inner = own - right - (pad * 2 + 2 if border else pad) if own else None
+    kids = [lines(c, style, inner) for c in node.get('children') or [] if c not in (None, False, True)]
     kids = [k for k in kids if k]
-    gap, pad = p.get('gap', 0), p.get('paddingX', 0)
+    gap = p.get('gap', 0)
     if p.get('flexDirection', 'row') == 'column':
         out = []
         for i, k in enumerate(kids):
@@ -50,16 +67,34 @@ def lines(node, style=None):
                 l = k[r] if r < len(k) else []
                 if i and gap: out[r].append((' ' * gap, {}))
                 out[r] += l + [(' ' * (w - width(l)), {})]
-    return [[(' ' * pad, {})] + l for l in out] if pad else out
+    if inner is not None:
+        out = [l + [(' ' * max(0, inner - width(l)), {})] for l in out]
+    if border:
+        w = max((width(l) for l in out), default=0) + pad * 2
+        b = {'color': p['borderColor']} if p.get('borderColor') else {'dimColor': True}
+        tl, tr, bl, br, hz, vt = ROUND
+        out = ([[(tl + hz * w + tr, b)]] +
+               [[(vt, b), (' ' * pad, {})] + l + [(' ' * (w - pad - width(l)), {}), (vt, b)] for l in out] +
+               [[(bl + hz * w + br, b)]])
+        pad = 0
+    if pad or right: out = [[(' ' * pad, {})] + l + [(' ' * right, {})] for l in out]
+    return out
 
 def text_el(x, y, line):
     parts = []
+    # Emoji and box-drawing runs are drawn cell by cell: the font gives neither one cell's width.
+    box = lambda t: any(c in ROUND for c in t)
+    wide = any(cells(t) != len(t) or box(t) for t, _ in line)
+    at = 0
     for t, s in line:
+        sx = f' x="{x + at * CW:.1f}"' if wide else ''
+        if box(t): sx += f' textLength="{cells(t) * CW:.1f}" lengthAdjust="spacingAndGlyphs"'
+        at += cells(t)
         if not t: continue
         fill = COLORS.get(s.get('color'), s.get('color')) if s.get('color') else (DIM if s.get('dimColor') else FG)
         if s.get('dimColor') and s.get('color'): fill = DIM
         w = ' font-weight="700"' if s.get('bold') else ''
-        parts.append(f'<tspan fill="{fill}"{w}>{escape(t)}</tspan>')
+        parts.append(f'<tspan{sx} fill="{fill}"{w}>{escape(t)}</tspan>')
     return f'<text x="{x}" y="{y}" xml:space="preserve">{"".join(parts)}</text>' if parts else ''
 
 def plain(t, **s): return [(t, s)]
@@ -166,4 +201,18 @@ open(f'{out}/test-hud.svg', 'w').write(svg([
     ('status line', 'raw', [plain('  ' + red, dimColor=True), plain('  ' + green, dimColor=True)]),
     ('toast when the suite turns green', 'toast', [plain(t) for t in d['TOAST']]),
 ], 60, 'test-hud'))
-print('ok')
+# launchpad
+d = load(f'{snap}/launchpad.txt')
+menu = trim(tree(d['MENU'][0]))
+cw = max(width(l) for l in menu)
+box = lambda rows: [plain('╭' + '─' * (cw - 2) + '╮', dimColor=True)] + [plain('│ ', dimColor=True) + r + plain(' ' * max(0, cw - 3 - width(r)) + '│', dimColor=True) for r in rows] + [plain('╰' + '─' * (cw - 2) + '╯', dimColor=True)]
+fill = d['FILL'][0]
+rows = []
+for i, chunk in enumerate(textwrap.wrap(fill, cw - 6)):
+    lead = plain('> ' if i == 0 else '  ')
+    a, b = chunk.find('['), chunk.find(']')
+    rows.append(lead + (plain(chunk[:a]) + plain(chunk[a:b + 1], bold=True, color='yellow') + plain(chunk[b + 1:]) if a >= 0 and b > a else plain(chunk)))
+open(f'{out}/launchpad.svg', 'w').write(svg([
+    ('welcome menu under the header, before the first request', 'raw', menu),
+    ('after 🔍 Explorar código: the request waits, blank marked', 'raw', box(rows)),
+], 60, 'launchpad'))

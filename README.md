@@ -10,6 +10,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
 | [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish |
 | [test-hud](test-hud/) | `/tests` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
+| [launchpad](launchpad/) | `/pad` | A welcome menu of one-click actions under the header: each button runs an installed command, skill or agent. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
 
 ## Using the mods
 
@@ -64,6 +65,23 @@ The status line and the toast show on their own each time a test runner runs in 
 ```
 
 ![test-hud: the /tests pane, the status line and the green toast](screenshots/test-hud.svg)
+
+### launchpad
+
+The menu shows on its own when a session starts and after `/clear`, until the first prompt.
+Commands:
+
+```
+/pad                                        show the menu again
+/pad configuration                          pane to order, remove and add buttons, up to 8
+/pad list                                   every button with what it runs
+/pad add 🔎 Revisão | /code-review          add a button for an installed command, skill or @agent
+/pad remove 3                               drop button 3
+/pad reset                                  back to the defaults
+/pad off | on                               turn the menu off or back on
+```
+
+![launchpad: the welcome menu under the header, and an agent request waiting in the prompt](screenshots/launchpad.svg)
 
 ## Install
 

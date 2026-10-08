@@ -6,3 +6,7 @@ tsconfig.json
 
 # Local notes: roadmap and test scripts, not versioned
 notes/
+
+# Emitted by a local tsc run; the engine loads the .ts and .tsx sources
+*/hooks/*.js
+*/tests/*.js

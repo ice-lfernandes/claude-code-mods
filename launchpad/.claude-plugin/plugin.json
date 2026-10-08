@@ -1,0 +1,32 @@
+{
+  "name": "launchpad",
+  "version": "0.1.0",
+  "description": "A welcome menu of one-click actions under the header: each button runs an installed command, skill or agent. Pick and order up to 8 with /pad configuration",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the default buttons and messages. auto follows the system's LANG: Portuguese for pt_*, English otherwise and when LANG is unset",
+      "options": ["auto", "pt-BR", "en"],
+      "default": "auto"
+    },
+    "icons": {
+      "type": "string",
+      "title": "Icons in the terminal",
+      "description": "emoji reads best; symbol keeps columns aligned in terminals that draw emoji at odd widths",
+      "options": ["emoji", "symbol"],
+      "default": "emoji"
+    },
+    "showOnStart": {
+      "type": "boolean",
+      "title": "Show on start",
+      "description": "Show the menu when a session starts and after /clear. Off: only /pad shows it",
+      "default": true
+    }
+  },
+  "author": {
+    "name": "Lucas Fernandes"
+  },
+  "license": "MIT"
+}

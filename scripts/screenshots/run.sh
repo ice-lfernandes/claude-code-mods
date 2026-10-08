@@ -6,9 +6,9 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 out=$(mktemp -d)
 trap 'rm -rf "$out"; rm -f */tests/zz-snap.test.tsx' EXIT
-for mod in limits-meter allowlist-coach agent-watch test-hud; do
+for mod in limits-meter allowlist-coach agent-watch test-hud launchpad; do
   cp "scripts/screenshots/$mod.snap.tsx" "$mod/tests/zz-snap.test.tsx"
-  claude plugin test "./$mod" 2>&1 | grep -E '^(TOAST|STATUS|TREE|BAND|PANE|NOTICE) ' > "$out/$mod.txt"
+  claude plugin test "./$mod" 2>&1 | grep -E '^(TOAST|STATUS|TREE|BAND|PANE|NOTICE|FILL|MENU) ' > "$out/$mod.txt"
   rm "$mod/tests/zz-snap.test.tsx"
 done
 python3 scripts/screenshots/render.py "$out" screenshots
