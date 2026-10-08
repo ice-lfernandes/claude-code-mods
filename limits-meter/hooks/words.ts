@@ -25,6 +25,12 @@ type Words = {
   ofWindow: (used: string, window: string) => string
   turns: string
   noTurns: string
+  /** The turns table's column heads: input, output, cache, time, model. */
+  columns: readonly [string, string, string, string, string]
+  /** Under a plan window: when it reaches 100% at the current pace, before it resets. */
+  pace: (label: string, span: string) => string
+  /** After the context sparkline. */
+  trend: (turns: number) => string
   /** Band and pane buttons. */
   compact: string
   /** What `compact` puts in the prompt, its blank marked to replace. */
@@ -56,6 +62,9 @@ export const WORDS: Record<Lang, Words> = {
     ofWindow: (used, window) => `${used} de ${window}`,
     turns: 'Turnos (thread principal)',
     noTurns: 'Nenhum turno terminado ainda.',
+    columns: ['entrada', 'saída', 'cache', 'tempo', 'modelo'],
+    pace: (label, span) => `no ritmo atual, ${label} chega a 100% em ~${span}, antes de reiniciar`,
+    trend: n => `contexto ao fim ${n === 1 ? 'do último turno' : `dos últimos ${n} turnos`}`,
     compact: 'compactar',
     compactFill: '/compact [foco]',
     details: 'detalhes',
@@ -87,6 +96,9 @@ export const WORDS: Record<Lang, Words> = {
     ofWindow: (used, window) => `${used} of ${window}`,
     turns: 'Turns (main thread)',
     noTurns: 'No finished turns yet.',
+    columns: ['in', 'out', 'cache', 'time', 'model'],
+    pace: (label, span) => `at this pace, ${label} reaches 100% in ~${span}, before it resets`,
+    trend: n => `context at the end of the last ${n} turn${n === 1 ? '' : 's'}`,
     compact: 'compact',
     compactFill: '/compact [focus]',
     details: 'details',

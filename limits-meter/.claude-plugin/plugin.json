@@ -1,6 +1,6 @@
 {
   "name": "limits-meter",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Plan limits and context above the prompt: 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -14,6 +14,36 @@
         "en"
       ],
       "default": "auto"
+    },
+    "cells": {
+      "type": "string",
+      "title": "Cells on the band",
+      "description": "Which cells the band above the prompt shows, comma-separated, from 5h, wk, spend, ctx and cache. all, or nothing known, shows them all",
+      "default": "all"
+    },
+    "density": {
+      "type": "string",
+      "title": "Bars on the band",
+      "description": "auto sizes the bars to the terminal and shrinks them to one cell below 90 columns; bars always draws 10 cells; mini always one cell; numbers draws no bar",
+      "options": [
+        "auto",
+        "bars",
+        "mini",
+        "numbers"
+      ],
+      "default": "auto"
+    },
+    "warnAt": {
+      "type": "number",
+      "title": "Warning from (%)",
+      "description": "A window or the context turns to the warning color from this percent",
+      "default": 70
+    },
+    "dangerAt": {
+      "type": "number",
+      "title": "Danger from (%)",
+      "description": "A window or the context turns to the error color from this percent",
+      "default": 90
     }
   },
   "author": {

@@ -29,7 +29,8 @@ The band shows on its own after the first response. Commands:
 ```
 
 From 85% context the band and the pane show `compact`, which puts `/compact [focus]` in the
-prompt and runs nothing. `details` on the band opens the pane.
+prompt and runs nothing. `details` on the band opens the pane. The pane also says when a window
+reaches 100% at the current pace, before it resets, and draws the context fill turn by turn.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](screenshots/limits-meter.svg)
 

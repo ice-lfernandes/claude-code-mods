@@ -28,7 +28,12 @@ export type Turn = {
   cacheHit: number | null
   model: string
   durationMs: number
+  /** Context fill when the turn ended, 0 to 100; null when unknown. */
+  contextPercent?: number | null
 }
+
+/** Readings of each plan window since it last reset, for the pace: [epoch ms, percent]. */
+export type Samples = Record<string, { resetsAt: number; points: [number, number][] }>
 
 declare module 'claude-code' {
   interface PluginState {
@@ -37,6 +42,7 @@ declare module 'claude-code' {
       turns: Turn[]
       isHidden: boolean
       fired: string[]
+      samples: Samples
     }
   }
 }
