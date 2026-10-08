@@ -69,11 +69,11 @@ export const register: Register = on => {
     const arg = e.args.trim().toLowerCase()
     if (arg === 'hide') {
       await update($, isHidden, () => true)
-      return { text: 'limits-meter: band hidden. /limits show brings it back.' }
+      return { text: 'Band hidden. /limits show brings it back.' }
     }
     if (arg === 'show') {
       await update($, isHidden, () => false)
-      return { text: 'limits-meter: band shown.' }
+      return { text: 'Band shown.' }
     }
     const opened = await $.ui.open({ id: PANE, title: 'Limits & context', focus: true, closeOnEscape: true }).catch(() => null)
     if (opened?.isPlaced) return {}

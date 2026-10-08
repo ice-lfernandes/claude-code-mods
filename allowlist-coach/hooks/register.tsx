@@ -178,7 +178,7 @@ export const register: Register = on => {
     if (verb === 'dismiss' && rest.length > 0) return { text: await dismiss($, key) }
     if (verb === 'reset') {
       await save($, () => ({}))
-      return { text: 'allowlist-coach: counts for this project cleared.' }
+      return { text: 'Counts for this project cleared.' }
     }
     await refresh($)
     const opened = await $.ui.open({ id: PANE, title: 'Allowlist coach', focus: true, closeOnEscape: true }).catch(() => null)
