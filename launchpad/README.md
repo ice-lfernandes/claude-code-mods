@@ -58,9 +58,11 @@ buttons work, the pane says the menu is full until you remove one.
 other commands and the pane go on working, so you can set the menu up before `/pad on`. The
 `showOnStart` option below only stops the card at the start and after `/clear`.
 
-The icon in `/pad add` is optional. It can be any emoji or symbol, or one of the built-in names:
-`folder`, `doc`, `pen`, `search`, `compress`, `gauge`, `chart`, `table`, `mail`, `undo`, `spark`,
-`brain`, `sliders`, `help`, `agent`, `tool`, `plug`. Your list is kept across sessions.
+The icon in `/pad add` is optional. It can be any emoji or symbol, or a built-in name between
+colons (`/pad add :chart: Vendas | /cost`): `folder`, `doc`, `pen`, `search`, `compress`, `gauge`,
+`chart`, `table`, `mail`, `undo`, `spark`, `brain`, `sliders`, `help`, `agent`, `tool`, `plug`. A
+plain first word stays in the label. An agent button can carry its task (`@revisor revise
+[arquivo]`); without one, the prompt waits with `[tarefa]`. Your list is kept across sessions.
 
 ## Buttons for a whole team
 
@@ -82,7 +84,8 @@ before pressing Enter. To remove one, edit the file.
 
 ## Options
 
-Set them in `/config` or under `pluginConfigs.launchpad` in settings.
+Set them in `/config` or under `pluginConfigs` in `~/.claude/settings.json`, keyed by the installed
+name (`launchpad@lfernandes-mods`).
 
 | Option | Values | Default |
 | --- | --- | --- |
@@ -91,6 +94,34 @@ Set them in `/config` or under `pluginConfigs.launchpad` in settings.
 | `showOnStart` | `false` shows the menu only on `/pad` | `true` |
 
 In the desktop app the buttons are native buttons and always use emoji.
+
+An option already saved in your settings wins over a new default. Installing the plugin can save
+every option with the value it had then, so after an update that adds `auto` to an option, set it
+to `auto` yourself to get the new behaviour.
+
+## Known limits
+
+- **Hover needs a terminal that reports mouse motion.** Over a tile, the border and label turn the
+  accent color and the tile tints. VS Code's terminal reports the pointer as it moves; a JetBrains
+  IDE's terminal reports clicks but not motion, so there the tiles do not light up. Clicks work in
+  both.
+- **The border rows of a tile do not take a click.** Only a button takes a press, and a terminal
+  inverts the button under the pointer, which turns a border into a solid bar. The whole row
+  inside the border is the button.
+- **Emoji widths depend on the terminal.** Claude Code counts an emoji as two columns. A terminal
+  that gives it one (a JetBrains IDE, VS Code with `terminal.integrated.gpuAcceleration` set to
+  `off`) shifts the rest of the row and bends the borders. `icons: auto` covers JetBrains; in
+  VS Code, turn GPU acceleration on, or set `icons` to `symbol`.
+- **Agents: the built-in ones and your files.** The catalog holds `general-purpose`, `Explore`,
+  `Plan` and the `.md` files directly in `.claude/agents/` of the project and of your home folder.
+  An agent a plugin brings, or one in a subfolder, counts as not installed: Claude Code gives a mod
+  no list of agent types.
+- **Argument hints come from the `/` menu.** The pane gives a command its argument as a blank
+  from the hint Claude Code shows in the `/` menu. The mod learns the hints as that menu lists the
+  commands, and forgets them when it reloads.
+- **The menu is a row of the conversation.** It scrolls away with the conversation, and `/pad`
+  draws a new one. Claude reads `/pad`'s one-line output (`Menu de atalhos do launchpad.`), not
+  the buttons.
 
 ## Install
 

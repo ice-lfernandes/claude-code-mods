@@ -1,6 +1,6 @@
 {
   "name": "launchpad",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A welcome menu of one-click actions under the header: each button runs an installed command, skill or agent. Pick and order up to 8 with /pad configuration",
   "types": "./types/index.d.ts",
   "userConfig": {

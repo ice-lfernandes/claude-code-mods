@@ -59,7 +59,7 @@ type Words = {
   failed: (what: string) => string
   more: (n: number) => string
   /** What an agent button puts in the prompt, its `[blank]` for the task. */
-  useAgent: (name: string) => string
+  useAgent: (name: string, task?: string) => string
   pane: {
     title: string
     hint: string
@@ -125,7 +125,7 @@ export const WORDS: Record<Lang, Words> = {
     already: text => `${text} já está no menu.`,
     failed: what => `Não deu para rodar: ${what}`,
     more: n => `+${n} em /pad list`,
-    useAgent: name => `Use o agente ${name} para [tarefa]`,
+    useAgent: (name, task) => `Use o agente ${name} para ${task || '[tarefa]'}`,
     pane: {
       title: 'Launchpad',
       hint: `Só aparecem comandos, skills e agentes instalados nesta sessão. Até ${MAX_SHOWN} no menu.`,
@@ -189,7 +189,7 @@ export const WORDS: Record<Lang, Words> = {
     already: text => `${text} is already in the menu.`,
     failed: what => `Could not run: ${what}`,
     more: n => `+${n} in /pad list`,
-    useAgent: name => `Use the ${name} agent to [task]`,
+    useAgent: (name, task) => `Use the ${name} agent to ${task || '[task]'}`,
     pane: {
       title: 'Launchpad',
       hint: `Only commands, skills and agents installed in this session show. Up to ${MAX_SHOWN} in the menu.`,
@@ -246,6 +246,9 @@ export const commandOf = (text: string): { command: string; args: string } => {
 /** An agent button's type: `@Explore` is `Explore`. */
 export const agentOf = (text: string): string => text.replace(/^@/, '').trim().split(/\s+/)[0] ?? ''
 
+/** What an agent button asks after the agent's name: `@revisor review [file]` is `review [file]`. */
+export const agentTask = (text: string): string => text.replace(/^@/, '').trim().split(/\s+/).slice(1).join(' ')
+
 /** What a button or a target stands for, the same spelling for both: `command:compact`, `agent:Explore`. */
 export const keyOf = (kind: Kind, name: string) => `${kind}:${name}`
 export const padKey = (p: Pad) => keyOf(p.kind, p.kind === 'command' ? commandOf(p.text).command : agentOf(p.text))
@@ -292,7 +295,19 @@ export const padFor = (t: Target, id: string, hint?: string): Pad => {
   }
 }
 
-const isGlyph = (token: string) => token in ICONS || /^[^\p{L}\p{N}]/u.test(token)
+/** Whether a name is one of the built-in icons; own keys only, so `constructor` is none. */
+export const isIcon = (name: string) => Object.hasOwn(ICONS, name)
+
+/**
+ * The icon a word of /pad add names, or null: a built-in name written `:chart:`, or a glyph (any
+ * token that starts with no letter or digit). A bare word is part of the label, so `search docs`
+ * is a label and not the icon `search`.
+ */
+const iconIn = (token: string): string | null => {
+  const named = /^:([\w-]+):$/.exec(token)?.[1]
+  if (named) return isIcon(named) ? named : null
+  return /^[^\p{L}\p{N}]/u.test(token) ? token : null
+}
 
 /** `/pad add 📊 Name | /command` or `| @agent` (icon optional) as a button, or null. */
 export const parseAdd = (args: string, id: string): Pad | null => {
@@ -301,11 +316,11 @@ export const parseAdd = (args: string, id: string): Pad | null => {
   const left = args.slice(0, bar).trim()
   const text = args.slice(bar + 1).trim().slice(0, MAX_TEXT)
   const [first = '', ...rest] = left.split(/\s+/)
-  const hasIcon = rest.length > 0 && isGlyph(first)
-  const label = (hasIcon ? rest.join(' ') : left).trim().slice(0, MAX_LABEL)
+  const icon = rest.length > 0 ? iconIn(first) : null
+  const label = (icon ? rest.join(' ') : left).trim().slice(0, MAX_LABEL)
   const kind = kindOf(text)
   if (!/[\p{L}\p{N}]/u.test(label) || !kind) return null
-  return { id, icon: hasIcon ? first : kind === 'agent' ? 'agent' : 'tool', label, text, kind, origin: 'user' }
+  return { id, icon: icon ?? (kind === 'agent' ? 'agent' : 'tool'), label, text, kind, origin: 'user' }
 }
 
 /**
@@ -343,6 +358,27 @@ export const agentName = (file: string, raw: string | null | undefined): string 
   return (name ?? file.replace(/\.md$/i, '')).trim()
 }
 
+/**
+ * A saved list as buttons: entries with no id, label or button text are dropped, and a missing
+ * icon or origin takes the kind's icon and `user`, so nothing malformed reaches the drawing.
+ */
+export const asPads = (v: unknown): Pad[] | null => {
+  if (!Array.isArray(v)) return null
+  const out: Pad[] = []
+  for (const p of v) {
+    if (typeof p?.id !== 'string' || typeof p?.label !== 'string' || typeof p?.text !== 'string') continue
+    const kind = kindOf(p.text)
+    if (!kind) continue
+    const icon = typeof p.icon === 'string' && p.icon ? p.icon : kind === 'agent' ? 'agent' : 'tool'
+    const origin: Origin = p.origin === 'default' || p.origin === 'project' ? p.origin : 'user'
+    out.push({ id: p.id, icon, label: p.label, text: p.text, kind, origin })
+  }
+  return out
+}
+
+/** Whether two button texts run the same thing: the same words, whatever the spaces. */
+export const sameText = (a: string, b: string) => a.trim().split(/\s+/).join(' ') === b.trim().split(/\s+/).join(' ')
+
 /** Keeps the buttons whose command, skill or agent this session has. */
 export const available = (pads: Pad[], catalog: readonly Target[]): Pad[] => {
   const have = new Set(catalog.map(t => keyOf(t.kind, t.name)))
@@ -369,6 +405,9 @@ export const windowOf = (total: number, offset: number, rows: number): { start: 
   return { start, end: Math.min(total, start + size) }
 }
 
+/** The list with the button `id` moved by `delta` places; unchanged where it cannot move. */
+export const moveId = (list: readonly Pad[], id: string, delta: number): Pad[] => move(list, list.findIndex(p => p.id === id), delta)
+
 /** The list with item `i` moved by `delta` places; unchanged where it cannot move. */
 export const move = <T>(list: readonly T[], i: number, delta: number): T[] => {
   const j = i + delta
@@ -379,19 +418,23 @@ export const move = <T>(list: readonly T[], i: number, delta: number): T[] => {
 }
 
 export const glyph = (icon: string, style: IconStyle): string => {
-  const known = ICONS[icon]
-  return known ? known[style] : icon
+  return isIcon(icon) ? ICONS[icon]![style] : icon
 }
 
-const WIDE = /\p{Extended_Pictographic}/u
+const EMOJI = /\p{Emoji_Presentation}/u
+const PICTO = /\p{Extended_Pictographic}/u
 
-/** Cells a string takes in a terminal: emoji two, the rest one, variation selectors none. */
+/**
+ * Cells a string takes in a terminal: two for an emoji drawn as one (📁, or ✏️ with its variation
+ * selector), one for a symbol drawn as text (⚙, ✉) and the rest, none for the selectors.
+ */
 export const cells = (s: string): number => {
+  const chars = [...s]
   let n = 0
-  for (const ch of s) {
-    if (ch === '\uFE0F' || ch === '\u200D') continue
-    n += WIDE.test(ch) ? 2 : 1
-  }
+  chars.forEach((ch, i) => {
+    if (ch === '\uFE0F' || ch === '\u200D') return
+    n += EMOJI.test(ch) || (PICTO.test(ch) && chars[i + 1] === '\uFE0F') ? 2 : 1
+  })
   return n
 }
 
@@ -401,7 +444,7 @@ export const cells = (s: string): number => {
  * the columns stay aligned.
  */
 export const buttonLabel = (p: Pad, style: IconStyle) => {
-  const icon = style === 'symbol' && !(p.icon in ICONS) && cells(p.icon) !== 1 ? (p.kind === 'agent' ? 'agent' : 'tool') : p.icon
+  const icon = style === 'symbol' && !isIcon(p.icon) && cells(p.icon) !== 1 ? (p.kind === 'agent' ? 'agent' : 'tool') : p.icon
   return `${glyph(icon, style)} ${p.label}`
 }
 

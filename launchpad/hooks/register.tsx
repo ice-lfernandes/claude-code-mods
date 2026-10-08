@@ -26,6 +26,8 @@ import type { IconStyle, Lang, Pad, Target } from '../types'
 import {
   agentName,
   agentOf,
+  agentTask,
+  asPads,
   available,
   BUILTIN_AGENTS,
   blankIn,
@@ -40,12 +42,13 @@ import {
   localize,
   matches,
   MAX_SHOWN,
-  move,
+  moveId,
   windowOf,
   padFor,
   padKey,
   parseAdd,
   parseProject,
+  sameText,
   shownOf,
   spell,
   styleOf,
@@ -66,14 +69,6 @@ const filter = atom({ plugin: 'launchpad', key: 'filter' } as const, '')
 const offset = atom({ plugin: 'launchpad', key: 'offset' } as const, 0)
 const isOff = atom({ plugin: 'launchpad', key: 'isOff' } as const, false)
 
-const asPads = (v: unknown): Pad[] | null =>
-  Array.isArray(v)
-    ? v.filter(
-        (p): p is Pad =>
-          typeof p?.id === 'string' && typeof p?.label === 'string' && typeof p?.text === 'string' && (p?.kind === 'command' || p?.kind === 'agent'),
-      )
-    : null
-
 /**
  * Argument hints by command name, as the engine lists the commands for the typeahead and /help
  * (command.describe). $.command.list() carries none, so a command the person has not yet seen
@@ -91,22 +86,22 @@ let cwd = ''
 
 /** The agent types in one `.claude/agents` folder; none where it cannot be read. */
 async function agentsIn($: EngineInterface, dir: string): Promise<Target[]> {
-  const entries = await $.fs.list(dir).catch(() => [])
-  const out: Target[] = []
-  for (const f of entries) {
-    if (f.kind !== 'file' || !f.name.endsWith('.md')) continue
-    const raw = await $.fs.read(`${dir}/${f.name}`).catch(() => null)
-    const name = agentName(f.name, typeof raw === 'string' ? raw : null)
-    if (name) out.push({ kind: 'agent', name, description: '', source: 'agent' })
-  }
-  return out
+  const entries = (await $.fs.list(dir).catch(() => [])).filter(f => f.kind === 'file' && f.name.endsWith('.md'))
+  const names = await Promise.all(
+    entries.map(async f => {
+      const raw = await $.fs.read(`${dir}/${f.name}`).catch(() => null)
+      return agentName(f.name, typeof raw === 'string' ? raw : null)
+    }),
+  )
+  return names.filter(Boolean).map(name => ({ kind: 'agent' as const, name, description: '', source: 'agent' }))
 }
 
 /** Every command, skill and agent this session has, less /pad itself. */
 async function readCatalog($: EngineInterface): Promise<Target[]> {
   const commands = await $.command.list().catch(() => [])
   const home = await $.env.get('HOME').catch(() => undefined)
-  const files = [...(cwd ? await agentsIn($, `${cwd}/${AGENTS_DIR}`) : []), ...(home ? await agentsIn($, `${home}/${AGENTS_DIR}`) : [])]
+  const [here, mine] = await Promise.all([cwd ? agentsIn($, `${cwd}/${AGENTS_DIR}`) : [], home ? agentsIn($, `${home}/${AGENTS_DIR}`) : []])
+  const files = [...here, ...mine]
   const seen = new Set<string>()
   const out: Target[] = []
   const push = (t: Target) => {
@@ -124,15 +119,27 @@ async function readCatalog($: EngineInterface): Promise<Target[]> {
   return out
 }
 
-async function load($: EngineInterface) {
+/**
+ * Reads the person's list, the project's buttons and the on/off switch. The catalog is read once
+ * a session (and again when the pane opens, or an add names something it lacks): `fresh` reads
+ * it now.
+ */
+async function load($: EngineInterface, fresh = false) {
   const stored = asPads(await $.store.get(KEY_MENU).catch(() => undefined))
   const raw = cwd ? await $.fs.read(`${cwd}/${PROJECT_FILE}`).catch(() => null) : null
   await update($, menu, () => (stored ? localize(stored, lang) : defaults(lang)))
   const off = (await $.store.get(KEY_OFF).catch(() => undefined)) === true
   await update($, isOff, () => off)
   await update($, project, () => parseProject(typeof raw === 'string' ? raw : null))
-  const list = await readCatalog($)
-  await update($, catalog, () => list)
+  if (fresh || (await read($, catalog)).length === 0) {
+    const list = await readCatalog($)
+    await update($, catalog, () => list)
+  }
+}
+
+/** Applies a change to the list as it stands now, not as a drawing last saw it. */
+async function editMenu($: EngineInterface, change: (list: Pad[]) => Pad[]) {
+  await saveMenu($, change(await read($, menu)))
 }
 
 async function saveMenu($: EngineInterface, list: Pad[]) {
@@ -153,7 +160,7 @@ async function fill($: EngineInterface, text: string) {
 
 async function press($: EngineInterface, p: Pad) {
   try {
-    if (p.kind === 'agent') return await fill($, WORDS[lang].useAgent(agentOf(p.text)))
+    if (p.kind === 'agent') return await fill($, WORDS[lang].useAgent(agentOf(p.text), agentTask(p.text)))
     // A command with a [blank] waits in the prompt for the person to fill in; so does any
     // project button, whose text comes from the repository.
     if (p.origin === 'project' || blankIn(p.text)) return await fill($, p.text)
@@ -169,8 +176,11 @@ async function add($: EngineInterface, p: Pad): Promise<string | null> {
   const w = WORDS[lang]
   const list = await read($, menu)
   const key = padKey(p)
-  if (!(await read($, catalog)).some(t => keyOf(t.kind, t.name) === key)) return w.missing(p.text.split(/\s+/)[0] ?? p.text)
-  if (list.some(x => x.text === p.text)) return w.already(p.text)
+  const known = async () => (await read($, catalog)).some(t => keyOf(t.kind, t.name) === key)
+  // Installed since the catalog was read? Read it again before saying no.
+  if (!(await known())) await load($, true)
+  if (!(await known())) return w.missing(p.text.split(/\s+/)[0] ?? p.text)
+  if ([...list, ...(await read($, project))].some(x => sameText(x.text, p.text))) return w.already(p.text)
   // The limit counts the buttons that work here: one whose command another session has stays
   // in the list, marked in the pane, and takes no place in this menu.
   if (available(list, await read($, catalog)).length >= MAX_SHOWN) return w.full
@@ -311,7 +321,7 @@ async function runPad($: EngineInterface, args: string): Promise<{ text?: string
     case 'configuration':
     case 'config':
     case 'configure': {
-      await load($)
+      await load($, true)
       await update($, filter, () => '')
       await update($, offset, () => 0)
       const opened = await $.ui.open({ id: PANE, title: w.pane.title, focus: true, closeOnEscape: true }).catch(() => null)
@@ -372,7 +382,7 @@ export const register: Register = (on, options) => {
           : 'Atalhos: /pad mostra; configuration, list, add, remove, reset, off, on',
       argumentHint: '[configuration|list|add|remove|reset|off|on]',
     })
-    await load($)
+    await load($, true)
     if (showOnStart && e.isInteractive) {
       const messages = await $.session.messages().catch(() => [])
       if (messages.length === 0 && !(await read($, isOff))) showMenu($)
@@ -441,11 +451,10 @@ export const register: Register = (on, options) => {
     const icons = e.surface === 'terminal' ? style : 'emoji'
     const all = await read($, catalog)
     const mine = await read($, menu)
-    const have = new Set(all.map(t => keyOf(t.kind, t.name)))
-    const theirs = (await read($, project)).filter(p => have.has(padKey(p)))
+    const theirs = available(await read($, project), all)
+    const working = available(mine, all)
     const query = await read($, filter)
     const found = matches(all, mine, query)
-    const working = mine.filter(p => have.has(padKey(p))).length
     // The catalog list takes the rows the rest leaves: hint, menu, project, headings, filter,
     // the scroll row, the footer and the gaps between them. The pane keeps it in view whole.
     const fixed = 10 + mine.length + (theirs.length ? theirs.length + 2 : 0)
@@ -464,25 +473,32 @@ export const register: Register = (on, options) => {
         <Text dimColor>{w.pane.hint}</Text>
 
         <Box flexDirection="column">
-          <Text bold>{w.pane.menu(working)}</Text>
+          <Text bold>{w.pane.menu(working.length)}</Text>
           {mine.map((p, i) => {
-            const works = have.has(padKey(p))
+            // Numbered as /pad list and /pad remove number them: the buttons that work here.
+            const n = working.indexOf(p) + 1
             return (
               <Box key={`menu:${p.id}`} flexDirection="row" gap={1}>
-                <Text dimColor>{String(i + 1).padStart(2)}</Text>
+                <Text dimColor>{n > 0 ? String(n).padStart(2) : ' –'}</Text>
                 <Box width={26}>
                   <Text wrap="truncate-end">{buttonLabel(p, icons)}</Text>
                 </Box>
                 <Box width={22}>
-                  <Text dimColor={works} color={works ? undefined : 'warning'} wrap="truncate-end">
-                    {works ? p.text : `${p.text} ${w.pane.gone}`}
+                  <Text dimColor={n > 0} color={n > 0 ? undefined : 'warning'} wrap="truncate-end">
+                    {n > 0 ? p.text : `${p.text} ${w.pane.gone}`}
                   </Text>
                 </Box>
-                <Box width={2}>{i > 0 && <Button key={`up:${p.id}`} plain label="↑" onPress={() => saveMenu($, move(mine, i, -1))} />}</Box>
+                <Box width={2}>{i > 0 && <Button key={`up:${p.id}`} plain label="↑" onPress={() => editMenu($, list => moveId(list, p.id, -1))} />}</Box>
                 <Box width={2}>
-                  {i < mine.length - 1 && <Button key={`down:${p.id}`} plain label="↓" onPress={() => saveMenu($, move(mine, i, 1))} />}
+                  {i < mine.length - 1 && <Button key={`down:${p.id}`} plain label="↓" onPress={() => editMenu($, list => moveId(list, p.id, 1))} />}
                 </Box>
-                <Button key={`remove:${p.id}`} plain dimColor label={w.pane.remove} onPress={() => saveMenu($, mine.filter(x => x.id !== p.id))} />
+                <Button
+                  key={`remove:${p.id}`}
+                  plain
+                  dimColor
+                  label={w.pane.remove}
+                  onPress={() => editMenu($, list => list.filter(x => x.id !== p.id))}
+                />
               </Box>
             )
           })}
@@ -491,15 +507,15 @@ export const register: Register = (on, options) => {
         {theirs.length > 0 && (
           <Box flexDirection="column">
             <Text bold>{w.pane.project}</Text>
-            {theirs.map(p => (
-              <Text key={`project:${p.id}`} dimColor wrap="truncate-end">{`   ${buttonLabel(p, icons)}  ${p.text}`}</Text>
+            {theirs.map((p, i) => (
+              <Text key={`project:${p.id}`} dimColor wrap="truncate-end">{`${String(working.length + i + 1).padStart(2)} ${buttonLabel(p, icons)}  ${p.text}`}</Text>
             ))}
           </Box>
         )}
 
         <Box flexDirection="column">
           <Text bold>{w.pane.add}</Text>
-          {working >= MAX_SHOWN ? (
+          {working.length >= MAX_SHOWN ? (
             <Text color="warning">{w.pane.full}</Text>
           ) : (
             <Box flexDirection="column">

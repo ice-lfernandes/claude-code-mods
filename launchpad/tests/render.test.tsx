@@ -321,3 +321,36 @@ test('a JetBrains terminal gets symbols on auto', async ($, on) => {
   expect(drawn).not.toContain('🗜️')
   await ui.unmount()
 })
+
+test('the pane numbers the buttons as /pad list does, and its edits read the list as it is now', async ($, on) => {
+  world(on, files)
+  await start($)
+  await pad($, 'configuration')
+  const ui = await pane($)
+  const drawn = JSON.stringify(await ui.drawn())
+  // compact, context, limits (not installed), resume (not installed), ..., explore
+  expect(drawn).toContain('" 1"')
+  expect(drawn).toContain('" –"')
+  expect((await pad($, 'list')).text).toContain('3. 🔍 Explorar código')
+  // Two removes in a row on one drawing: the second must not bring the first back.
+  await ui.press({ key: 'remove:limits' })
+  await ui.press({ key: 'remove:resume' })
+  await ui.press({ key: 'up:explore' })
+  await ui.press({ key: 'up:explore' })
+  const texts = (await pad($, 'list')).text!.split('\n').map(l => l.split('  ')[1])
+  expect(texts).toEqual(['/compact', '/context', '@Explore'])
+  await ui.unmount()
+})
+
+test('an agent button with a task fills it; a project button cannot be added twice', async ($, on) => {
+  const w = world(on, { ...files, '/repo/.claude/launchpad.json': PROJECT })
+  await start($)
+  expect((await pad($, 'add Revisar | @revisor revise o texto de [arquivo]')).text).toContain('criado')
+  expect((await pad($, 'add Custo | /cost')).text).toBe('/cost já está no menu.') // the project has it
+  const card = await row($)
+  const drawn = JSON.stringify(await card.drawn())
+  const id = /"key":"pad:([^"]+)","label":" 🤖 Revisar/.exec(drawn)?.[1]
+  await card.press({ key: `pad:${id}` })
+  expect(w.fills.map(f => f.text)).toEqual(['Use o agente revisor para revise o texto de [arquivo]'])
+  await card.unmount()
+})

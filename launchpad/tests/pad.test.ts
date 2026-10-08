@@ -4,6 +4,8 @@ import type { Target } from '../types'
 import {
   agentName,
   agentOf,
+  agentTask,
+  asPads,
   available,
   blankIn,
   blanksOf,
@@ -13,15 +15,18 @@ import {
   defaults,
   kindOf,
   langOf,
+  glyph,
   layout,
   listText,
   localize,
   matches,
   move,
+  moveId,
   windowOf,
   padFor,
   parseAdd,
   parseProject,
+  sameText,
   shownOf,
   styleOf,
   tileLabel,
@@ -160,6 +165,42 @@ test('the list window stays inside the list', async () => {
   expect(windowOf(3, 2, 12)).toEqual({ start: 0, end: 3 })
 })
 
+test('a named icon is written :name:, so a first word of the label stays in the label', async () => {
+  expect(parseAdd(':chart: Vendas | /cost', 'u1')).toMatchObject({ icon: 'chart', label: 'Vendas' })
+  expect(parseAdd('search docs | /cost', 'u2')).toMatchObject({ icon: 'tool', label: 'search docs' })
+  expect(parseAdd('constructor Foo | /cost', 'u3')).toMatchObject({ icon: 'tool', label: 'constructor Foo' })
+  expect(parseAdd(':nada: Foo | /cost', 'u4')).toMatchObject({ icon: 'tool', label: ':nada: Foo' })
+  expect(glyph('constructor', 'emoji')).toBe('constructor')
+  expect(glyph('toString', 'symbol')).toBe('toString')
+})
+
+test('an agent button keeps its task', async () => {
+  expect(agentTask('@revisor revise [arquivo]')).toBe('revise [arquivo]')
+  expect(agentTask('@Explore')).toBe('')
+  expect(WORDS['pt-BR'].useAgent('revisor', 'revise [arquivo]')).toBe('Use o agente revisor para revise [arquivo]')
+  expect(WORDS['en'].useAgent('Plan')).toBe('Use the Plan agent to [task]')
+})
+
+test('a saved list is cleaned before it is drawn', async () => {
+  const list = asPads([
+    { id: 'a', label: 'A', text: '/cost' },
+    { id: 'b', label: 'B', text: '@Plan', icon: '', origin: 'weird' },
+    { id: 'c', label: 'C', text: 'texto livre' },
+    { label: 'D', text: '/cost' },
+    null,
+  ])!
+  expect(list).toEqual([
+    { id: 'a', icon: 'tool', label: 'A', text: '/cost', kind: 'command', origin: 'user' },
+    { id: 'b', icon: 'agent', label: 'B', text: '@Plan', kind: 'agent', origin: 'user' },
+  ])
+  expect(asPads('x')).toBe(null)
+  expect(sameText(' /compact  focus ', '/compact focus')).toBe(true)
+  expect(sameText('/compact', '/compact focus')).toBe(false)
+  const ids = defaults('pt-BR')
+  expect(moveId(ids, 'context', -1).map(p => p.id).slice(0, 2)).toEqual(['context', 'compact'])
+  expect(moveId(ids, 'nada', 1)).toEqual(ids)
+})
+
 test('move swaps neighbours and stays inside the list', async () => {
   expect(move(['a', 'b', 'c'], 0, 1)).toEqual(['b', 'a', 'c'])
   expect(move(['a', 'b', 'c'], 2, -1)).toEqual(['a', 'c', 'b'])
@@ -170,6 +211,10 @@ test('columns fit the width and emoji count two cells', async () => {
   expect(cells('📁 Organizar pasta')).toBe(18)
   expect(cells('✏️ Revisar')).toBe(10)
   expect(cells('▤ Organizar pasta')).toBe(17)
+  expect(cells('⚙ Nome')).toBe(6) // a symbol drawn as text is one cell
+  expect(cells('✉')).toBe(1)
+  expect(cells('✉️')).toBe(2) // with its variation selector, an emoji
+  expect(cells('❓')).toBe(2)
   const pads = defaults('pt-BR')
   const wide = layout(pads, 'emoji', 100)
   expect(wide.width).toBe(cells(buttonLabel(pads[0]!, 'emoji')) + 3)
