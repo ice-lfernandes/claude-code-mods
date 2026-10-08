@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Agent } from '../types'
-import { addStep, adopt, clearOut, finish, glyphOf, labelOf, reconcile, runText, stalls, stallText, summarize, toolEnd, toolStart, total, touch, tree, ZERO } from '../hooks/watch'
+import { addStep, adopt, clearOut, finish, fiveHourOf, glyphOf, labelOf, shares, windowUsed, reconcile, runText, stalls, stallText, summarize, toolEnd, toolStart, total, touch, tree, ZERO } from '../hooks/watch'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
@@ -147,5 +147,50 @@ describe('the pane', () => {
     expect(stallText(agent('a', { lastAt: NOW - 6 * MIN }), NOW, 'pt-BR')).toBe('parado há 6m 00s')
     const run = summarize([agent('a', { label: 'Mapear', tokens: t(0, 0, 300), startedAt: NOW, endedAt: NOW + MIN })], NOW)!
     expect(runText(run, 'pt-BR')).toBe('1 agente, 300 tokens em 1m 00s. Mais pesado: Mapear 300 (100%)')
+  })
+})
+
+describe('stage 2', () => {
+  test('shares add up to the width, heaviest first, the rest together', async () => {
+    const list = ['a', 'b', 'c', 'd', 'e', 'f'].map((id, i) => agent(id, { tokens: t(0, 0, [50, 20, 10, 10, 5, 5][i]) }))
+    const parts = shares(list, 20)
+    expect(parts.map(p => p.agent?.id ?? 'rest')).toEqual(['a', 'b', 'c', 'd', 'rest'])
+    expect(parts.map(p => p.cells)).toEqual([10, 4, 2, 2, 2])
+    expect(parts.reduce((n, p) => n + p.cells, 0)).toBe(20)
+    expect(shares([agent('x')], 20)).toEqual([])
+  })
+
+  test('the last five tool calls, each closed with how it went', async () => {
+    let list = [agent('a')]
+    for (let i = 0; i < 6; i++) {
+      list = toolStart(list, 'a', `call ${i}`, NOW)
+      list = toolEnd(list, 'a', i !== 3, NOW)
+    }
+    list = toolStart(list, 'a', 'call 6', NOW)
+    expect(list[0]!.recent).toEqual([
+      { doing: 'call 2', ok: true },
+      { doing: 'call 3', ok: false },
+      { doing: 'call 4', ok: true },
+      { doing: 'call 5', ok: true },
+      { doing: 'call 6', ok: null },
+    ])
+  })
+
+  test('the tree sorts siblings by tokens on request', async () => {
+    const list = [agent('a', { startedAt: 1, tokens: t(1, 0) }), agent('b', { startedAt: 2, tokens: t(9, 0) })]
+    expect(tree(list).map(r => r.agent.id)).toEqual(['a', 'b'])
+    expect(tree(list, 'tokens').map(r => r.agent.id)).toEqual(['b', 'a'])
+  })
+
+  test('the share of the 5h window a wave used', async () => {
+    expect(fiveHourOf({ rateLimits: [{ kind: 'seven_day', percentUsed: 9 }, { kind: 'five_hour', percentUsed: 40 }] })).toBe(40)
+    expect(fiveHourOf({ rateLimits: [] })).toBe(null)
+    expect(windowUsed(40, 46)).toBe(6)
+    expect(windowUsed(null, 46)).toBe(null)
+    // The window reset during the wave: no figure.
+    expect(windowUsed(90, 3)).toBe(null)
+    const run = summarize([agent('a', { tokens: t(0, 0, 300), startedAt: NOW, endedAt: NOW + MIN })], NOW)!
+    expect(runText({ ...run, windowUsed: 6 })).toContain('. Used ~6% of the 5h window')
+    expect(runText({ ...run, windowUsed: 0.4 })).not.toContain('Used')
   })
 })

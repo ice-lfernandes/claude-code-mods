@@ -37,6 +37,8 @@ export type Agent = {
   tokens: Tokens
   /** True once the stall toast fired; activity re-arms it. */
   isStalled: boolean
+  /** The last tool calls, oldest first: what each did, and whether it worked (null while it runs). */
+  recent?: { doing: string; ok: boolean | null }[]
 }
 
 /** What one wave of agents came to, from the first spawn to the last agent ending. */
@@ -47,6 +49,8 @@ export type Run = {
   total: number
   /** The agent with the most tokens, and its share of the run's tokens (0 to 1). */
   top: { label: string; total: number; share: number } | null
+  /** Points of the 5-hour plan window the wave used; null without readings. */
+  windowUsed?: number | null
 }
 
 declare module 'claude-code' {
@@ -68,6 +72,13 @@ declare module 'claude-code' {
       showDone: boolean
       /** Agents a clear removed: kept out though the listing still names them. */
       dropped: string[]
+      /** Agent rows the pane shows opened, with their recent tool calls. */
+      expanded: string[]
+      sortBy: 'start' | 'tokens'
+      /** The first agent row the pane shows. */
+      offset: number
+      /** The 5-hour window's percent when the current wave started. */
+      waveStart: number | null
     }
   }
 }

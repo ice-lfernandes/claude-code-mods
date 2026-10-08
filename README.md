@@ -66,7 +66,9 @@ The status line and the toasts show on their own while subagents run. Commands:
 /watch help         list the commands
 ```
 
-Finished agents fold into one line in the pane; press it to open them.
+Finished agents fold into one line in the pane; press it to open them. A bar shows each
+agent's share of the tokens, a name opens its last tool calls, and a stalled agent has an
+`investigate` button that asks about it in the prompt.
 
 ![agent-watch: the /watch pane, the status line and its toasts](screenshots/agent-watch.svg)
 

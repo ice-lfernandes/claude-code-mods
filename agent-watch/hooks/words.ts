@@ -38,6 +38,21 @@ type Words = {
   quietFor: (span: string) => string
   run: (count: number, tokens: string, span: string) => string
   heaviest: (label: string, tokens: string, share: number) => string
+  windowUsed: (points: number) => string
+  /** The share bar's legend: the rest of the agents together. */
+  others: string
+  shareTitle: string
+  recentTitle: string
+  noRecent: string
+  failedMark: string
+  /** The button on a stalled agent, and the request it puts in the prompt. */
+  investigate: string
+  askInvestigate: (name: string, doing: string, span: string) => string
+  sortStart: string
+  sortTokens: string
+  range: (from: number, to: number, of: number) => string
+  up: string
+  down: string
   /** A tool call in a few words. */
   doing: {
     running: (what: string) => string
@@ -95,6 +110,19 @@ export const WORDS: Record<Lang, Words> = {
     quietFor: span => `parado há ${span}`,
     run: (count, t, span) => `${plural(count, 'agente', 'agentes')}, ${t} tokens em ${span}`,
     heaviest: (label, t, share) => `. Mais pesado: ${label} ${t} (${share}%)`,
+    windowUsed: p => `. Usou ~${p}% da janela de 5h`,
+    others: 'outros',
+    shareTitle: 'Tokens por agente',
+    recentTitle: 'últimas ferramentas',
+    noRecent: 'nenhuma chamada de ferramenta ainda',
+    failedMark: 'erro',
+    investigate: 'investigar',
+    askInvestigate: (name, doing, span) => `O agente "${name}" parece travado: ${doing}, há ${span}. Verifique o que aconteceu e diga o que fazer.`,
+    sortStart: 'por início',
+    sortTokens: 'por tokens',
+    range: (from, to, of) => `${from}–${to} de ${of}`,
+    up: '▲ acima',
+    down: '▼ abaixo',
     doing: {
       running: what => `rodando ${what}`,
       reading: file => `lendo ${file}`,
@@ -153,6 +181,19 @@ export const WORDS: Record<Lang, Words> = {
     quietFor: span => `quiet for ${span}`,
     run: (count, t, span) => `${count} agent${count === 1 ? '' : 's'}, ${t} tokens in ${span}`,
     heaviest: (label, t, share) => `. Heaviest: ${label} ${t} (${share}%)`,
+    windowUsed: p => `. Used ~${p}% of the 5h window`,
+    others: 'others',
+    shareTitle: 'Tokens by agent',
+    recentTitle: 'recent tools',
+    noRecent: 'no tool calls yet',
+    failedMark: 'failed',
+    investigate: 'investigate',
+    askInvestigate: (name, doing, span) => `The agent "${name}" looks stalled: ${doing}, for ${span}. Check what happened and tell me what to do.`,
+    sortStart: 'by start',
+    sortTokens: 'by tokens',
+    range: (from, to, of) => `${from}–${to} of ${of}`,
+    up: '▲ up',
+    down: '▼ down',
     doing: {
       running: what => `running ${what}`,
       reading: file => `reading ${file}`,
