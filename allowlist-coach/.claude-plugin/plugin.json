@@ -1,8 +1,17 @@
 {
   "name": "allowlist-coach",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Counts permission dialogs per rule and, after repeated approvals, offers to add the rule to permissions.allow, asking before it writes",
   "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the pane, the line under the permission dialog, the questions and the toasts. auto follows the system's LANG: Portuguese for pt_*, English otherwise and when LANG is unset",
+      "options": ["auto", "pt-BR", "en"],
+      "default": "auto"
+    }
+  },
   "author": {
     "name": "Lucas Fernandes"
   },

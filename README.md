@@ -34,10 +34,11 @@ The band shows on its own after the first response. Commands:
 It counts on its own each time you answer a permission dialog. Commands:
 
 ```
-/allowlist                             open the pane: rules ready to allow, then every counted rule
-/allowlist allow Bash(./mvnw test:*)   add a rule to permissions.allow (asks first)
-/allowlist dismiss Bash(npm run lint)  stop offering a rule
-/allowlist reset                       clear this project's counts
+/allowlist             open the pane: rules ready to allow, then every counted rule, numbered
+/allowlist allow 1     add rule 1 to permissions.allow (asks first)
+/allowlist dismiss 2   stop offering rule 2
+/allowlist reset       clear this project's counts (asks first)
+/allowlist help        list the commands
 ```
 
 ![allowlist-coach: the line under the permission dialog, the toast and the /allowlist pane](screenshots/allowlist-coach.svg)

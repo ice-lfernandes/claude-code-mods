@@ -173,14 +173,14 @@ open(f'{out}/limits-meter.svg', 'w').write(svg([
 
 # allowlist-coach
 d = load(f'{snap}/allowlist-coach.txt')
-notice = next(n for n in d['NOTICE'] if n.startswith('allowlist-coach: approved 4 times here; 1 more'))
+notice = next(n for n in d['NOTICE'] if '4/5' in n)
 dialog = [plain('Bash command', bold=True), plain('  ./mvnw test -Dtest=OrderServiceTest'), plain('  Run the order service tests', dimColor=True), [],
           plain('Do you want to proceed?'), plain('❯ 1. Yes', color='cyan'), plain("  2. Yes, and don't ask again for ./mvnw test commands in /repo"), plain('  3. No'), [],
           plain(notice, dimColor=True)]
 open(f'{out}/allowlist-coach.svg', 'w').write(svg([
     ('under the permission dialog (last line)', 'box', dialog),
     ('toast after 5 approvals', 'toast', [plain(d['TOAST'][0])]),
-    ('/allowlist', 'pane:Allowlist coach', trim(tree(d['PANE'][0]))),
+    ('/allowlist', 'pane:Allowlist', trim(tree(d['PANE'][0]))),
 ], 60, 'allowlist-coach'))
 
 # agent-watch

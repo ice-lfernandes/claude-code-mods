@@ -126,6 +126,17 @@ em `Entry` e nunca aparecem. `reset` apaga tudo sem perguntar. A lista "Counted"
 | 2.12 | Ações por linha | `dispensar` e `zerar contagem` em toda linha, não só nas prontas |
 | 2.13 | `threshold` configurável | Opção numérica no `plugin.json`; `THRESHOLD` vira o padrão |
 
+**Status da Etapa 1 (2026-10-08, branch `feat/shared-ui`):** feita, versão `0.2.0`.
+
+- 2.1: o número segue a ordem de `sorted()`, a mesma do painel e do resumo em texto.
+  `keyAt()` em `tally.ts` traduz o número na regra; a regra escrita por extenso continua valendo.
+- 2.4: o reset pergunta com `$.ui.ask`, `Cancelar` primeiro. Numa execução `-p`, onde não há
+  quem responda, nada é apagado.
+- O registro da contagem passou a usar `$.clock.now()` no lugar de `Date.now()`, o mesmo relógio
+  do painel.
+- 2.6 sem opção `icons`: o mod não usa emoji.
+- Textos em `hooks/words.ts`.
+
 ### Testes e aceite
 
 - `tests/tally.test.ts`: parse por número, `riskOf()`, `removeAllow()`, progresso do aviso.
