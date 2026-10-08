@@ -1,6 +1,6 @@
 # launchpad
 
-A menu of one-click actions under the Claude Code header, above the prompt or in a pane of its
+A menu of one-click actions under the Claude Code header, below the prompt or in a pane of its
 own, so nobody has to know a `/command` before they can get something done. Each button runs a command, a skill or an agent
 that this session has installed.
 
@@ -30,10 +30,10 @@ that this session has installed.
   nothing.
 - **Where it shows is your choice** (`/pad place`, or the `placement` option):
   - `header`, the default: the card under the header described above.
-  - `prompt`: the buttons in one band above the prompt that stays there, beside other mods'
-    bands (limits-meter's), with `⋯ configure` to open the pane.
-  - `pane`: a pane of its own, a tab like those of `/limits` and `/watch`. It opens when a
-    session starts and after `/clear`, and on `/pad`. Claude Code opens a pane only with the
+  - `prompt`: the buttons in a row below the prompt that stays there, under Claude Code's own
+    hint line (`? for shortcuts`), with `⋯ configure` to open the pane.
+  - `pane`: a pane of its own, a tab like those of `/limits` and `/watch`, with the card's
+    bordered tiles. It opens when a session starts and after `/clear`, and on `/pad`. Claude Code opens a pane only with the
     keyboard on it: `Esc` closes it and gives the prompt back.
 - **Up to 8 buttons** that work here. The defaults: compact the chat, see context, see limits,
   resume a chat, edit memory, switch model, explore the code, help.
@@ -48,7 +48,7 @@ that this session has installed.
 /pad add Revisor | @revisor           a button that calls an agent
 /pad remove 3                         drop button 3
 /pad reset                            back to the default buttons
-/pad place header | prompt | pane     where the menu shows: under the header, above the prompt, or in a pane
+/pad place header | prompt | pane     where the menu shows: under the header, below the prompt, or in a pane
 /pad off                              turn the menu off: no card at the start, after /clear or on /pad
 /pad on                               turn it back on
 ```

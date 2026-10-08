@@ -357,7 +357,7 @@ test('an agent button with a task fills it; a project button cannot be added twi
 
 const CLEAR = { name: 'clear', description: 'Start a new conversation', source: 'builtin' }
 const band = ($: any, surface = 'terminal') =>
-  $.ui.mount({ plugin: 'launchpad', surface, component: 'AbovePrompt', props: { bodyColumns: 120, hasSurvey: false }, viewport: { columns: 122, rows: 40 } } as never)
+  $.ui.mount({ plugin: 'launchpad', surface, component: 'PromptHint', props: { isDraft: false, isWorking: false, hint: '? for shortcuts' }, viewport: { columns: 122, rows: 40 } } as never)
 const menuPane = ($: any, surface = 'terminal') =>
   $.ui.mount({ plugin: 'launchpad', surface, component: 'Pane', requestId: 'launchpad-menu', props: { title: 'Atalhos', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} }, viewport: { columns: 102, rows: 40 } } as never)
 
@@ -396,15 +396,15 @@ test('a button saved as /clear [name] is saved back bare once the hint is known'
   await card.unmount()
 })
 
-test('/pad place prompt: the menu in a band above the prompt, kept across sessions', async ($, on) => {
+test('/pad place prompt: the menu in a row under the prompt, kept across sessions', async ($, on) => {
   const w = world(on)
   await start($)
-  expect((await pad($, 'place prompt')).text).toBe('O menu agora fica numa faixa acima do prompt, sempre à mão.')
+  expect((await pad($, 'place prompt')).text).toBe('O menu agora fica numa linha abaixo do prompt, sempre à mão.')
   // The card is gone from /pad's row; /pad points at the band.
   const card = await row($)
   expect(JSON.stringify(await card.drawn())).not.toContain('pad:compact')
   await card.unmount()
-  expect((await pad($, '')).text).toBe('O menu está na faixa acima do prompt. /pad place header volta ao cartão.')
+  expect((await pad($, '')).text).toBe('O menu está na linha abaixo do prompt. /pad place header volta ao cartão.')
 
   await start($) // a new session reads the store
   const ui = await band($)
@@ -420,7 +420,7 @@ test('/pad place prompt: the menu in a band above the prompt, kept across sessio
   await ui.unmount()
 })
 
-test('no band unless the menu is placed above the prompt', async ($, on) => {
+test('no row under the prompt unless the menu is placed there', async ($, on) => {
   world(on)
   await start($)
   const ui = await band($)
@@ -438,6 +438,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('O que você quer fazer?')
     expect(drawn).toContain('"key":"cmd:place"')
+    // The header card's look: bordered tiles on the terminal, native buttons elsewhere.
+    if (surface === 'terminal') expect(drawn).toContain('"key":"tile:compact"')
+    else expect(drawn).not.toContain('tile:')
     await ui.press({ key: 'pad:compact' })
     expect(w.commands).toEqual(['compact'])
     await ui.press({ key: 'close' })

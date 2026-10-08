@@ -13,8 +13,9 @@
 //            person's list is kept across sessions in the plugin's store.
 //   /pad off | on  turns the menu off (no card at the start, after /clear or on /pad) and back
 //            on, kept across sessions.
-//   /pad place header | prompt | pane  where the menu shows: the card under the header, a band
-//            above the prompt that stays, or a pane of its own, a tab like other mods' panes.
+//   /pad place header | prompt | pane  where the menu shows: the card under the header, a row
+//            under the prompt that stays (below the engine's hint line), or a pane of its own, a
+//            tab like other mods' panes, with the card's tiles.
 //            Kept across sessions; the `placement` option is the default.
 //   project  .claude/launchpad.json adds the repository's buttons. They come from the repo, so
 //            a press only puts the text in the prompt: the person reads it before pressing Enter.
@@ -276,22 +277,14 @@ function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | '
 }
 
 /**
- * The terminal's card: a frame in the accent color, the question, and a grid of bordered tiles.
- * Each tile adds 5 cells to its label (border and padding on both sides, one cell of gap); the
- * frame takes 4 cells.
+ * The terminal's grid of bordered tiles, in columns that fit `columns` cells. Each tile adds 5
+ * cells to its label (border and padding on both sides, one cell of gap).
  */
-function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[], columns: number) {
-  const { Box, Text, Button } = ui
-  const w = WORDS[lang]
-  const visible = list.slice(0, MAX_SHOWN)
-  const more = list.length - visible.length
-  const { width, rows } = layout(visible, style, Math.max(1, columns - 4), 5)
-
+function tiles($: EngineInterface, ui: Elements['terminal'], visible: Pad[], columns: number) {
+  const { Box, Button } = ui
+  const { width, rows } = layout(visible, style, Math.max(1, columns), 5)
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-      <Text color="claude" bold>
-        ✻ {w.ask}
-      </Text>
+    <Box flexDirection="column">
       {rows.map((row, r) => (
         <Box key={`row:${r}`} flexDirection="row">
           {row.map(p => (
@@ -318,6 +311,22 @@ function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[],
           ))}
         </Box>
       ))}
+    </Box>
+  )
+}
+
+/** The terminal's card: a frame in the accent color (4 cells), the question, the tiles and /pad's row. */
+function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[], columns: number) {
+  const { Box, Text } = ui
+  const w = WORDS[lang]
+  const visible = list.slice(0, MAX_SHOWN)
+  const more = list.length - visible.length
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+      <Text color="claude" bold>
+        ✻ {w.ask}
+      </Text>
+      {tiles($, ui, visible, columns - 4)}
       {padRow($, ui, more)}
     </Box>
   )
@@ -489,54 +498,52 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // `/pad place prompt`: the buttons in one band above the prompt, with whatever else draws there.
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || (await read($, placement)) !== 'prompt' || (await read($, isOff))) return next(e)
+  // `/pad place prompt`: the buttons in a row under the prompt, below the engine's hint line,
+  // which stays as the engine draws it.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const theirs = await next(e)
+    if ((await read($, placement)) !== 'prompt' || (await read($, isOff))) return theirs
     const list = await shown($)
-    if (list.length === 0) return next(e)
+    if (list.length === 0) return theirs
     const { Box, Text, Button } = $.ui.resolve(e)
     const icons = e.surface === 'terminal' ? style : 'emoji'
-    const mine = (
-      <Box key="launchpad" flexDirection="row" flexWrap="wrap" gap={2} paddingX={1}>
-        <Text color="claude">✻</Text>
-        {list.slice(0, MAX_SHOWN).map(p => (
-          <Button key={`pad:${p.id}`} plain label={buttonLabel(p, icons)} hover={{ color: 'claude', bold: true }} onPress={() => press($, p)} />
-        ))}
-        <Button key="band:settings" plain dimColor label={w.settings} onPress={() => pressVerb($, PAD_ACTIONS[0]!)} />
-      </Box>
-    )
-    const theirs = await next(e)
-    return theirs ? (
+    return (
       <Box flexDirection="column">
-        {mine}
         {theirs}
+        <Box key="launchpad" flexDirection="row" flexWrap="wrap" gap={2} paddingX={2}>
+          <Text color="claude">✻</Text>
+          {list.slice(0, MAX_SHOWN).map(p => (
+            <Button key={`pad:${p.id}`} plain label={buttonLabel(p, icons)} hover={{ color: 'claude', bold: true }} onPress={() => press($, p)} />
+          ))}
+          <Button key="band:settings" plain dimColor label={w.settings} onPress={() => pressVerb($, PAD_ACTIONS[0]!)} />
+        </Box>
       </Box>
-    ) : (
-      mine
     )
   })
 
-  // `/pad place pane`: the menu in a pane of its own, a tab beside the other mods' panes.
+  // `/pad place pane`: the menu in a pane of its own, a tab beside the other mods' panes, with
+  // the card's bordered tiles on the terminal and its native buttons elsewhere.
   on('ui.render', { component: 'Pane', requestId: MENU_PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const ui = $.ui.resolve(e)
+    const { Box, Text, Button } = ui
     const list = await shown($)
     const visible = list.slice(0, MAX_SHOWN)
     const more = list.length - visible.length
-    const icons = e.surface === 'terminal' ? style : 'emoji'
+    const columns = Math.max(20, (e.props.bodyColumns || e.viewport?.columns || 80) - 2)
+    const body =
+      e.surface === 'terminal' ? (
+        tiles($, $.ui.resolve({ ...e, surface: 'terminal' }), visible, columns)
+      ) : (
+        <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={1}>
+          {visible.map(p => (
+            <Button key={`pad:${p.id}`} label={buttonLabel(p, 'emoji')} onPress={() => press($, p)} />
+          ))}
+        </Box>
+      )
     return (
       <Box flexDirection="column" paddingX={1} gap={1}>
         <Text color="claude" bold>{`✻ ${w.ask}`}</Text>
-        {(await read($, isOff)) ? (
-          <Text dimColor>{w.isOff}</Text>
-        ) : visible.length === 0 ? (
-          <Text dimColor>{w.empty}</Text>
-        ) : (
-          <Box flexDirection="row" flexWrap="wrap" gap={1}>
-            {visible.map(p => (
-              <Button key={`pad:${p.id}`} label={buttonLabel(p, icons)} onPress={() => press($, p)} />
-            ))}
-          </Box>
-        )}
+        {(await read($, isOff)) ? <Text dimColor>{w.isOff}</Text> : visible.length === 0 ? <Text dimColor>{w.empty}</Text> : body}
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {padRow($, { Box, Text, Button }, more)}
           <Button key="close" role="dismiss" label={w.pane.close} onPress={() => $.ui.close({ id: MENU_PANE })} />

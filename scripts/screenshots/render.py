@@ -238,5 +238,6 @@ for i, chunk in enumerate(textwrap.wrap(fill, cw - 6)):
 open(f'{out}/launchpad.svg', 'w').write(svg([
     ('welcome menu under the header, before the first request', 'raw', menu),
     ('after 🔍 Explorar código: the request waits, blank marked', 'raw', box(rows)),
-    ('/pad place prompt: the menu in a band above the prompt', 'raw', wrapped(d['BAND'][0], cw) + box([plain('> ')])),
+    ('/pad place prompt: the menu in a row under the prompt', 'raw', box([plain('> ')]) + [plain('  ? for shortcuts', dimColor=True)] + wrapped(d['BAND'][0], cw)),
+    ('/pad place pane', 'pane:Atalhos', wrapped(d['PANE'][0], cw - 4)),
 ], 60, 'launchpad'))
