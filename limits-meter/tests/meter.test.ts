@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { alerts, bar, pct, resetIn, summary, toSnapshot, toTurn, tokens } from '../hooks/meter'
+import { alerts, bar, pct, resetIn, summary, toSnapshot, toTurn } from '../hooks/meter'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 
@@ -11,13 +11,6 @@ describe('meter math', () => {
     expect(resetIn(NOW + 7 * 60_000, NOW)).toBe('7m')
     expect(resetIn(NOW + 72 * 60_000, NOW)).toBe('1h12')
     expect(resetIn(NOW + (3 * 24 + 4) * 3_600_000, NOW)).toBe('3d4h')
-  })
-
-  test('token counts read short', async () => {
-    expect(tokens(950)).toBe('950')
-    expect(tokens(1234)).toBe('1.2k')
-    expect(tokens(45_600)).toBe('46k')
-    expect(tokens(1_234_567)).toBe('1.2M')
   })
 
   test('bars clamp to their width', async () => {

@@ -34,13 +34,6 @@ export const resetIn = (at: number | null, now: number) => {
   return `${Math.floor(hours / 24)}d${hours % 24}h`
 }
 
-/** 1234 -> "1.2k", 1234567 -> "1.2M". */
-export const tokens = (n: number) => {
-  if (n < 1000) return String(n)
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`
-  return `${(n / 1_000_000).toFixed(1)}M`
-}
-
 export const pct = (n: number | null) => (n === null ? '–' : `${Math.round(n)}%`)
 
 export const bar = (width: number, percent: number) => {
@@ -64,8 +57,6 @@ export const toTurn = (
     durationMs,
   }
 }
-
-export const shortModel = (model: string) => model.replace(/^claude-/, '').replace(/-\d{8}$/, '')
 
 export type Alert = { key: string; text: string }
 

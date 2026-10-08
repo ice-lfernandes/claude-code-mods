@@ -21,7 +21,6 @@ import {
   add,
   addStep,
   adopt,
-  elapsed,
   finish,
   fromUsage,
   isActive,
@@ -30,11 +29,9 @@ import {
   nameOf,
   reconcile,
   runText,
-  shortModel,
   stalls,
   stallText,
   summarize,
-  tokens,
   toolEnd,
   toolStart,
   total,
@@ -42,6 +39,7 @@ import {
   tree,
   ZERO,
 } from './watch'
+import { elapsed, shortModel, tokens } from './ui'
 
 const PANE = 'agent-watch'
 const POLL_MS = 5000

@@ -1,6 +1,7 @@
 // Pure agent bookkeeping: no engine, so the tests drive it directly.
 
 import type { Activity, Agent, Run, Tokens } from '../types'
+import { clip, elapsed, tokens } from './ui'
 
 const MAX_AGENTS = 60
 
@@ -220,31 +221,6 @@ export const tree = (list: readonly Agent[]): Row[] => {
   return rows
 }
 
-/** 950, 1.2k, 46k, 1.2M. */
-export const tokens = (n: number) => {
-  if (n < 1000) return String(n)
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`
-  return `${(n / 1_000_000).toFixed(1)}M`
-}
-
-/** 42s, 6m 05s, 1h 02m. */
-export const elapsed = (ms: number) => {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`
-  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
-}
-
-/** claude-haiku-4-5-20251001 -> haiku 4.5 */
-export const shortModel = (m?: string) => {
-  if (!m) return ''
-  const hit = /(opus|sonnet|haiku|fable)[-\s]?(\d+(?:[-.]\d+)?)?/i.exec(m)
-  if (!hit) return m.length > 14 ? `${m.slice(0, 13)}…` : m
-  return `${hit[1]!.toLowerCase()}${hit[2] ? ` ${hit[2].replace('-', '.')}` : ''}`
-}
-
-const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 const base = (p: unknown) => (typeof p === 'string' ? (p.split('/').filter(Boolean).pop() ?? p) : '')
 
 /** A tool call in a few words. */

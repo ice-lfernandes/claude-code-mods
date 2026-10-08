@@ -13,7 +13,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Snapshot, Turn } from '../types'
-import { alerts, bar, label, pct, resetIn, shortModel, summary, toSnapshot, toTurn, tokens, tone, TURNS_KEPT } from './meter'
+import { alerts, bar, label, pct, resetIn, summary, toSnapshot, toTurn, tone, TURNS_KEPT } from './meter'
+import { shortModel, tokens } from './ui'
 
 const PANE = 'limits'
 

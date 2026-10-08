@@ -127,6 +127,32 @@ claude plugin test ./test-hud
 
 Every mod ships tests, including a render test on the `terminal` and `desktop` surfaces.
 
+### Shared helpers
+
+A mod installs alone and cannot import another mod's code. The helpers every mod needs live in
+`hooks/ui.tsx`, tested by `tests/ui.test.ts`, and both files are copies, the same in each mod:
+language and icon style from the options, a prompt fill with its `[blank]` marked, the window of
+a long list, a row of clickable verbs, and the number formats. Nothing in it takes `$`: the
+engine follows `$` only into functions of the file that uses it, so the calls on `$` stay in
+each mod's `register.tsx`. Change one copy, copy it to the other mods, then check them:
+
+```bash
+./scripts/check-shared.sh
+```
+
+### Pane layout
+
+Every pane follows the same outline, after launchpad's `/pad configuration`:
+
+1. A dim hint on top: what the pane shows and where the figures come from.
+2. Sections, each under a bold heading.
+3. An empty state that names the next step (`/tests demo shows what this looks like`).
+4. A footer: the command's verbs as clickable buttons (`/tests clear · demo · help`), then a
+   close button.
+
+A button that runs something from outside the mod, or undoes the person's data, puts the text in
+the prompt instead of running it.
+
 After a change to what a mod draws, regenerate the images:
 
 ```bash

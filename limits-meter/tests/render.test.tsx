@@ -47,7 +47,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(shown).toContain('resets in 1h12')
     expect(shown).toContain('116k of 200k')
     expect(shown).toContain('out  1.3k')
-    expect(shown).toContain('opus-5-5')
+    expect(shown).toContain('opus 5.5')
     await pane.unmount()
   })
 }

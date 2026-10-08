@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Agent } from '../types'
-import { addStep, adopt, elapsed, finish, reconcile, runText, shortModel, stalls, stallText, summarize, toolEnd, toolStart, total, touch, tree, ZERO } from '../hooks/watch'
+import { addStep, adopt, finish, reconcile, runText, stalls, stallText, summarize, toolEnd, toolStart, total, touch, tree, ZERO } from '../hooks/watch'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
@@ -124,12 +124,5 @@ describe('summary', () => {
     const rows = tree([agent('a', { startedAt: 1 }), agent('c', { parentId: 'a', startedAt: 3 }), agent('b', { startedAt: 2 })])
     expect(rows.map(r => `${r.prefix}${r.agent.id}`)).toEqual(['├─a', '│ └─c', '└─b'])
     expect(rows[1]!.rail).toBe('│   ')
-  })
-
-  test('formats read short', async () => {
-    expect(shortModel('claude-haiku-4-5-20251001')).toBe('haiku 4.5')
-    expect(shortModel('claude-opus-5-5')).toBe('opus 5.5')
-    expect(elapsed(42_000)).toBe('42s')
-    expect(elapsed(3_720_000)).toBe('1h 02m')
   })
 })
