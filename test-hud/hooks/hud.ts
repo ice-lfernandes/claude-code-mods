@@ -3,9 +3,14 @@
 // (surefire and failsafe), Gradle, skipped counts and failing test names added.
 
 import type { Parsed, Run } from '../types'
+import type { Lang } from './ui'
+import { clip, elapsed } from './ui'
+import { WORDS } from './words'
 
 const MAX_RUNS = 30
 const MAX_NAMES = 20
+/** The most of a command kept whole, for the prompt to run it again. */
+const MAX_COMMAND = 2000
 export const SPARK_RUNS = 8
 
 // Where a command starts: line start or after ; & | ( , past env assignments, wrappers and a path.
@@ -160,6 +165,17 @@ export const record = (list: readonly Run[], run: Run): Run[] => {
 export const previous = (list: readonly Run[], run: Run): Run | undefined =>
   list.filter(r => r.runner === run.runner && r.n < run.n).at(-1)
 
+/**
+ * Tests the runner's run before `run` failed and `run` does not: all of them when `run` is green.
+ * None when either run failed without names this mod could read.
+ */
+export const fixed = (list: readonly Run[], run: Run): string[] => {
+  const prev = previous(list, run)
+  if (!prev || prev.failures.length === 0) return []
+  if (run.failed > 0 && run.failures.length === 0) return []
+  return prev.failures.filter(f => !run.failures.includes(f))
+}
+
 /** Failing tests of `run` that were not failing in the runner's run before it. */
 export const fresh = (list: readonly Run[], run: Run): Set<string> => {
   const prev = previous(list, run)
@@ -183,18 +199,19 @@ export const trail = (list: readonly Run[], size = SPARK_RUNS) => {
 }
 
 /** "41/43", "2 failed", "pass". */
-export const score = (r: Run) => (r.passed === null ? (r.failed ? `${r.failed} failed` : 'pass') : `${r.passed}/${r.passed + r.failed}`)
+export const score = (r: Run, lang: Lang = 'en') =>
+  r.passed === null ? (r.failed ? WORDS[lang].failedScore(r.failed) : WORDS[lang].pass) : `${r.passed}/${r.passed + r.failed}`
 
 /** "✗ tests 41/43 ▃▅█▅▂", or undefined before any run. */
-export const statusText = (list: readonly Run[]) => {
+export const statusText = (list: readonly Run[], lang: Lang = 'en') => {
   const r = list.at(-1)
   if (!r) return undefined
   const line = spark(trail(list))
-  return `${r.failed ? '✗' : '✓'} tests ${score(r)}${line.length > 1 ? ` ${line}` : ''}`
+  return `${r.failed ? '✗' : '✓'} ${WORDS[lang].tests} ${score(r, lang)}${line.length > 1 ? ` ${line}` : ''}`
 }
 
 /** The toast for a run that turned its runner green after red runs, else null. */
-export const greenText = (list: readonly Run[], run: Run): string | null => {
+export const greenText = (list: readonly Run[], run: Run, lang: Lang = 'en'): string | null => {
   if (run.failed > 0) return null
   const same = list.filter(r => r.runner === run.runner && r.n < run.n)
   let reds = 0
@@ -202,19 +219,19 @@ export const greenText = (list: readonly Run[], run: Run): string | null => {
   if (reds === 0) return null
   const first = same[same.length - reds]!
   const span = elapsed(run.endedAt - (first.endedAt - first.durationMs))
-  return `Tests green: ${score(run)} (${run.runner}) after ${reds} red run${reds === 1 ? '' : 's'} in ${span}.`
+  return WORDS[lang].green(score(run, lang), run.runner, reds, span)
 }
 
-/** The command's first line, clipped. */
+/** The toast for a run that turned its runner red right after a green run, else null. */
+export const redText = (list: readonly Run[], run: Run, lang: Lang = 'en'): string | null => {
+  if (run.failed === 0) return null
+  const prev = previous(list, run)
+  if (!prev || prev.failed > 0) return null
+  return WORDS[lang].red(score(run, lang), run.runner, run.failed)
+}
+
+/** The command's first line, clipped, for the pane. */
 export const commandLine = (command: string) => clip(command.split('\n')[0]!.trim(), 60)
 
-export const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
-
-/** 42s, 6m 05s, 1h 02m. */
-export const elapsed = (ms: number) => {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`
-  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
-}
+/** The whole command, for the prompt to run it again; cut only when it is very long. */
+export const wholeCommand = (command: string) => clip(command.trim(), MAX_COMMAND)

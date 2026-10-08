@@ -9,7 +9,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 | [limits-meter](limits-meter/) | `/limits` | Plan limits and context above the prompt: 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn |
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
 | [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish |
-| [test-hud](test-hud/) | `/tests` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
+| [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
 | [launchpad](launchpad/) | `/pad` | A welcome menu of one-click actions under the header: each button runs an installed command, skill or agent. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
 
 ## Using the mods
@@ -59,12 +59,17 @@ The status line and the toasts show on their own while subagents run. Commands:
 The status line and the toast show on their own each time a test runner runs in Bash. Commands:
 
 ```
-/tests           open the pane: last run, failing tests (new ones marked), sparkline, last 10 runs
-/tests demo      add six fake runs that go from red to green
-/tests clear     drop the runs
+/test-hud           open the pane: last run, failing tests (new ones marked), fixed tests,
+                    sparkline, last 10 runs
+/test-hud demo      add six fake runs that go from red to green
+/test-hud clear     drop the runs
+/test-hud help      list the commands
 ```
 
-![test-hud: the /tests pane, the status line and the green toast](screenshots/test-hud.svg)
+In the pane, press a failing test to ask Claude for a fix, or `run again` to ask for the same
+command: both put the request in the prompt and run nothing.
+
+![test-hud: the /test-hud pane, the status line and the green toast](screenshots/test-hud.svg)
 
 ### launchpad
 
@@ -146,8 +151,8 @@ Every pane follows the same outline, after launchpad's `/pad configuration`:
 
 1. A dim hint on top: what the pane shows and where the figures come from.
 2. Sections, each under a bold heading.
-3. An empty state that names the next step (`/tests demo shows what this looks like`).
-4. A footer: the command's verbs as clickable buttons (`/tests clear · demo · help`), then a
+3. An empty state that names the next step (`/test-hud demo shows what this looks like`).
+4. A footer: the command's verbs as clickable buttons (`/test-hud clear · demo · help`), then a
    close button.
 
 A button that runs something from outside the mod, or undoes the person's data, puts the text in

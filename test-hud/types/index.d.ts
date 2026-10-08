@@ -16,6 +16,8 @@ export type Run = Parsed & {
   runner: string
   /** The command's first line, clipped. */
   command: string
+  /** The whole command, as it ran, for the prompt to run it again. */
+  fullCommand: string
   endedAt: number
   durationMs: number
   /** Set when a subagent ran it. */
