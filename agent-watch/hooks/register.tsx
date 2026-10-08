@@ -9,7 +9,9 @@
 //   summary  when the last active agent ends, a toast with the wave's agents, tokens, wall time
 //            and the heaviest agent; the pane keeps it as "last run".
 //   /watch   opens the pane: the agent tree with type, model, tokens, tool calls and what each
-//            is doing. /watch clear drops finished agents; /watch demo seeds three fake ones.
+//            is doing. Finished agents fold into one line that opens them. /watch clear drops
+//            finished and demo agents (clear done, clear demo: one kind); /watch demo seeds
+//            three fake ones.
 //
 // Reads nothing from disk, runs no process, calls no model.
 
@@ -21,8 +23,10 @@ import {
   add,
   addStep,
   adopt,
+  clearOut,
   finish,
   fromUsage,
+  glyphOf,
   isActive,
   isFailed,
   labelOf,
@@ -39,7 +43,9 @@ import {
   tree,
   ZERO,
 } from './watch'
-import { elapsed, shortModel, tokens } from './ui'
+import type { IconStyle, Lang, Verb } from './ui'
+import { elapsed, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow } from './ui'
+import { COMMAND, WORDS } from './words'
 
 const PANE = 'agent-watch'
 const POLL_MS = 5000
@@ -52,9 +58,17 @@ const live = atom({ plugin: 'agent-watch', key: 'live' } as const, 0)
 const standDownAt = atom({ plugin: 'agent-watch', key: 'standDownAt' } as const, 0)
 const lastRun = atom({ plugin: 'agent-watch', key: 'lastRun' } as const, null as Run | null)
 const tick = atom({ plugin: 'agent-watch', key: 'tick' } as const, 0)
+const showDone = atom({ plugin: 'agent-watch', key: 'showDone' } as const, false)
+const dropped = atom({ plugin: 'agent-watch', key: 'dropped' } as const, [] as string[])
+
 
 let shownStatus: string | undefined
 let stallMs = 5 * 60_000
+// Set by register from the options, and by session.start from the system's LANG and terminal.
+let lang: Lang = 'en'
+let style: IconStyle = 'emoji'
+
+const warn = () => glyph(style, { emoji: '⚠', symbol: '!' })
 
 /** Edits the agents and the orphans together. */
 const edit = async ($: EngineInterface, fn: (list: Agent[], early: Record<string, Tokens>) => { agents: Agent[]; orphans: Record<string, Tokens> }) => {
@@ -70,8 +84,11 @@ const edit = async ($: EngineInterface, fn: (list: Agent[], early: Record<string
 
 /** Folds the agent listing in, raises stall toasts, ends a wave, and sets the status line. */
 const refresh = async ($: EngineInterface) => {
+  const w = WORDS[lang]
   const now = await $.clock.now()
-  const listed = await $.agent.list().catch(() => [])
+  // A finished agent the person cleared stays out, though the listing still names it.
+  const gone = await read($, dropped)
+  const listed = (await $.agent.list().catch(() => [])).filter(l => isActive(l.status) || !gone.includes(l.id))
   const known = await read($, orphans)
   let left = known
   let raised: Agent[] = []
@@ -83,7 +100,7 @@ const refresh = async ($: EngineInterface) => {
     return checked.agents
   })
   if (left !== known) await update($, orphans, () => left)
-  for (const a of raised) $.ui.toast(`${nameOf(a)} looks stalled: ${stallText(a, now)}. /watch`, { timeoutMs: 10_000 })
+  for (const a of raised) $.ui.toast(w.stalledToast(nameOf(a), stallText(a, now, lang)), { timeoutMs: 10_000 })
 
   const list = await read($, agents)
   const active = list.filter(a => isActive(a.status) && !a.id.startsWith(DEMO)).length
@@ -92,22 +109,20 @@ const refresh = async ($: EngineInterface) => {
     before = n
     return active
   })
-  if (active > 0) await update($, tick, n => n + 1)
+  if (list.some(a => isActive(a.status))) await update($, tick, n => n + 1)
   if (before > 0 && active === 0) {
     const since = await read($, standDownAt)
     const run = summarize(list.filter(a => a.startedAt > since && !a.id.startsWith(DEMO)), now)
     await update($, standDownAt, () => now)
     if (run) {
       await update($, lastRun, () => run)
-      $.ui.toast(`Agents done: ${runText(run)}. /watch`, { timeoutMs: 10_000 })
+      $.ui.toast(w.doneToast(runText(run, lang)), { timeoutMs: 10_000 })
     }
   }
 
   const running = list.filter(a => isActive(a.status))
   const stalled = running.filter(a => a.isStalled).length
-  const text = running.length
-    ? `◇ ${running.length} agent${running.length === 1 ? '' : 's'} · ${tokens(running.reduce((n, a) => n + total(a.tokens), 0))}${stalled ? ` · ⚠ ${stalled} stalled` : ''}`
-    : undefined
+  const text = running.length ? w.statusLine(running.length, tokens(running.reduce((n, a) => n + total(a.tokens), 0)), stalled, warn()) : undefined
   if (text !== shownStatus) {
     shownStatus = text
     $.ui.status(text)
@@ -116,14 +131,99 @@ const refresh = async ($: EngineInterface) => {
 
 const quietly = ($: EngineInterface) => void refresh($).catch(() => undefined)
 
+const open = ($: EngineInterface) => $.ui.open({ id: PANE, title: WORDS[lang].pane }).catch(() => null)
+
+const clear = async ($: EngineInterface, kind: 'done' | 'demo' | 'both') => {
+  let removed: string[] = []
+  await update($, agents, list => {
+    const kept = clearOut(list, kind, DEMO)
+    removed = list.filter(a => !kept.includes(a)).map(a => a.id)
+    return kept
+  })
+  await update($, dropped, ids => [...ids, ...removed].slice(-200))
+  quietly($)
+}
+
+const runDemo = async ($: EngineInterface) => {
+  const now = await $.clock.now()
+  const [first, second, third] = WORDS[lang].demoLabels
+  const t = (input: number, output: number, cacheRead: number) => ({ input, output, cacheRead, cacheWrite: 0 })
+  const demo: Agent[] = [
+    { id: `${DEMO}1`, label: first, type: 'Explore', model: 'claude-haiku-4-5', status: 'running', startedAt: now - 140_000, lastAt: now - 4000, activity: 'tool', doing: WORDS[lang].doing.reading('routes.ts'), tools: 14, errors: 0, steps: 15, tokens: t(9_000, 6_200, 118_000), isStalled: false },
+    { id: `${DEMO}2`, label: second, type: 'general-purpose', model: 'claude-opus-5-5', status: 'running', startedAt: now - 600_000, lastAt: now - stallMs - 60_000, activity: 'tool', doing: WORDS[lang].doing.running('npm test'), tools: 9, errors: 2, steps: 10, tokens: t(14_000, 8_100, 210_000), isStalled: false },
+    { id: `${DEMO}3`, label: third, type: 'Explore', parentId: `${DEMO}1`, model: 'claude-haiku-4-5', status: 'completed', startedAt: now - 90_000, endedAt: now - 30_000, lastAt: now - 30_000, activity: 'idle', tools: 6, errors: 0, steps: 7, tokens: t(3_000, 1_900, 41_000), isStalled: false },
+  ]
+  await update($, agents, list => [...list.filter(a => !a.id.startsWith(DEMO)), ...demo])
+  await open($)
+  await refresh($)
+}
+
+/** /watch and its arguments: what the command answers, and what the pane's verbs run. */
+const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
+  const w = WORDS[lang]
+  switch (args.trim().toLowerCase().replace(/\s+/g, ' ')) {
+    case 'clear':
+      await clear($, 'both')
+      return { text: w.clearedBoth }
+    case 'clear done':
+      await clear($, 'done')
+      return { text: w.clearedDone }
+    case 'clear demo':
+      await clear($, 'demo')
+      return { text: w.clearedDemo }
+    case 'demo':
+      await runDemo($)
+      return { text: w.demoAdded }
+    case 'help':
+      return { text: w.help }
+    case '': {
+      const opened = await open($)
+      await refresh($).catch(() => undefined)
+      if (opened?.isPlaced) return {}
+      const list = await read($, agents)
+      const run = await read($, lastRun)
+      const running = list.filter(a => isActive(a.status))
+      return {
+        text: `${w.answer(running.length, list.length - running.length)}${running.map(a => ` ${nameOf(a)} ${tokens(total(a.tokens))}.`).join('')}${run ? ` ${w.lastRunAnswer(runText(run, lang))}` : ''}`,
+      }
+    }
+    default:
+      return { text: w.help }
+  }
+}
+
+/** Puts a text in the prompt for the person to send; runs nothing. */
+const fill = async ($: EngineInterface, text: string) => {
+  await $.prompt.fill(fillArgs(text))
+}
+
+/** The pane's verbs: clear drops agents, so it waits in the prompt. */
+const VERBS: readonly Verb[] = [{ verb: 'clear', fill: `/${COMMAND} clear` }, { verb: 'demo' }, { verb: 'help' }]
+
+/** A verb pressed in the pane: fills the prompt, or runs and writes its answer to the transcript. */
+const pressVerb = async ($: EngineInterface, v: Verb) => {
+  try {
+    if (v.fill) return await fill($, v.fill)
+    const { text } = await runCommand($, v.verb)
+    for (const line of linesOf(text)) $.ui.log(line)
+  } catch {
+    $.ui.toast(WORDS[lang].failedToRun(`/${COMMAND} ${v.verb}`))
+  }
+}
+
 export const register: Register = (on, options) => {
   stallMs = Math.max(1, Number(options.stallMinutes) || 5) * 60_000
+  lang = langOf(options.language)
+  style = styleOf(options.icons)
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+    lang = langOf(options.language, await $.env.get('LANG').catch(() => undefined))
+    style = styleOf(options.icons, await $.env.get('TERMINAL_EMULATOR').catch(() => undefined))
     await $.command.register({
-      name: 'watch',
-      description: 'Subagents: /watch opens the pane; /watch clear drops finished agents; /watch demo shows fake ones',
+      name: COMMAND,
+      description: WORDS[lang].description,
+      argumentHint: '[clear [done|demo]|demo|help]',
       immediate: true,
     })
     $.clock.every(POLL_MS, () => quietly($))
@@ -175,7 +275,7 @@ export const register: Register = (on, options) => {
     const id = e.agentId
     if (!id) return next(e)
     const now = await $.clock.now()
-    await update($, agents, list => toolStart(list, id, labelOf(e.tool, e as unknown as Record<string, unknown>), now))
+    await update($, agents, list => toolStart(list, id, labelOf(e.tool, e as unknown as Record<string, unknown>, lang), now))
     let ok = false
     try {
       const ran = await next(e)
@@ -199,40 +299,13 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  on('command.run', { command: 'watch' }, async ($, e) => {
-    const arg = e.args.trim().toLowerCase()
-    if (arg === 'clear') {
-      await update($, agents, list => list.filter(a => isActive(a.status) && !a.id.startsWith(DEMO)))
-      quietly($)
-      return { text: 'Finished and demo agents cleared.' }
-    }
-    if (arg === 'demo') {
-      const now = await $.clock.now()
-      const t = (input: number, output: number, cacheRead: number) => ({ input, output, cacheRead, cacheWrite: 0 })
-      const demo: Agent[] = [
-        { id: `${DEMO}1`, label: 'Map the API routes', type: 'Explore', model: 'claude-haiku-4-5', status: 'running', startedAt: now - 140_000, lastAt: now - 4000, activity: 'tool', doing: 'reading routes.ts', tools: 14, errors: 0, steps: 15, tokens: t(9_000, 6_200, 118_000), isStalled: false },
-        { id: `${DEMO}2`, label: 'Fix the flaky test', type: 'general-purpose', model: 'claude-opus-5-5', status: 'running', startedAt: now - 600_000, lastAt: now - stallMs - 60_000, activity: 'tool', doing: 'running npm test', tools: 9, errors: 2, steps: 10, tokens: t(14_000, 8_100, 210_000), isStalled: false },
-        { id: `${DEMO}3`, label: 'Check sources', type: 'Explore', parentId: `${DEMO}1`, model: 'claude-haiku-4-5', status: 'completed', startedAt: now - 90_000, endedAt: now - 30_000, lastAt: now - 30_000, activity: 'idle', tools: 6, errors: 0, steps: 7, tokens: t(3_000, 1_900, 41_000), isStalled: false },
-      ]
-      await update($, agents, list => [...list.filter(a => !a.id.startsWith(DEMO)), ...demo])
-      await $.ui.open({ id: PANE, title: 'Agents' }).catch(() => null)
-      await refresh($)
-      return { text: 'Three demo agents added; one is stalled. /watch clear removes them.' }
-    }
-    const opened = await $.ui.open({ id: PANE, title: 'Agents' }).catch(() => null)
-    await refresh($).catch(() => undefined)
-    if (opened?.isPlaced) return {}
-    const list = await read($, agents)
-    const run = await read($, lastRun)
-    const running = list.filter(a => isActive(a.status))
-    return {
-      text: `${running.length} running, ${list.length - running.length} finished.${running.map(a => ` ${nameOf(a)} ${tokens(total(a.tokens))}.`).join('')}${run ? ` Last run: ${runText(run)}.` : ''}`,
-    }
-  })
+  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    await read($, tick)
+    const w = WORDS[lang]
+    const n = await read($, tick)
+    const isOpen = await read($, showDone)
     const now = await $.clock.now()
     const list = await read($, agents)
     const spentLead = await read($, lead)
@@ -242,60 +315,76 @@ export const register: Register = (on, options) => {
     const isWide = width >= 90
 
     const running = list.filter(a => isActive(a.status))
+    const done = list.length - running.length
     const stalled = running.filter(a => a.isStalled).length
-    const sum = list.reduce((n, a) => n + total(a.tokens), 0)
-    const glyph = (a: Agent) => (isActive(a.status) ? (a.isStalled ? '!' : '●') : isFailed(a.status) ? '×' : '✓')
-    const tone = (a: Agent) => (a.isStalled ? 'yellow' : isActive(a.status) ? 'cyan' : isFailed(a.status) ? 'red' : 'green')
+    const hasDemo = list.some(a => a.id.startsWith(DEMO))
+    const sum = list.reduce((s, a) => s + total(a.tokens), 0)
+    const tone = (a: Agent) => (a.isStalled && isActive(a.status) ? 'warning' : isActive(a.status) ? 'claude' : isFailed(a.status) ? 'error' : 'success')
+    const shown = isOpen ? list : running
 
     return (
       <Box flexDirection="column" paddingX={1} gap={1}>
-        <Text>
-          <Text dimColor>{`${running.length} running · ${list.length - running.length} finished · ${tokens(sum)} tokens`}</Text>
-          {stalled > 0 && <Text color="yellow" bold>{`  ⚠ ${stalled} stalled`}</Text>}
-        </Text>
+        <Box flexDirection="column">
+          <Text dimColor>{w.hint}</Text>
+          <Text>
+            <Text dimColor>{w.counts(running.length, done, tokens(sum))}</Text>
+            {stalled > 0 && <Text color="warning" bold>{`  ${warn()} ${w.stalled(stalled)}`}</Text>}
+          </Text>
+        </Box>
 
         <Box flexDirection="column">
           <Text>
-            <Text bold>◆ lead</Text>
-            <Text dimColor>{`  ${tokens(total(spentLead))} tokens · out ${tokens(spentLead.output)}`}</Text>
+            <Text bold>{`◆ ${w.lead}`}</Text>
+            <Text dimColor>{`  ${w.leadLine(tokens(total(spentLead)), tokens(spentLead.output))}`}</Text>
           </Text>
-          {list.length === 0 && <Text dimColor>  No subagents yet this session. /watch demo shows what this looks like.</Text>}
-          {tree(list).map(({ agent: a, prefix, rail }) => {
-            const state = a.isStalled && isActive(a.status) ? stallText(a, now) : isActive(a.status) ? (a.activity === 'thinking' ? 'thinking' : (a.doing ?? 'starting')) : a.status === 'completed' ? 'done' : a.status
+          {list.length === 0 && <Text dimColor>{`  ${w.empty} ${w.emptyNext}`}</Text>}
+          {tree(shown).map(({ agent: a, prefix, rail }) => {
+            const isStuck = a.isStalled && isActive(a.status)
+            const state = isStuck ? stallText(a, now, lang) : isActive(a.status) ? (a.activity === 'thinking' ? w.thinking : (a.doing ?? w.starting)) : (w.statuses[a.status] ?? a.status)
             const clock = isActive(a.status) ? elapsed(now - a.startedAt) : elapsed((a.endedAt ?? now) - a.startedAt)
             const meta = `${a.type === 'general-purpose' ? 'general' : a.type}${a.model ? ` · ${shortModel(a.model)}` : ''}`
             return (
               <Box key={a.id} flexDirection="column">
                 <Text>
                   <Text dimColor>{prefix}</Text>
-                  <Text color={tone(a)} bold>{` ${glyph(a)} `}</Text>
+                  <Text color={tone(a)} bold>{` ${glyphOf(a, n)} `}</Text>
                   <Text bold>{nameOf(a).slice(0, 28)}</Text>
                   <Text dimColor>{`  ${meta}`}</Text>
+                  {a.id.startsWith(DEMO) && <Text color="warning">{`  ${w.demoBadge}`}</Text>}
                 </Text>
                 <Text>
                   <Text dimColor>{`${rail}   `}</Text>
                   <Text bold>{tokens(total(a.tokens)).padStart(5)}</Text>
                   <Text dimColor>{isWide ? `  in ${tokens(a.tokens.input + a.tokens.cacheRead + a.tokens.cacheWrite)} out ${tokens(a.tokens.output)}` : ''}</Text>
-                  <Text dimColor>{`  ${a.tools} tool${a.tools === 1 ? '' : 's'}${a.errors ? ` (${a.errors} failed)` : ''}  ${clock}  `}</Text>
-                  <Text color={a.isStalled && isActive(a.status) ? 'yellow' : undefined} dimColor={!(a.isStalled && isActive(a.status))}>
+                  <Text dimColor>{`  ${w.tools(a.tools, a.errors)}  ${clock}  `}</Text>
+                  <Text color={isStuck ? 'warning' : undefined} dimColor={!isStuck}>
                     {state.slice(0, Math.max(10, width - 50))}
                   </Text>
                 </Text>
               </Box>
             )
           })}
-          {total(other) > 0 && <Text dimColor>{`  other loops (compaction, memory)  ${tokens(total(other))}`}</Text>}
+          {done > 0 && (
+            <Box flexDirection="row" gap={2}>
+              <Text color="success">{'  ✓'}</Text>
+              <Button key="done" plain label={w.finished(done, isOpen)} onPress={() => update($, showDone, x => !x)} />
+              <Button key="clear-done" plain dimColor label={w.clearDone} onPress={() => clear($, 'done')} />
+            </Box>
+          )}
+          {total(other) > 0 && <Text dimColor>{`  ${w.otherLoops(tokens(total(other)))}`}</Text>}
         </Box>
 
         {run && (
           <Text>
-            <Text bold>Last run  </Text>
-            <Text dimColor>{runText(run)}</Text>
+            <Text bold>{`${w.lastRun}  `}</Text>
+            <Text dimColor>{runText(run, lang)}</Text>
           </Text>
         )}
 
-        <Box gap={2}>
-          <Button key="clear" label="clear finished" onPress={() => update($, agents, l => l.filter(a => isActive(a.status) && !a.id.startsWith(DEMO)))} />
+        <Box flexDirection="row" flexWrap="wrap" gap={2}>
+          {verbRow({ Box, Text, Button }, COMMAND, VERBS, v => pressVerb($, v))}
+          {hasDemo && <Button key="clear-demo" plain dimColor label={w.clearDemo} onPress={() => clear($, 'demo')} />}
+          <Button key="close" role="dismiss" label={w.close} onPress={() => $.ui.close({ id: PANE })} />
         </Box>
       </Box>
     )

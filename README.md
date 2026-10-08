@@ -52,10 +52,15 @@ It counts on its own each time you answer a permission dialog. Commands:
 The status line and the toasts show on their own while subagents run. Commands:
 
 ```
-/watch           open the pane: agent tree with tokens, tool calls and what each one is doing
-/watch demo      add three fake agents, one of them stalled, to see the pane
-/watch clear     drop finished and demo agents
+/watch              open the pane: agent tree with tokens, tool calls and what each one is doing
+/watch demo         add three fake agents, one of them stalled, to see the pane
+/watch clear        drop finished and demo agents
+/watch clear done   drop finished agents only
+/watch clear demo   drop demo agents only
+/watch help         list the commands
 ```
+
+Finished agents fold into one line in the pane; press it to open them.
 
 ![agent-watch: the /watch pane, the status line and its toasts](screenshots/agent-watch.svg)
 

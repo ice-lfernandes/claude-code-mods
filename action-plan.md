@@ -217,6 +217,20 @@ Estado atual: agentes finalizados ocupam o painel inteiro. `/watch clear` e o bo
 | 4.8 | Ordenação e rolagem | Ordenar por tokens ou por início; `ui.scroll` + `windowOf` |
 | 4.9 | Custo do lote na janela de 5h | Sem acoplar ao limits-meter: ler `five_hour.percentUsed` de `$.session.usage()` no início e no fim do lote. O resumo diz "este lote usou ~6% da janela de 5h" |
 
+**Status da Etapa 1 (2026-10-08, branch `feat/shared-ui`):** feita, versão `0.2.0`.
+
+- 4.1 o atom `showDone` guarda se os concluídos estão abertos. A linha `✓ N concluídos ▸`
+  abre e fecha; `limpar concluídos` fica ao lado.
+- 4.2 o spinner gira a cada poll (5 s), com o `tick`. É lento, mas mostra que o agente está vivo.
+  O `tick` passou a andar também com agentes de demo ativos.
+- 4.3 `clear done`, `clear demo` e `clear` (os dois). Bug antigo corrigido: um agente removido
+  voltava no poll seguinte, com 0 tokens, porque o `agent.list` ainda o listava. Agora os ids
+  removidos ficam no atom `dropped` e são ignorados enquanto o agente não volta a rodar.
+- 4.4 opções `language` e `icons`. Só o `⚠` tem troca (`!` no modo symbol); os outros glifos
+  são símbolos de texto. O `clear` do rodapé preenche `/watch clear` no prompt; os botões
+  `limpar concluídos` e `limpar demo` rodam direto, porque já dizem o que removem. A descrição
+  da ferramenta em uso (`lendo routes.ts`) também é traduzida.
+
 ### Testes e aceite
 
 - `tests/watch.test.ts`: `recent` com no máximo 5 itens, ordenação, cálculo do delta da janela.

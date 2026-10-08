@@ -62,8 +62,12 @@ declare module 'claude-code' {
       /** When the last wave ended; agents started after it belong to the next. */
       standDownAt: number
       lastRun: Run | null
-      /** Moves while agents run, so the pane's clocks redraw. */
+      /** Moves while agents run, so the pane's clocks and spinners redraw. */
       tick: number
+      /** Whether the pane lists finished agents, or folds them into one line. */
+      showDone: boolean
+      /** Agents a clear removed: kept out though the listing still names them. */
+      dropped: string[]
     }
   }
 }
