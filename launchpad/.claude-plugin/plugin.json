@@ -1,21 +1,29 @@
 {
   "name": "launchpad",
-  "version": "0.3.0",
-  "description": "A welcome menu of one-click actions under the header: each button runs an installed command, skill or agent. Pick and order up to 8 with /pad configuration",
+  "version": "0.4.0",
+  "description": "A menu of one-click actions under the header, above the prompt or in a pane: each button runs an installed command, skill or agent. Pick and order up to 8 with /pad configuration",
   "types": "./types/index.d.ts",
   "userConfig": {
     "language": {
       "type": "string",
       "title": "Language",
       "description": "Language of the default buttons and messages. auto follows the system's LANG: Portuguese for pt_*, English otherwise and when LANG is unset",
-      "options": ["auto", "pt-BR", "en"],
+      "options": [
+        "auto",
+        "pt-BR",
+        "en"
+      ],
       "default": "auto"
     },
     "icons": {
       "type": "string",
       "title": "Icons in the terminal",
       "description": "emoji reads best; symbol keeps columns aligned in terminals that draw emoji at odd widths; auto uses symbol in a JetBrains IDE's terminal and emoji elsewhere",
-      "options": ["auto", "emoji", "symbol"],
+      "options": [
+        "auto",
+        "emoji",
+        "symbol"
+      ],
       "default": "auto"
     },
     "showOnStart": {
@@ -23,6 +31,17 @@
       "title": "Show on start",
       "description": "Show the menu when a session starts and after /clear. Off: only /pad shows it",
       "default": true
+    },
+    "placement": {
+      "type": "string",
+      "title": "Where the menu shows",
+      "description": "header: a card under the header when a session starts and after /clear; prompt: a band above the prompt that stays; pane: a pane of its own, a tab like other mods' panes. /pad place changes it from the prompt",
+      "options": [
+        "header",
+        "prompt",
+        "pane"
+      ],
+      "default": "header"
     }
   },
   "author": {

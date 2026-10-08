@@ -8,6 +8,9 @@ export type Lang = 'pt-BR' | 'en'
 
 export type IconStyle = 'emoji' | 'symbol'
 
+/** Where the menu shows: a card under the header, a band above the prompt, or its own pane. */
+export type Placement = 'header' | 'prompt' | 'pane'
+
 export type Pad = {
   id: string
   /** A key of ICONS (`folder`) or a glyph of the person's own (`🧾`). */
@@ -44,6 +47,8 @@ declare module 'claude-code' {
       offset: number
       /** True after /pad off: no menu at the start, after /clear or on /pad, until /pad on. */
       isOff: boolean
+      /** Where the menu shows: /pad place, else the `placement` option. */
+      placement: Placement
     }
   }
 }

@@ -15,4 +15,8 @@ test('snap', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'launchpad', surface: 'terminal', component: 'CommandOutput', props: { command: 'pad', args: '', text: 'Menu de atalhos do launchpad.', isErrored: false }, viewport: { columns: 78, rows: 40 } } as never)
   console.log('MENU', JSON.stringify(await ui.drawn()))
   await ui.press({ key: 'pad:explore' })
+  // /pad place prompt: the same buttons in a band above the prompt.
+  await $.command.run({ command: 'pad', args: 'place prompt' } as never)
+  const band = await $.ui.mount({ plugin: 'launchpad', surface: 'terminal', component: 'AbovePrompt', props: { bodyColumns: 110, hasSurvey: false }, viewport: { columns: 110, rows: 40 } } as never)
+  console.log('BAND', JSON.stringify(await band.drawn()))
 })

@@ -215,4 +215,5 @@ for i, chunk in enumerate(textwrap.wrap(fill, cw - 6)):
 open(f'{out}/launchpad.svg', 'w').write(svg([
     ('welcome menu under the header, before the first request', 'raw', menu),
     ('after 🔍 Explorar código: the request waits, blank marked', 'raw', box(rows)),
+    ('/pad place prompt: the menu in a band above the prompt', 'raw', trim(tree(d['BAND'][0])) + box([plain('> ')])),
 ], 60, 'launchpad'))

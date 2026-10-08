@@ -1,7 +1,7 @@
 # launchpad
 
-A welcome menu of one-click actions under the Claude Code header, so nobody has to know a
-`/command` before they can get something done. Each button runs a command, a skill or an agent
+A menu of one-click actions under the Claude Code header, above the prompt or in a pane of its
+own, so nobody has to know a `/command` before they can get something done. Each button runs a command, a skill or an agent
 that this session has installed.
 
 ![launchpad: the welcome menu under the header, and an agent request waiting in the prompt with its blank marked](../screenshots/launchpad.svg)
@@ -14,7 +14,8 @@ that this session has installed.
   - `/name` runs that command or skill: `🗜️ Compactar conversa` runs `/compact`.
   - `/name [blank]` puts the command in the prompt with the blank marked, for you to fill in and
     send: `/code-review [level]` waits for the level. Arguments with no brackets
-    (`/code-review high`) run as written.
+    (`/code-review high`) run as written. A command whose arguments are all optional runs bare:
+    `/clear [name]` runs `/clear`.
   - `@name` calls that agent: `🔍 Explorar código` puts `Use o agente Explore para [tarefa]` in
     the prompt with the blank marked, for you to say what to explore.
 - **Only what is installed.** A button shows, and can be added, only when this session has its
@@ -23,10 +24,17 @@ that this session has installed.
   and of your home folder. A button whose command another session has (`/limits` comes with
   [limits-meter](../limits-meter/)) stays in your list and shows where it works.
 - **A row of /pad's own arguments** under the buttons: `configuration · list · add · remove ·
-  reset · off · help`. `configuration` opens the pane, `list` and `help` print as a dim line in
+  reset · place · off · help`. `configuration` opens the pane, `list` and `help` print as a dim line in
   the conversation (Claude does not read it), `off` turns the menu off. `add`, `remove` and
   `reset` wait in the prompt (`/pad add [nome] | [/comando ou @agente]`), so a stray click changes
   nothing.
+- **Where it shows is your choice** (`/pad place`, or the `placement` option):
+  - `header`, the default: the card under the header described above.
+  - `prompt`: the buttons in one band above the prompt that stays there, beside other mods'
+    bands (limits-meter's), with `⋯ configure` to open the pane.
+  - `pane`: a pane of its own, a tab like those of `/limits` and `/watch`. It opens when a
+    session starts and after `/clear`, and on `/pad`. Claude Code opens a pane only with the
+    keyboard on it: `Esc` closes it and gives the prompt back.
 - **Up to 8 buttons** that work here. The defaults: compact the chat, see context, see limits,
   resume a chat, edit memory, switch model, explore the code, help.
 
@@ -40,6 +48,7 @@ that this session has installed.
 /pad add Revisor | @revisor           a button that calls an agent
 /pad remove 3                         drop button 3
 /pad reset                            back to the default buttons
+/pad place header | prompt | pane     where the menu shows: under the header, above the prompt, or in a pane
 /pad off                              turn the menu off: no card at the start, after /clear or on /pad
 /pad on                               turn it back on
 ```
@@ -50,9 +59,10 @@ filter to type into and `+ adicionar` on each. Enter in the filter adds the firs
 command that takes an argument comes in with it as a blank (`/code-review [level]`), from the hint
 Claude Code shows for it in the `/` menu. The mod learns the hints as that menu lists the
 commands, so one you have not yet seen there in this session comes in bare: add the blank with
-`/pad add`. An optional argument counts too: `/model` added from the pane would wait in the prompt
-rather than open the model picker. Once 8
-buttons work, the pane says the menu is full until you remove one.
+`/pad add`. A hint of optional arguments only (`[name]`, `[auto|<tokens>]`) gives no blank: the
+button runs the command bare. A button saved with such blanks by an earlier version
+(`/clear [name]`) is saved back bare once Claude Code lists the command. Once 8 buttons work, the
+pane says the menu is full until you remove one.
 
 `/pad off` is kept across sessions and hides the cards already in the conversation too. The
 other commands and the pane go on working, so you can set the menu up before `/pad on`. The
@@ -92,6 +102,7 @@ name (`launchpad@lfernandes-mods`).
 | `language` | `auto`, `pt-BR`, `en`: the default buttons and the messages. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise and when `LANG` is unset | `auto` |
 | `icons` | `auto`, `emoji`, or `symbol` (`⇲ ▥ ◔`) for terminals that draw emoji at odd widths. `auto` uses symbols in a JetBrains IDE's terminal (IntelliJ, PyCharm, ...: `TERMINAL_EMULATOR=JetBrains-JediTerm`), which gives many emoji one column, and emoji elsewhere | `auto` |
 | `showOnStart` | `false` shows the menu only on `/pad` | `true` |
+| `placement` | `header`, `prompt` or `pane`: where the menu shows. `/pad place` overrides it and is kept across sessions | `header` |
 
 In the desktop app the buttons are native buttons and always use emoji.
 

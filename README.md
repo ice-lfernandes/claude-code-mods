@@ -10,7 +10,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
 | [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish |
 | [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
-| [launchpad](launchpad/) | `/pad` | A welcome menu of one-click actions under the header: each button runs an installed command, skill or agent. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
+| [launchpad](launchpad/) | `/pad` | A menu of one-click actions under the header, above the prompt or in a pane: each button runs an installed command, skill or agent. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
 
 ## Using the mods
 
@@ -103,6 +103,7 @@ Commands:
 /pad add 🔎 Revisão | /code-review          add a button for an installed command, skill or @agent
 /pad remove 3                               drop button 3
 /pad reset                                  back to the defaults
+/pad place header | prompt | pane           where the menu shows: under the header, above the prompt, or in a pane
 /pad off | on                               turn the menu off or back on
 ```
 

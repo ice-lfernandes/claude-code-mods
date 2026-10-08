@@ -2,7 +2,7 @@
 // checking buttons against what the session has installed, and laying them out in columns.
 // No `$` here, so it tests without an engine.
 
-import type { IconStyle, Kind, Lang, Origin, Pad, Target } from '../types'
+import type { IconStyle, Kind, Lang, Origin, Pad, Placement, Target } from '../types'
 
 /** Buttons the menu shows, and the most the person's own list may hold. */
 export const MAX_SHOWN = 8
@@ -58,6 +58,15 @@ type Words = {
   already: (text: string) => string
   failed: (what: string) => string
   more: (n: number) => string
+  /** Where the menu shows: the answer to /pad place, and what /pad says when the menu is not a card. */
+  placed: Record<Placement, string>
+  badPlace: string
+  placeTemplate: string
+  inBand: string
+  /** The menu's own pane, when it shows as one. */
+  menuPane: string
+  /** The band's button that opens /pad configuration. */
+  settings: string
   /** What an agent button puts in the prompt, its `[blank]` for the task. */
   useAgent: (name: string, task?: string) => string
   pane: {
@@ -115,6 +124,9 @@ export const WORDS: Record<Lang, Words> = {
       '/pad remove 3          tira o atalho 3',
       '/pad reset             volta aos atalhos padrão',
       '/pad off | on          desliga ou liga o menu',
+      '/pad place header      o menu como cartão sob o cabeçalho (padrão)',
+      '/pad place prompt      o menu numa faixa acima do prompt, sempre à mão',
+      '/pad place pane        o menu num painel, uma aba como as de /limits e /watch',
       `Só entram comandos, skills e agentes instalados, até ${MAX_SHOWN} atalhos.`,
     ].join('\n'),
     badAdd: 'Use: /pad add 📊 Nome | /comando  ou  /pad add Nome | @agente',
@@ -125,6 +137,16 @@ export const WORDS: Record<Lang, Words> = {
     already: text => `${text} já está no menu.`,
     failed: what => `Não deu para rodar: ${what}`,
     more: n => `+${n} em /pad list`,
+    placed: {
+      header: 'O menu volta a ser um cartão sob o cabeçalho, ao abrir a sessão, depois do /clear e com /pad.',
+      prompt: 'O menu agora fica numa faixa acima do prompt, sempre à mão.',
+      pane: 'O menu agora abre num painel, uma aba como as de /limits e /watch.',
+    },
+    badPlace: 'Use: /pad place header | prompt | pane',
+    placeTemplate: '/pad place [header|prompt|pane]',
+    inBand: 'O menu está na faixa acima do prompt. /pad place header volta ao cartão.',
+    menuPane: 'Atalhos',
+    settings: '⋯ configurar',
     useAgent: (name, task) => `Use o agente ${name} para ${task || '[tarefa]'}`,
     pane: {
       title: 'Launchpad',
@@ -179,6 +201,9 @@ export const WORDS: Record<Lang, Words> = {
       '/pad remove 3          drop shortcut 3',
       '/pad reset             back to the default shortcuts',
       '/pad off | on          turn the menu off or on',
+      '/pad place header      the menu as a card under the header (the default)',
+      '/pad place prompt      the menu in a band above the prompt, always at hand',
+      '/pad place pane        the menu in a pane, a tab like those of /limits and /watch',
       `Only installed commands, skills and agents, up to ${MAX_SHOWN} shortcuts.`,
     ].join('\n'),
     badAdd: 'Use: /pad add 📊 Name | /command  or  /pad add Name | @agent',
@@ -189,6 +214,16 @@ export const WORDS: Record<Lang, Words> = {
     already: text => `${text} is already in the menu.`,
     failed: what => `Could not run: ${what}`,
     more: n => `+${n} in /pad list`,
+    placed: {
+      header: 'The menu is a card under the header again: when a session starts, after /clear and on /pad.',
+      prompt: 'The menu now sits in a band above the prompt, always at hand.',
+      pane: 'The menu now opens in a pane, a tab like those of /limits and /watch.',
+    },
+    badPlace: 'Use: /pad place header | prompt | pane',
+    placeTemplate: '/pad place [header|prompt|pane]',
+    inBand: 'The menu is in the band above the prompt. /pad place header brings the card back.',
+    menuPane: 'Shortcuts',
+    settings: '⋯ configure',
     useAgent: (name, task) => `Use the ${name} agent to ${task || '[task]'}`,
     pane: {
       title: 'Launchpad',
@@ -269,6 +304,25 @@ export const localize = (list: Pad[], lang: Lang): Pad[] => {
 export const iconFor = (t: Target) => (t.kind === 'agent' ? 'agent' : t.source === 'builtin' ? 'tool' : t.source === 'mcp' ? 'plug' : 'spark')
 
 /**
+ * Whether a command's argument hint names only optional arguments: every part in square
+ * brackets, as `/clear [name]` or `/autocompact [auto|<tokens>]`. Such a command runs bare.
+ */
+export const isOptionalHint = (hint: string | undefined) => /^\s*(\[[^\]]*\]\s*)+$/.test(hint ?? '')
+
+/** Where the menu shows: the option or /pad place when it names one, else under the header. */
+export const placementOf = (v: unknown): Placement => (v === 'prompt' || v === 'pane' || v === 'header' ? v : 'header')
+
+/**
+ * A command button's text without the blanks an optional hint gave it: `/clear [name]` back to
+ * `/clear`, so it runs. Any other text, and an agent's, as it is.
+ */
+export const unblank = (text: string, hint: string | undefined) => {
+  if (!isOptionalHint(hint)) return text
+  const { command, args } = commandOf(text)
+  return sameText(args, blanksOf(hint)) ? `/${command}` : text
+}
+
+/**
  * A command's argument hint as blanks to fill: `[level]` and `[a] [b]` stay, `<file>` becomes
  * `[file]`, a bare `message` becomes `[message]`; empty when there is no hint.
  */
@@ -280,11 +334,12 @@ export const blanksOf = (hint: string | undefined): string => {
 }
 
 /**
- * A button for a target the pane lists. A command with an argument hint gets it as blanks, so a
- * press puts it in the prompt to finish rather than running it bare.
+ * A button for a target the pane lists. A command whose hint asks for an argument gets it as
+ * blanks, so a press puts it in the prompt to finish rather than running it bare. A hint of
+ * optional arguments only gives none: the command runs as it is.
  */
 export const padFor = (t: Target, id: string, hint?: string): Pad => {
-  const blanks = t.kind === 'command' ? blanksOf(hint) : ''
+  const blanks = t.kind === 'command' && !isOptionalHint(hint) ? blanksOf(hint) : ''
   return {
     id,
     icon: iconFor(t),
