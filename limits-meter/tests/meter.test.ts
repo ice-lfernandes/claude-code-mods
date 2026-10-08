@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { alerts, bar, pct, resetIn, summary, toSnapshot, toTurn, tokens } from '../hooks/meter'
+import { alerts, bar, label, needsCompact, pct, resetIn, summary, tone, toSnapshot, toTurn } from '../hooks/meter'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 
@@ -13,18 +13,25 @@ describe('meter math', () => {
     expect(resetIn(NOW + (3 * 24 + 4) * 3_600_000, NOW)).toBe('3d4h')
   })
 
-  test('token counts read short', async () => {
-    expect(tokens(950)).toBe('950')
-    expect(tokens(1234)).toBe('1.2k')
-    expect(tokens(45_600)).toBe('46k')
-    expect(tokens(1_234_567)).toBe('1.2M')
-  })
-
   test('bars clamp to their width', async () => {
     expect(bar(10, 50)).toBe('█████░░░░░')
     expect(bar(4, 140)).toBe('████')
     expect(bar(4, -5)).toBe('░░░░')
     expect(pct(null)).toBe('–')
+  })
+
+  test('tones are the theme colors', async () => {
+    expect(tone(null)).toBe(undefined)
+    expect(tone(69)).toBe('success')
+    expect(tone(70)).toBe('warning')
+    expect(tone(90)).toBe('error')
+  })
+
+  test('compact is offered from 85% context', async () => {
+    const s = (contextPercent: number | null) => ({ limits: [], contextPercent, contextTokens: null, contextWindow: 100 })
+    expect(needsCompact(s(84))).toBe(false)
+    expect(needsCompact(s(85))).toBe(true)
+    expect(needsCompact(s(null))).toBe(false)
   })
 
   test('a snapshot keeps the engine figures and parses reset times', async () => {
@@ -74,5 +81,23 @@ describe('alerts', () => {
 
   test('summary says when there are no plan windows', async () => {
     expect(summary({ limits: [], contextPercent: 12, contextTokens: 1, contextWindow: 100 }, undefined, NOW)).toContain('no plan-limit readings')
+  })
+})
+
+describe('Portuguese', () => {
+  const at = Date.parse('2026-10-08T13:12:00Z')
+
+  test('labels, reset times and alerts', async () => {
+    expect(label('seven_day', 'pt-BR')).toBe('sem')
+    expect(label('other', 'pt-BR')).toBe('other')
+    expect(resetIn(NOW, NOW, 'pt-BR')).toBe('agora')
+    const s = { limits: [{ kind: 'five_hour', percent: 81, resetsAt: at }], contextPercent: 90, contextTokens: 1, contextWindow: 100 }
+    expect(alerts(s, [], NOW, 'pt-BR').raised.map(a => a.text)).toEqual(['Janela 5h em 81%, reinicia em 1h12', 'Contexto 90% cheio: bom momento para /compact com um foco'])
+  })
+
+  test('summary', async () => {
+    const s = { limits: [{ kind: 'five_hour', percent: 40, resetsAt: at }], contextPercent: 12, contextTokens: 1, contextWindow: 100 }
+    expect(summary(s, undefined, NOW, 'pt-BR')).toBe('5h 40% (reinicia em 1h12) · contexto 12%')
+    expect(summary({ ...s, limits: [] }, undefined, NOW, 'pt-BR')).toContain('sem leituras de limite do plano')
   })
 })

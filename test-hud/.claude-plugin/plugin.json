@@ -1,8 +1,23 @@
 {
   "name": "test-hud",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green",
   "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the pane, the status line and the toasts. auto follows the system's LANG: Portuguese for pt_*, English otherwise and when LANG is unset",
+      "options": ["auto", "pt-BR", "en"],
+      "default": "auto"
+    },
+    "regressionToast": {
+      "type": "boolean",
+      "title": "Toast when tests turn red",
+      "description": "Also show a toast when a runner turns red right after a green run",
+      "default": false
+    }
+  },
   "author": {
     "name": "Lucas Fernandes"
   },

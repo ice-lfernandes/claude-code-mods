@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Run } from '../types'
-import { failingNames, fresh, greenText, parseRun, quietPass, record, runnerOf, spark, statusText, trail } from '../hooks/hud'
+import { failingNames, fixed, fresh, greenText, parseRun, quietPass, record, redText, runnerOf, score, spark, statusText, trail, wholeCommand } from '../hooks/hud'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
@@ -10,6 +10,7 @@ const run = (n: number, failed: number, over: Partial<Run> = {}): Run => ({
   n,
   runner: 'vitest',
   command: 'npm test',
+  fullCommand: 'npm test',
   failed,
   passed: 43 - failed,
   skipped: 0,
@@ -158,6 +159,36 @@ describe('runs', () => {
     const list = [run(1, 1, { failures: ['a'] }), run(2, 2, { failures: ['a', 'b'] })]
     expect([...fresh(list, list[1]!)]).toEqual(['b'])
     expect(fresh([run(1, 3), list[1]!], list[1]!).size).toBe(0)
+  })
+
+  test('fixed tests are the ones the runner failed on before and not now', async () => {
+    const list = [run(1, 2, { failures: ['a', 'b'] }), run(2, 1, { failures: ['b'] }), run(3, 0)]
+    expect(fixed(list, list[1]!)).toEqual(['a'])
+    expect(fixed(list, list[2]!)).toEqual(['b'])
+    expect(fixed(list, list[0]!)).toEqual([])
+    // A red run with no names read says nothing about which were fixed.
+    expect(fixed([list[0]!, run(2, 1)], run(2, 1))).toEqual([])
+  })
+
+  test('red right after green toasts, with the option', async () => {
+    const list = [run(1, 0), run(2, 2), run(3, 1)]
+    expect(redText(list, list[1]!)).toBe('Tests turned red: 41/43 (vitest), 2 failing.')
+    expect(redText(list, list[2]!)).toBe(null)
+    expect(redText(list, list[0]!)).toBe(null)
+    expect(redText([run(1, 2)], run(1, 2))).toBe(null)
+  })
+
+  test('texts in Portuguese', async () => {
+    const list = [run(1, 0), run(2, 2)]
+    expect(statusText(list, 'pt-BR')).toBe('✗ testes 41/43 ▁█')
+    expect(score(run(1, 2, { passed: null }), 'pt-BR')).toBe('2 falharam')
+    expect(score(run(1, 0, { passed: null }), 'pt-BR')).toBe('ok')
+    expect(redText(list, list[1]!, 'pt-BR')).toBe('Testes ficaram vermelhos: 41/43 (vitest), 2 falhas.')
+  })
+
+  test('the whole command is kept, cut only past 2000 characters', async () => {
+    expect(wholeCommand('  npm test -- a b c \n')).toBe('npm test -- a b c')
+    expect(wholeCommand('x'.repeat(2500))).toHaveLength(2000)
   })
 
   test('only the last 30 runs are kept', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Agent } from '../types'
-import { addStep, adopt, elapsed, finish, reconcile, runText, shortModel, stalls, stallText, summarize, toolEnd, toolStart, total, touch, tree, ZERO } from '../hooks/watch'
+import { addStep, adopt, clearOut, finish, glyphOf, labelOf, reconcile, runText, stalls, stallText, summarize, toolEnd, toolStart, total, touch, tree, ZERO } from '../hooks/watch'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
@@ -125,11 +125,27 @@ describe('summary', () => {
     expect(rows.map(r => `${r.prefix}${r.agent.id}`)).toEqual(['├─a', '│ └─c', '└─b'])
     expect(rows[1]!.rail).toBe('│   ')
   })
+})
 
-  test('formats read short', async () => {
-    expect(shortModel('claude-haiku-4-5-20251001')).toBe('haiku 4.5')
-    expect(shortModel('claude-opus-5-5')).toBe('opus 5.5')
-    expect(elapsed(42_000)).toBe('42s')
-    expect(elapsed(3_720_000)).toBe('1h 02m')
+describe('the pane', () => {
+  test('a running agent spins with the tick; stalled, done and failed have their glyph', async () => {
+    expect([0, 1, 2, 3, 4].map(n => glyphOf(agent('a'), n)).join('')).toBe('◐◓◑◒◐')
+    expect(glyphOf(agent('a', { isStalled: true }), 0)).toBe('!')
+    expect(glyphOf(agent('a', { status: 'completed' }), 0)).toBe('✓')
+    expect(glyphOf(agent('a', { status: 'killed' }), 0)).toBe('×')
+  })
+
+  test('clear drops one kind, or both', async () => {
+    const list = [agent('a'), agent('b', { status: 'completed' }), agent('demo-1'), agent('demo-2', { status: 'completed' })]
+    expect(clearOut(list, 'done', 'demo-').map(a => a.id)).toEqual(['a', 'demo-1'])
+    expect(clearOut(list, 'demo', 'demo-').map(a => a.id)).toEqual(['a', 'b'])
+    expect(clearOut(list, 'both', 'demo-').map(a => a.id)).toEqual(['a'])
+  })
+
+  test('Portuguese', async () => {
+    expect(labelOf('Read', { file_path: '/repo/src/routes.ts' }, 'pt-BR')).toBe('lendo routes.ts')
+    expect(stallText(agent('a', { lastAt: NOW - 6 * MIN }), NOW, 'pt-BR')).toBe('parado há 6m 00s')
+    const run = summarize([agent('a', { label: 'Mapear', tokens: t(0, 0, 300), startedAt: NOW, endedAt: NOW + MIN })], NOW)!
+    expect(runText(run, 'pt-BR')).toBe('1 agente, 300 tokens em 1m 00s. Mais pesado: Mapear 300 (100%)')
   })
 })

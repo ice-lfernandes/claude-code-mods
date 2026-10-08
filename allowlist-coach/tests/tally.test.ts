@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Entry } from '../types'
-import { addAllow, exampleOf, isRisky, noticeFor, record, rulesFor, stable, status, summary, THRESHOLD } from '../hooks/tally'
+import { addAllow, exampleOf, isRisky, keyAt, noticeFor, progress, record, rulesFor, stable, status, summary, THRESHOLD } from '../hooks/tally'
+import { WORDS } from '../hooks/words'
 
 const NONE = { allow: [], ask: [], deny: [] }
 const entry = (over: Partial<Entry> = {}): Entry => ({ rules: ['Bash(./mvnw test:*)'], approved: 0, denied: 0, example: './mvnw test', lastAt: 0, state: 'counting', ...over })
@@ -72,9 +73,38 @@ describe('status', () => {
     expect(noticeFor(entry({ rules: ['Bash(rm:*)'], approved: 9 }), NONE)).toContain('too broad')
   })
 
+  test('progress toward the offer, capped at the threshold', async () => {
+    expect(progress(0)).toBe('○○○○○ 0/5')
+    expect(progress(3)).toBe('●●●○○ 3/5')
+    expect(progress(9)).toBe('●●●●● 5/5')
+  })
+
+  test('the dialog line in Portuguese', async () => {
+    expect(noticeFor(entry({ approved: 4 }), NONE, 'pt-BR')).toBe('allowlist-coach: ●●●●○ 4/5 aprovações · falta 1 para /allowlist oferecer Bash(./mvnw test:*)')
+    expect(noticeFor(entry({ rules: ['Bash(rm:*)'], approved: 1 }), NONE, 'pt-BR')).toContain('ampla demais')
+  })
+
+  test('a number names a rule as the pane numbers it; anything else is the rule itself', async () => {
+    const list = { a: entry({ rules: ['a'], approved: 2 }), b: entry({ rules: ['b'], approved: THRESHOLD }) }
+    expect(keyAt(list, NONE, '1')).toBe('b')
+    expect(keyAt(list, NONE, '2')).toBe('a')
+    expect(keyAt(list, NONE, '3')).toBe('3')
+    expect(keyAt(list, NONE, 'Bash(ls)')).toBe('Bash(ls)')
+  })
+
+  test('how long ago, short', async () => {
+    const MIN = 60_000
+    expect(WORDS.en.ago(20_000)).toBe('just now')
+    expect(WORDS.en.ago(12 * MIN)).toBe('12 min ago')
+    expect(WORDS['pt-BR'].ago(3 * 60 * MIN)).toBe('há 3 h')
+    expect(WORDS['pt-BR'].ago(30 * 60 * MIN)).toBe('ontem')
+    expect(WORDS.en.ago(4 * 24 * 60 * MIN)).toBe('4 days ago')
+  })
+
   test('summary says when nothing was answered', async () => {
     expect(summary({}, NONE)).toContain('no permission dialogs')
-    expect(summary({ k: entry({ rules: ['k'], approved: 9 }) }, NONE)).toContain('/allowlist allow')
+    expect(summary({ k: entry({ rules: ['k'], approved: 9 }) }, NONE)).toContain('/allowlist allow 1')
+    expect(summary({ k: entry({ rules: ['k'], approved: 9 }) }, NONE, 'pt-BR')).toContain(' 1 pronta')
   })
 })
 

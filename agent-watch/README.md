@@ -17,16 +17,31 @@ the most once they all finish.
   time and the heaviest agent with its share. The pane keeps it as "Last run".
 - **Status line** while agents run: `◇ 2 agents · 365k · ⚠ 1 stalled`. It clears when they
   finish.
-- **`/watch`** opens the pane. `/watch clear` drops finished agents. `/watch demo` adds three
-  fake agents, one of them stalled. The command runs mid-turn.
+- **`/watch`** opens the pane. A running agent turns a spinner (`◐◓◑◒`) while the pane
+  refreshes. Finished agents fold into one line, `✓ 3 finished ▸`, which opens them, with a
+  `clear finished` button next to it. Demo agents carry a `demo` badge and their own
+  `clear demo` button. The footer has the verbs and a close button. The command runs mid-turn.
+
+```
+/watch              open the pane
+/watch demo         add three fake agents, one of them stalled
+/watch clear        drop finished and demo agents
+/watch clear done   drop finished agents only
+/watch clear demo   drop demo agents only
+/watch help         list the commands
+```
+
+A cleared agent stays out of the pane even while Claude Code still lists it.
 
 ## Settings
+
+Set them in `/config`, or under `pluginConfigs` in `settings.json`.
 
 | Option | Default | What it does |
 | --- | --- | --- |
 | `stallMinutes` | 5 | Minutes of no model request and no tool call before a running agent counts as stalled |
-
-Change it in `/config`, or under `pluginConfigs` in `settings.json`.
+| `language` | `auto` | `auto`, `pt-BR` or `en`. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise |
+| `icons` | `auto` | `emoji` draws the stall warning as `⚠`, `symbol` as `!`. `auto` uses `symbol` in a JetBrains IDE's terminal and `emoji` elsewhere |
 
 ## Install
 

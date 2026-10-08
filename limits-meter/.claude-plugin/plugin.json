@@ -1,8 +1,21 @@
 {
   "name": "limits-meter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Plan limits and context above the prompt: 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn",
   "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the band, the pane and the toasts. auto follows the system's LANG: Portuguese for pt_*, English otherwise and when LANG is unset",
+      "options": [
+        "auto",
+        "pt-BR",
+        "en"
+      ],
+      "default": "auto"
+    }
+  },
   "author": {
     "name": "Lucas Fernandes"
   },

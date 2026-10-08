@@ -1,4 +1,6 @@
 import type { Configured, Entry } from '../types'
+import type { Lang } from './ui'
+import { WORDS } from './words'
 
 /** Approvals, with no refusal, before the coach offers a rule. */
 export const THRESHOLD = 5
@@ -123,16 +125,21 @@ export const record = (
 export const setState = (entries: Record<string, Entry>, key: string, state: Entry['state']) =>
   entries[key] ? { ...entries, [key]: { ...entries[key]!, state } } : entries
 
+/** Approvals toward the offer: `●●●○○ 3/5`. */
+export const progress = (approved: number) => {
+  const done = Math.max(0, Math.min(THRESHOLD, approved))
+  return `${'●'.repeat(done)}${'○'.repeat(THRESHOLD - done)} ${done}/${THRESHOLD}`
+}
+
 /** The line shown under an open dialog, or undefined when there is nothing to say yet. */
-export const noticeFor = (entry: Entry | undefined, configured: Configured) => {
+export const noticeFor = (entry: Entry | undefined, configured: Configured, lang: Lang = 'en') => {
   if (!entry || entry.approved === 0) return undefined
-  const times = `${entry.approved} time${entry.approved === 1 ? '' : 's'}`
+  const w = WORDS[lang]
   const s = status(entry, configured)
-  if (s === 'risky') return `allowlist-coach: approved ${times} here; too broad to offer as a rule`
-  if (s === 'refused') return `allowlist-coach: approved ${times}, refused ${entry.denied} here`
-  if (s === 'ready' || s === 'dismissed') return `allowlist-coach: approved ${times} here · /allowlist`
-  const left = THRESHOLD - entry.approved
-  return `allowlist-coach: approved ${times} here; ${left} more and /allowlist offers ${keyOf(entry.rules)}`
+  if (s === 'risky') return w.noticeRisky(entry.approved)
+  if (s === 'refused') return w.noticeRefused(entry.approved, entry.denied)
+  if (s === 'ready' || s === 'dismissed') return w.noticeReady(entry.approved)
+  return w.noticeCounting(progress(entry.approved), THRESHOLD - entry.approved, keyOf(entry.rules))
 }
 
 /**
@@ -180,13 +187,23 @@ export const sorted = (entries: Record<string, Entry>, configured: Configured) =
     .map(([key, entry]) => ({ key, entry, status: status(entry, configured) }))
     .sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || b.entry.approved - a.entry.approved || b.entry.lastAt - a.entry.lastAt)
 
-/** A text summary, for the command's answer where no pane can open. */
-export const summary = (entries: Record<string, Entry>, configured: Configured) => {
+/**
+ * The key an argument of /allowlist allow or dismiss names: a number as the pane numbers the
+ * rules (1 is the first), else the rule written out.
+ */
+export const keyAt = (entries: Record<string, Entry>, configured: Configured, arg: string): string => {
+  if (!/^\d+$/.test(arg)) return arg
+  return sorted(entries, configured)[Number(arg) - 1]?.key ?? arg
+}
+
+/** A text summary, for the command's answer where no pane can open; numbered as the pane is. */
+export const summary = (entries: Record<string, Entry>, configured: Configured, lang: Lang = 'en') => {
+  const w = WORDS[lang]
   const rows = sorted(entries, configured)
-  if (rows.length === 0) return 'allowlist-coach: no permission dialogs answered in this project yet.'
+  if (rows.length === 0) return w.noDialogs
   return rows
     .slice(0, 15)
-    .map(r => `${r.status.padEnd(9)} ✓${r.entry.approved} ✗${r.entry.denied}  ${r.key}`)
-    .concat(rows.some(r => r.status === 'ready') ? ['', 'Add one with: /allowlist allow <rule>'] : [])
+    .map((r, i) => `${String(i + 1).padStart(2)} ${w.status[r.status].padEnd(10)} ✓${r.entry.approved} ✗${r.entry.denied}  ${r.key}`)
+    .concat(rows.some(r => r.status === 'ready') ? ['', w.addHint] : [])
     .join('\n')
 }

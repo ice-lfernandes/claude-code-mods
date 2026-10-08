@@ -1,6 +1,7 @@
-import { test } from 'claude-code/testing'
+import { mock, test } from 'claude-code/testing'
 const ROOT = '/repo'
 test('snap', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.parse('2026-10-08T12:00:00Z') })
   const store: Record<string, unknown> = {}
   let refuse = new Set<number>()
   let n = 0
@@ -29,6 +30,7 @@ test('snap', async ($, on) => {
   for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Bash', command: 'npm run lint' } as never)
   refuse = new Set([n + 2]); for (let i = 0; i < 7; i++) await $.tool.call({ tool: 'Bash', command: 'docker compose up -d' } as never)
   for (let i = 0; i < 9; i++) await $.tool.call({ tool: 'Bash', command: 'rm -rf target' } as never)
+  await clock.advance(12 * 60_000)
   const pane = await $.ui.mount({ plugin: 'allowlist-coach', surface: 'terminal', component: 'Pane', requestId: 'allowlist', props: { title: 'Allowlist coach', isFocused: true, bodyColumns: 90, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} }, viewport: { columns: 92, rows: 30 } } as never)
   console.log('PANE', JSON.stringify(await pane.drawn()))
 })

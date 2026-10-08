@@ -1,6 +1,9 @@
 // Pure agent bookkeeping: no engine, so the tests drive it directly.
 
 import type { Activity, Agent, Run, Tokens } from '../types'
+import type { Lang } from './ui'
+import { clip, elapsed, tokens } from './ui'
+import { WORDS } from './words'
 
 const MAX_AGENTS = 60
 
@@ -166,11 +169,12 @@ export const stalls = (list: readonly Agent[], now: number, thresholdMs: number)
 }
 
 /** "thinking for 6m", "in Bash (running npm test) for 6m", "quiet for 6m". */
-export const stallText = (a: Agent, now: number) => {
+export const stallText = (a: Agent, now: number, lang: Lang = 'en') => {
+  const w = WORDS[lang]
   const span = elapsed(quietFor(a, now))
-  if (a.activity === 'thinking') return `thinking for ${span}`
-  if (a.activity === 'tool') return `${a.doing ?? 'in a tool call'} for ${span}`
-  return `quiet for ${span}`
+  if (a.activity === 'thinking') return w.thinkingFor(span)
+  if (a.activity === 'tool') return w.doingFor(a.doing ?? w.inATool, span)
+  return w.quietFor(span)
 }
 
 /** What a wave of agents came to. Null when the wave had none. */
@@ -189,9 +193,9 @@ export const summarize = (wave: readonly Agent[], now: number): Run | null => {
   }
 }
 
-export const runText = (r: Run) =>
-  `${r.count} agent${r.count === 1 ? '' : 's'}, ${tokens(r.total)} tokens in ${elapsed(r.durationMs)}` +
-  (r.top ? `. Heaviest: ${r.top.label} ${tokens(r.top.total)} (${Math.round(r.top.share * 100)}%)` : '')
+export const runText = (r: Run, lang: Lang = 'en') =>
+  WORDS[lang].run(r.count, tokens(r.total), elapsed(r.durationMs)) +
+  (r.top ? WORDS[lang].heaviest(r.top.label, tokens(r.top.total), Math.round(r.top.share * 100)) : '')
 
 export const nameOf = (a: Agent) => a.name || a.label
 
@@ -220,56 +224,47 @@ export const tree = (list: readonly Agent[]): Row[] => {
   return rows
 }
 
-/** 950, 1.2k, 46k, 1.2M. */
-export const tokens = (n: number) => {
-  if (n < 1000) return String(n)
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`
-  return `${(n / 1_000_000).toFixed(1)}M`
-}
-
-/** 42s, 6m 05s, 1h 02m. */
-export const elapsed = (ms: number) => {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`
-  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
-}
-
-/** claude-haiku-4-5-20251001 -> haiku 4.5 */
-export const shortModel = (m?: string) => {
-  if (!m) return ''
-  const hit = /(opus|sonnet|haiku|fable)[-\s]?(\d+(?:[-.]\d+)?)?/i.exec(m)
-  if (!hit) return m.length > 14 ? `${m.slice(0, 13)}…` : m
-  return `${hit[1]!.toLowerCase()}${hit[2] ? ` ${hit[2].replace('-', '.')}` : ''}`
-}
-
-const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 const base = (p: unknown) => (typeof p === 'string' ? (p.split('/').filter(Boolean).pop() ?? p) : '')
 
 /** A tool call in a few words. */
-export const labelOf = (tool: string, input: Readonly<Record<string, unknown>>): string => {
+export const labelOf = (tool: string, input: Readonly<Record<string, unknown>>, lang: Lang = 'en'): string => {
+  const w = WORDS[lang].doing
   const s = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : '')
   switch (tool) {
     case 'Bash':
-      return `running ${clip(s('description') || s('command').split('\n')[0]!, 50)}`
+      return w.running(clip(s('description') || s('command').split('\n')[0]!, 50))
     case 'Read':
-      return `reading ${base(input.file_path)}`
+      return w.reading(base(input.file_path))
     case 'Write':
-      return `writing ${base(input.file_path)}`
+      return w.writing(base(input.file_path))
     case 'Edit':
     case 'MultiEdit':
-      return `editing ${base(input.file_path)}`
+      return w.editing(base(input.file_path))
     case 'Grep':
-      return `searching "${clip(s('pattern'), 30)}"`
+      return w.searching(clip(s('pattern'), 30))
     case 'Glob':
-      return `finding ${clip(s('pattern'), 30)}`
+      return w.finding(clip(s('pattern'), 30))
     case 'WebFetch':
     case 'WebSearch':
-      return `on the web`
+      return w.web
     case 'Agent':
-      return `delegating "${clip(s('description') || 'a task', 30)}"`
+      return w.delegating(clip(s('description') || w.aTask, 30))
     default:
-      return `calling ${clip(tool.startsWith('mcp__') ? (tool.split('__').pop() ?? tool) : tool, 30)}`
+      return w.calling(clip(tool.startsWith('mcp__') ? (tool.split('__').pop() ?? tool) : tool, 30))
   }
 }
+
+/** The agents left after a clear: `done` drops the finished ones, `demo` the demo ones, `both` both. */
+export const clearOut = (list: readonly Agent[], kind: 'done' | 'demo' | 'both', demoPrefix: string): Agent[] =>
+  list.filter(a => {
+    const isDemo = a.id.startsWith(demoPrefix)
+    if (kind === 'demo') return !isDemo
+    if (kind === 'done') return isActive(a.status)
+    return isActive(a.status) && !isDemo
+  })
+
+const SPINNER = '◐◓◑◒'
+
+/** The glyph of an agent: a spinner while it runs, `!` stalled, ✓ done, × failed. */
+export const glyphOf = (a: Agent, tick: number) =>
+  isActive(a.status) ? (a.isStalled ? '!' : SPINNER[tick % SPINNER.length]!) : isFailed(a.status) ? '×' : '✓'

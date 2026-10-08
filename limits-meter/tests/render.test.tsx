@@ -1,53 +1,179 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
-const MEASURE = {
-  context: { tokens: 116_000, window: 200_000, percent: 58 },
-  rateLimits: [
-    { kind: 'five_hour', percentUsed: 64, resetsAt: '2026-10-08T13:12:00Z' },
-    { kind: 'seven_day', percentUsed: 31, resetsAt: '2026-10-11T16:00:00Z' },
-  ],
-  changed: ['context', 'rateLimits'],
-}
-const TURN = {
+const LIMITS = [
+  { kind: 'five_hour', percentUsed: 64, resetsAt: '2026-10-08T13:12:00Z' },
+  { kind: 'seven_day', percentUsed: 31, resetsAt: '2026-10-11T16:00:00Z' },
+]
+const MEASURE = { context: { tokens: 116_000, window: 200_000, percent: 58 }, rateLimits: LIMITS, changed: ['context', 'rateLimits'] }
+const FULL = { context: { tokens: 172_000, window: 200_000, percent: 86 }, rateLimits: LIMITS, changed: ['context'] }
+const turn = (n: number) => ({
   answer: 'done',
   durationMs: 12_000,
   isAborted: false,
-  turnId: 't1',
+  turnId: `t${n}`,
   reason: 'answer',
   usage: { input_tokens: 1000, output_tokens: 1300, cache_read_input_tokens: 40_000, cache_creation_input_tokens: 2000, model: 'claude-opus-5-5' },
+})
+
+type World = { toasts: string[]; fills: string[]; logs: string[]; opened: string[]; closed: string[] }
+
+function engine(on: any, env: Record<string, string> = {}): World {
+  const world: World = { toasts: [], fills: [], logs: [], opened: [], closed: [] }
+  mock.clock(on, { now: NOW })
+  mock.store(on)
+  on('env.get', ($: any, e: any) => ({ value: env[e.name] }) as never)
+  on('command.register', () => ({ value: undefined }) as never)
+  on('session.start', ($: any, e: any) => ({ cwd: e.cwd }) as never)
+  on('ui.open', ($: any, e: any) => (world.opened.push(e.id), { value: { isPlaced: true } }) as never)
+  on('ui.close', ($: any, e: any) => (world.closed.push(e.id), { value: undefined }) as never)
+  on('ui.toast', ($: any, e: any) => (world.toasts.push(e.text), { value: undefined }) as never)
+  on('ui.log', ($: any, e: any) => (world.logs.push(e.text), { value: undefined }) as never)
+  on('prompt.fill', ($: any, e: any) => (world.fills.push(e.text), { isFilled: true, text: e.text, cursor: e.text.length }) as never)
+  on('session.measure', () => ({ changed: ['context', 'rateLimits'] }) as never)
+  on('turn.complete', () => ({ text: 'done' }) as never)
+  // The engine's own band beneath: empty.
+  on('ui.render', ($: any, e: any) => $.ui.resolve(e).Box({ key: 'engine' }) as never)
+  return world
 }
-const RUN = { command: 'limits', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 140 } }
+
+const start = ($: any, surface = 'terminal') => $.session.start({ cwd: '/repo', surface, isInteractive: true } as never)
+const run = ($: any, args: string) => $.command.run({ command: 'limits', args, origin: { kind: 'composer' } } as never) as Promise<{ text?: string }>
+const band = ($: any, surface = 'terminal') =>
+  $.ui.mount({ plugin: 'limits-meter', surface, component: 'AbovePrompt', props: { bodyColumns: 140, hasSurvey: false }, viewport: { columns: 140, rows: 40 } } as never)
+const pane = ($: any, surface = 'terminal', bodyRows = 40) =>
+  $.ui.mount({ plugin: 'limits-meter', surface, component: 'Pane', requestId: 'limits', props: { title: 'Limits & context', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows }, view: {} }, viewport: { columns: 82, rows: 40 } } as never)
 
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`band and pane show limits, context and turns on ${surface}`, async ($, on) => {
-    on('clock.now', () => ({ value: NOW }) as never)
-    on('ui.open', () => ({ value: { isPlaced: true } }) as never)
-    on('ui.toast', () => ({ value: undefined }) as never)
-    on('session.measure', () => ({ changed: ['context', 'rateLimits'] }) as never)
-    on('turn.complete', () => ({ text: 'done' }) as never)
-    // The engine's own band beneath: empty.
-    on('ui.render', ($, e) => $.ui.resolve(e).Box({ key: 'engine' }) as never)
-
+    const world = engine(on)
+    await start($, surface)
     await $.session.measure(MEASURE as never)
-    await $.turn.complete(TURN as never)
+    await $.turn.complete(turn(1) as never)
 
-    const band = await $.ui.mount({ plugin: 'limits-meter', surface, component: 'AbovePrompt', props: { bodyColumns: 140, hasSurvey: false }, viewport: { columns: 140, rows: 40 } } as never)
-    const drawn = JSON.stringify(await band.drawn())
+    const b = await band($, surface)
+    const drawn = JSON.stringify(await b.drawn())
     expect(drawn).toContain('64%')
     expect(drawn).toContain('↻1h12')
     expect(drawn).toContain('58%')
     expect(drawn).toContain('cache')
-    await band.press({ key: 'hide' })
-    await band.unmount()
+    expect(drawn).toContain('details')
+    expect(drawn).not.toContain('compact')
+    await b.press({ key: 'details' })
+    expect(world.opened).toEqual(['limits'])
+    await b.unmount()
 
-    await $.command.run(RUN as never)
-    const pane = await $.ui.mount({ plugin: 'limits-meter', surface, component: 'Pane', requestId: 'limits', props: { title: 'Limits & context', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }, viewport: { columns: 82, rows: 40 } } as never)
-    const shown = JSON.stringify(await pane.drawn())
+    expect(await run($, '')).toEqual({})
+    const p = await pane($, surface)
+    const shown = JSON.stringify(await p.drawn())
+    expect(shown).toContain('Figures the engine reports after each turn')
     expect(shown).toContain('resets in 1h12')
     expect(shown).toContain('116k of 200k')
     expect(shown).toContain('out  1.3k')
-    expect(shown).toContain('opus-5-5')
-    await pane.unmount()
+    expect(shown).toContain('opus 5.5')
+    expect(shown).toContain('Close')
+    await p.unmount()
   })
 }
+
+test('from 85% context the band and the pane offer compact, which only fills the prompt', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(FULL as never)
+  expect(world.toasts).toEqual(['Context 86% full: a good moment for /compact with a focus'])
+
+  const b = await band($)
+  expect(JSON.stringify(await b.drawn())).toContain('compact')
+  await b.press({ key: 'compact' })
+  expect(world.fills).toEqual(['/compact [focus]'])
+  await b.unmount()
+
+  const p = await pane($)
+  await p.press({ key: 'compact' })
+  expect(world.fills).toEqual(['/compact [focus]', '/compact [focus]'])
+  expect(world.logs).toEqual([])
+  await p.unmount()
+})
+
+test('hide is kept for the next session, and show brings the band back', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+
+  const b = await band($)
+  await b.press({ key: 'hide' })
+  expect(JSON.stringify(await b.drawn())).not.toContain('64%')
+  await b.unmount()
+
+  await start($) // a new session reads the store
+  const again = await band($)
+  expect(JSON.stringify(await again.drawn())).not.toContain('64%')
+  expect((await run($, 'show')).text).toBe('Band shown.')
+  expect(JSON.stringify(await again.drawn())).toContain('64%')
+  await again.unmount()
+
+  await start($)
+  const shown = await band($)
+  expect(JSON.stringify(await shown.drawn())).toContain('64%')
+  await shown.unmount()
+})
+
+test('the pane footer: hide and show run, help writes to the transcript, Close closes', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const p = await pane($)
+  await p.press({ key: 'verb:help' })
+  expect(world.logs[0]).toContain('/limits          open the pane')
+  expect(world.logs).toHaveLength(3)
+  await p.press({ key: 'verb:hide' })
+  expect(world.logs.at(-1)).toBe('Band hidden. /limits show brings it back.')
+  const b = await band($)
+  expect(JSON.stringify(await b.drawn())).not.toContain('64%')
+  await p.press({ key: 'verb:show' })
+  expect(JSON.stringify(await b.drawn())).toContain('64%')
+  await b.unmount()
+  await p.press({ key: 'close' })
+  expect(world.closed).toEqual(['limits'])
+  await p.unmount()
+  expect((await run($, 'nope')).text).toContain('/limits hide')
+})
+
+test('the pane fits the turns to its rows', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  for (let i = 1; i <= 20; i++) await $.turn.complete(turn(i) as never)
+  // 20 rows: 13 for the rest of the pane with two plan windows, 7 turns.
+  const p = await pane($, 'terminal', 20)
+  const shown = JSON.stringify(await p.drawn())
+  expect(shown).toContain('#20')
+  expect(shown).toContain('#14')
+  expect(shown).not.toContain('#13')
+  await p.unmount()
+})
+
+test('Portuguese from LANG: band, pane, toasts and answers', async ($, on) => {
+  const world = engine(on, { LANG: 'pt_BR.UTF-8' })
+  await start($)
+  await $.session.measure({ ...FULL, rateLimits: [{ kind: 'five_hour', percentUsed: 92, resetsAt: '2026-10-08T13:12:00Z' }, LIMITS[1]] } as never)
+  expect(world.toasts).toEqual(['Janela 5h em 92%, reinicia em 1h12', 'Contexto 86% cheio: bom momento para /compact com um foco'])
+
+  const b = await band($)
+  const drawn = JSON.stringify(await b.drawn())
+  expect(drawn).toContain('sem ')
+  expect(drawn).toContain('detalhes')
+  expect(drawn).toContain('ocultar')
+  await b.press({ key: 'compact' })
+  expect(world.fills).toEqual(['/compact [foco]'])
+  await b.unmount()
+
+  const p = await pane($)
+  const shown = JSON.stringify(await p.drawn())
+  expect(shown).toContain('Janelas do plano')
+  expect(shown).toContain('reinicia em 1h12')
+  expect(shown).toContain('172k de 200k')
+  expect(shown).toContain('Fechar')
+  await p.unmount()
+  expect((await run($, 'hide')).text).toBe('Banda oculta. /limits show traz de volta.')
+})
