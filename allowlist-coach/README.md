@@ -3,15 +3,7 @@
 Counts the permission dialogs you answer, per rule, and offers the rules you keep approving.
 It writes nothing until you pick **Add** in a dialog.
 
-```
-Ready to allow
-✓  14  Bash(./mvnw test:*)                      [ allow ]  dismiss
-
-Counted
-counting   ✓  3 ✗  0  WebFetch(domain:docs.spring.io)
-refused    ✓  6 ✗  1  Bash(docker compose up -d)
-risky      ✓  9 ✗  0  Bash(rm -rf target)
-```
+![allowlist-coach: the line under the permission dialog, the toast and the /allowlist pane](../screenshots/allowlist-coach.svg)
 
 - **Under the dialog:** one line with how often you approved that rule in this project, and
   how many approvals are left before it is offered.

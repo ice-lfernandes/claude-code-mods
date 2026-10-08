@@ -2,9 +2,7 @@
 
 Plan limits and context above the prompt, in tokens and percent. Never money.
 
-```
-5h ██████░░░░ 64% ↻1h12   wk ███░░░░░░░ 31% ↻3d4h   ctx ██████░░░░ 58%   cache 82%   hide
-```
+![limits-meter: band above the prompt, the /limits pane and its toasts](../screenshots/limits-meter.svg)
 
 - **Band above the prompt:** the 5-hour and weekly plan windows with their reset times, the
   context window's fill, and the last turn's cache hit rate. Colors turn yellow at 70% and red
