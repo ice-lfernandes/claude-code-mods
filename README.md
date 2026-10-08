@@ -7,6 +7,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 | Mod | Command | What it does |
 | --- | --- | --- |
 | [limits-meter](limits-meter/) | `/limits` | Plan limits and context above the prompt: 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn |
+| [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
 
 ## Install
 
@@ -33,12 +34,15 @@ it makes.
 | Mod | Network | Runs processes | Files | Calls a model | Sends data anywhere |
 | --- | --- | --- | --- | --- | --- |
 | limits-meter | No | No | No | No | No |
+| allowlist-coach | No | No | Reads and writes `.claude/settings.local.json`, after you confirm | No | No |
 
 ## Developing
 
 ```bash
 claude plugin validate ./limits-meter
 claude plugin test ./limits-meter
+claude plugin validate ./allowlist-coach
+claude plugin test ./allowlist-coach
 ```
 
 Every mod ships tests, including a render test on the `terminal` and `desktop` surfaces.

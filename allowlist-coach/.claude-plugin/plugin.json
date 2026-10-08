@@ -1,0 +1,10 @@
+{
+  "name": "allowlist-coach",
+  "version": "0.1.0",
+  "description": "Counts permission dialogs per rule and, after repeated approvals, offers to add the rule to permissions.allow, asking before it writes",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Lucas Fernandes"
+  },
+  "license": "MIT"
+}
