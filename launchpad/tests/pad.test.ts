@@ -275,7 +275,7 @@ const fromPlugin = (name: string, plugin?: string): Target => ({ kind: 'command'
 test('mods: found by command and plugin; a command without a plugin name counts, another plugin\'s does not', async () => {
   const { installed, missing } = modsOf([fromPlugin('limits', 'limits-meter'), fromPlugin('watch'), fromPlugin('allowlist', 'someone-else')])
   expect(installed.map(m => m.plugin)).toEqual(['limits-meter', 'agent-watch'])
-  expect(missing.map(m => m.plugin)).toEqual(['allowlist-coach'])
+  expect(missing.map(m => m.plugin)).toEqual(['allowlist-coach', 'plain-view'])
   expect(modsOf([]).installed).toEqual([])
   expect(MODS.map(m => m.plugin)).not.toContain('launchpad')
   expect(MODS.map(m => m.plugin)).not.toContain('test-hud') // for developers; leaves the collection after plan v2
@@ -291,12 +291,14 @@ test('mods: a label in each language and icon style', async () => {
   expect(modLabel(MODS[2]!, 'en', 'symbol')).toBe('◈ agents')
 })
 
-const CLEAN: ModInfo = { plugin: 'clean-view', command: 'clean', icon: 'spark', label: { 'pt-BR': 'clean-view', en: 'clean-view' }, toggles: true }
+const PLAIN = MODS.find(m => m.plugin === 'plain-view')!
 
 test('on and off: the state of a mod that toggles, from its enabled row', async () => {
-  expect(toggleOf(CLEAN, [{ key: 'clean-view.enabled', value: true }])).toBe(true)
-  expect(toggleOf(CLEAN, [{ key: 'clean-view.enabled', value: false }])).toBe(false)
-  expect(toggleOf(CLEAN, [])).toBeNull()
+  expect(PLAIN.toggles).toBe(true)
+  expect(modLabel(PLAIN, 'pt-BR', 'symbol')).toBe('✦ transcript limpo')
+  expect(toggleOf(PLAIN, [{ key: 'plain-view.enabled', value: true }])).toBe(true)
+  expect(toggleOf(PLAIN, [{ key: 'plain-view.enabled', value: false }])).toBe(false)
+  expect(toggleOf(PLAIN, [])).toBeNull()
   expect(toggleOf(MODS[0]!, [{ key: 'limits-meter.enabled', value: true }])).toBeNull() // does not toggle
 })
 
