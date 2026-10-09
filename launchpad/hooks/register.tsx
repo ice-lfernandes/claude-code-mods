@@ -756,7 +756,7 @@ export const register: Register = (on, options) => {
           {installed.length > 0 && (
             <Box flexDirection="column">
               <Box flexDirection="row" flexWrap="wrap" gap={1}>
-                {installed.map(m => control($, e, `mod:${m.plugin}`, modLabel(m, lang, icons), () => runMod($, m), { width: 17 }))}
+                {installed.map(m => control($, e, `mod:${m.plugin}`, modLabel(m, icons), () => runMod($, m), { width: 20 }))}
               </Box>
               {installed
                 .filter(m => m.toggles)
@@ -764,7 +764,7 @@ export const register: Register = (on, options) => {
                   const isOn = toggleOf(m, rows)
                   return (
                     <Box key={`toggle:${m.plugin}`} flexDirection="row" alignItems="center" gap={2}>
-                      <Text>{modLabel(m, lang, icons)}</Text>
+                      <Text>{modLabel(m, icons)}</Text>
                       {isOn !== null && <Text color={isOn ? 'success' : 'inactive'}>{isOn ? p.isOn : p.isOff}</Text>}
                       {isOn !== false && control($, e, `off:${m.plugin}`, p.turnOff, () => runMod($, m, 'off'))}
                       {isOn !== true && control($, e, `on:${m.plugin}`, p.turnOn, () => runMod($, m, 'on'))}

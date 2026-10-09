@@ -3,6 +3,7 @@
 // No `$` here, so it tests without an engine.
 
 import type { Effort, IconStyle, Kind, Lang, ModInfo, Origin, Pad, Placement, Target } from '../types'
+import { COMMAND_ICONS, GENERIC, ICONS, SOURCE_ICONS } from './icons'
 
 /** Buttons the menu shows, and the most the person's own list may hold. */
 export const MAX_SHOWN = 8
@@ -13,28 +14,7 @@ export const MAX_PROJECT = 8
 /** Agent types every session has, besides the ones in `.claude/agents/`. */
 export const BUILTIN_AGENTS = ['general-purpose', 'Explore', 'Plan']
 
-/** Built-in icons: an emoji for most terminals, a one-cell symbol for those that draw emoji badly. */
-export const ICONS: Record<string, { emoji: string; symbol: string }> = {
-  folder: { emoji: '📁', symbol: '▤' },
-  doc: { emoji: '📄', symbol: '¶' },
-  pen: { emoji: '✏️', symbol: '✎' },
-  search: { emoji: '🔍', symbol: 'Δ' },
-  compress: { emoji: '🗜️', symbol: '⇲' },
-  gauge: { emoji: '⏱️', symbol: '◔' },
-  chart: { emoji: '📊', symbol: '▥' },
-  table: { emoji: '📋', symbol: '▦' },
-  mail: { emoji: '✉️', symbol: '✉' },
-  undo: { emoji: '↩️', symbol: '↺' },
-  spark: { emoji: '✨', symbol: '✦' },
-  brain: { emoji: '🧠', symbol: '◎' },
-  sliders: { emoji: '🎛️', symbol: '≡' },
-  help: { emoji: '❓', symbol: '?' },
-  agent: { emoji: '🤖', symbol: '◉' },
-  tool: { emoji: '🔧', symbol: '⚙' },
-  plug: { emoji: '🔌', symbol: '⌁' },
-  shield: { emoji: '🛡️', symbol: '◇' },
-  agents: { emoji: '🛰️', symbol: '◈' },
-}
+export { ICONS }
 
 type Words = {
   ask: string
@@ -433,8 +413,12 @@ export const localize = (list: Pad[], lang: Lang): Pad[] => {
   return list.map(p => (p.origin === 'default' && labels.has(p.id) ? { ...p, label: labels.get(p.id)! } : p))
 }
 
-/** The icon a target gets when the pane adds it: by kind, and for a command by where it comes from. */
-export const iconFor = (t: Target) => (t.kind === 'agent' ? 'agent' : t.source === 'builtin' ? 'tool' : t.source === 'mcp' ? 'plug' : 'spark')
+/** A command's own icon in COMMAND_ICONS, or null; own keys only, so `constructor` is none. */
+export const commandIcon = (name: string): string | null => (Object.hasOwn(COMMAND_ICONS, name) ? COMMAND_ICONS[name]! : null)
+
+/** The icon a target gets when the pane adds it: an agent's, a command's own, else by where it comes from. */
+export const iconFor = (t: Target) =>
+  t.kind === 'agent' ? 'agent' : (commandIcon(t.name) ?? (Object.hasOwn(SOURCE_ICONS, t.source) ? SOURCE_ICONS[t.source]! : 'spark'))
 
 /**
  * Whether a command's argument hint names only optional arguments: every part in square
@@ -508,7 +492,7 @@ export const parseAdd = (args: string, id: string): Pad | null => {
   const label = (icon ? rest.join(' ') : left).trim().slice(0, MAX_LABEL)
   const kind = kindOf(text)
   if (!/[\p{L}\p{N}]/u.test(label) || !kind) return null
-  return { id, icon: icon ?? (kind === 'agent' ? 'agent' : 'tool'), label, text, kind, origin: 'user' }
+  return { id, icon: icon ?? (kind === 'agent' ? 'agent' : (commandIcon(commandOf(text).command) ?? 'tool')), label, text, kind, origin: 'user' }
 }
 
 /**
@@ -627,12 +611,20 @@ export const cells = (s: string): number => {
 }
 
 /**
+ * The icon a button draws: a command button saved with an origin's generic icon (🔧 ✨ 🔌 🧩) takes
+ * its command's own, so buttons added before COMMAND_ICONS had a row get it too.
+ */
+export const iconOf = (p: Pad): string =>
+  p.kind === 'command' && GENERIC.includes(p.icon) ? (commandIcon(commandOf(p.text).command) ?? p.icon) : p.icon
+
+/**
  * A button's icon and label. With symbols, an icon of the person's own that is not one cell wide
  * (an emoji from /pad add or the project file) gives way to the symbol of the button's kind, so
  * the columns stay aligned.
  */
 export const buttonLabel = (p: Pad, style: IconStyle) => {
-  const icon = style === 'symbol' && !isIcon(p.icon) && cells(p.icon) !== 1 ? (p.kind === 'agent' ? 'agent' : 'tool') : p.icon
+  const own = iconOf(p)
+  const icon = style === 'symbol' && !isIcon(own) && cells(own) !== 1 ? (p.kind === 'agent' ? 'agent' : 'tool') : own
   return `${glyph(icon, style)} ${p.label}`
 }
 
@@ -676,10 +668,10 @@ export const WARN_AT = 70
  * is left out on purpose: it is for developers, and it leaves this collection after plan v2.
  */
 export const MODS: readonly ModInfo[] = [
-  { plugin: 'limits-meter', command: 'limits', icon: 'gauge', label: { 'pt-BR': 'limites', en: 'limits' }, toggles: false },
-  { plugin: 'allowlist-coach', command: 'allowlist', icon: 'shield', label: { 'pt-BR': 'permissões', en: 'permissions' }, toggles: false },
-  { plugin: 'agent-watch', command: 'watch', icon: 'agents', label: { 'pt-BR': 'agentes', en: 'agents' }, toggles: false },
-  { plugin: 'plain-view', command: 'plain-view', icon: 'spark', label: { 'pt-BR': 'transcript limpo', en: 'plain view' }, toggles: true },
+  { plugin: 'limits-meter', command: 'limits', toggles: false },
+  { plugin: 'allowlist-coach', command: 'allowlist', toggles: false },
+  { plugin: 'agent-watch', command: 'watch', toggles: false },
+  { plugin: 'plain-view', command: 'plain-view', toggles: true },
 ]
 
 /** The marketplace the collection installs from. */
@@ -735,8 +727,8 @@ export const toggleOf = (m: ModInfo, rows: readonly { key: string; value: unknow
   return typeof row?.value === 'boolean' ? row.value : null
 }
 
-/** A mod's button label: its icon and its name in this language. */
-export const modLabel = (m: ModInfo, lang: Lang, style: IconStyle) => `${glyph(m.icon, style)} ${m.label[lang]}`
+/** A mod's button label: its command's icon and the plugin's name, the same in every language. */
+export const modLabel = (m: ModInfo, style: IconStyle) => `${glyph(commandIcon(m.command) ?? 'puzzle', style)} ${m.plugin}`
 
 /** The shortcuts the panel shows: the menu's, less `/model`, which the chips replace. */
 export const panelShortcuts = (pads: readonly Pad[]) => pads.filter(p => !(p.kind === 'command' && commandOf(p.text).command === 'model'))
