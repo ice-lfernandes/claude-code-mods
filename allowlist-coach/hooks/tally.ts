@@ -51,6 +51,21 @@ export const rulesFor = (tool: string, input: unknown, suggestions?: readonly Su
   return [tool]
 }
 
+const SECRET = [
+  /\b[\w.-]*(token|secret|passw(or)?d|pwd|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)[\w.-]*\s*[=:]\s*\S/i,
+  /--?(password|passwd|token|secret|api-?key)\s+\S/i,
+  /\bauthorization\s*:|\bbearer\s+\S{8}/i,
+  /[a-z][\w+.-]*:\/\/[^\s/@:]+:[^\s/@]+@/i,
+  /\b(sk-[\w-]{16}|gh[pousr]_\w{20}|github_pat_|AKIA[0-9A-Z]{16}|xox[abprs]-|AIza[\w-]{20})/,
+]
+
+/**
+ * Whether a call's input looks like it holds a credential: a token, password or key set or
+ * passed, an Authorization header, a URL with a password, a known key prefix. Such a call is
+ * not counted, so its command is never stored nor offered for a settings file.
+ */
+export const holdsSecret = (text: string) => SECRET.some(re => re.test(text))
+
 /** One short line for the call that asked. */
 export const exampleOf = (tool: string, input: unknown) => {
   const args = (input ?? {}) as Record<string, unknown>

@@ -26,6 +26,7 @@ import type { Configured, Entry, Tab } from '../types'
 import {
   addAllow,
   exampleOf,
+  holdsSecret,
   keyAt,
   keyOf,
   noticeFor,
@@ -100,8 +101,21 @@ const confirm = async ($: EngineInterface, question: string, yes: string) => {
   }
 }
 
-/** A settings file's text through `change`, written back unless `change` returns null. Throws as addAllow does. */
+const where = ($: EngineInterface, path: string) => $.fs.stat(path, { resolve: true }).then(s => s, () => null)
+
+/**
+ * Throws unless the file is a plain file, or nothing yet, in the project's own .claude folder:
+ * a link there, which a cloned repository can hold, would send the rule to another file.
+ */
+const guard = async ($: EngineInterface, file: string) => {
+  const [top, dir, at] = await Promise.all([where($, root), where($, `${root}/.claude`), where($, `${root}/${file}`)])
+  if (dir && (dir.isLink || !top?.realPath || dir.realPath !== `${top.realPath}/.claude`)) throw new Error('.claude is a link; the coach writes only a plain file')
+  if (at && (at.isLink || at.kind !== 'file')) throw new Error(`${file} is a link or not a file; the coach writes only a plain file`)
+}
+
+/** A settings file's text through `change`, written back unless `change` returns null. Throws as addAllow does, and on a link. */
 const edit = async ($: EngineInterface, file: string, change: (text: string) => string | null) => {
+  await guard($, file)
   const path = `${root}/${file}`
   const text = (await $.fs.exists(path)) ? String(await $.fs.read(path)) : ''
   const next = change(text)
@@ -309,7 +323,10 @@ export const register: Register = (on, options) => {
     const input = stable(e.tool_input)
     for (const [id, call] of open) {
       if (call.rules || call.tool !== e.tool_name || call.input !== input || call.agentId !== e.agent_id) continue
-      call.rules = rulesFor(e.tool_name, e.tool_input, e.permission_suggestions)
+      const rules = rulesFor(e.tool_name, e.tool_input, e.permission_suggestions)
+      // A call that carries a credential is left uncounted, so it is never stored.
+      if (holdsSecret(call.input) || rules.some(holdsSecret)) break
+      call.rules = rules
       const text = noticeFor((await read($, entries))[keyOf(call.rules)], await read($, configured), lang)
       if (text) {
         try {

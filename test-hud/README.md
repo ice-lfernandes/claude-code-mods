@@ -64,8 +64,10 @@ Or for one session: `claude --plugin-dir ./test-hud`
 It reads the Bash calls through the `tool.call` event, after they run. The hook only
 observes: it never changes a command or its result, and if it fails, the result stands.
 When an output is too long for Claude Code to show whole, the summary at its end is cut off.
-The mod then reads the full output from the file Claude Code saved under `tool-results/`. It
-reads no other file. It keeps the last 30 runs in the session's plugin state. Only with
+The mod then reads the full output from the file Claude Code saved under `tool-results/`.
+When only the output's text names that file, the mod reads it only if it really lands in a
+`tool-results/` folder under `~/.claude` (or `CLAUDE_CONFIG_DIR`), since a test can print any
+path. It reads no other file. It reads `HOME` and `CLAUDE_CONFIG_DIR` to find that folder. It keeps the last 30 runs in the session's plugin state. Only with
 `keepHistory` does it keep them across sessions, in the plugin's store, under the project
 root. It reads `LANG` for the `auto` language.
 
