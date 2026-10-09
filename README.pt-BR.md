@@ -343,7 +343,6 @@ Precisa de um mod, skill ou agent feito para o seu fluxo ou o seu time? Faço tr
 medida: hooks, painéis, status lines, slash commands, skills e subagents para o Claude Code.
 
 - Email: [lucas.rj.fernandes@gmail.com](mailto:lucas.rj.fernandes@gmail.com)
-- LinkedIn: [linkedin.com/in/lucasdfernandes](https://www.linkedin.com/in/lucasdfernandes)
 
 ## YouTube
 
