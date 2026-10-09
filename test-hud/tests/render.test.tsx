@@ -8,10 +8,11 @@ const CMD = 'npx vitest run --reporter=verbose src/a.test.ts src/b.test.ts src/c
 
 const RED = ' FAIL  src/a.test.ts > parse > empty\n FAIL  src/a.test.ts > parse > commas\n\n      Tests  2 failed | 41 passed (43)'
 const GREEN = '      Tests  43 passed (43)'
+const PYTEST = 'FAILED tests/test_api.py::test_routes\n1 failed, 9 passed in 0.40s'
 
 type World = { toasts: string[]; statuses: (string | undefined)[]; fills: { text: string; decorations?: unknown }[]; logs: string[]; closed: string[]; output: string }
 
-const world = (on: On, env: Record<string, string> = {}): { w: World; clock: ReturnType<typeof mock.clock> } => {
+const world = (on: On, env: Record<string, string> = {}, store = true): { w: World; clock: ReturnType<typeof mock.clock> } => {
   const clock = mock.clock(on, { now: NOW })
   const w: World = { toasts: [], statuses: [], fills: [], logs: [], closed: [], output: RED }
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
@@ -23,8 +24,11 @@ const world = (on: On, env: Record<string, string> = {}): { w: World; clock: Ret
   on('env.get', (_$, e: any) => ({ value: env[e.name] }) as never)
   on('command.register', () => ({ value: undefined }) as never)
   on('session.start', () => ({ cwd: '/repo' }) as never)
-  on('tool.call', (async () => {
+  on('session.root', () => ({ value: '/repo' }) as never)
+  if (store) mock.store(on)
+  on('tool.call', (async (_$: any, e: any) => {
     await clock.advance(12_000)
+    if (e.command.startsWith('pytest')) return { result: undefined, text: `Exit code 1\n${PYTEST}`, isError: true }
     return w.output === GREEN ? { result: { stdout: w.output, stderr: '', interrupted: false }, text: w.output } : { result: undefined, text: `Exit code 1\n${w.output}`, isError: true }
   }) as never)
   return { w, clock }
@@ -161,5 +165,88 @@ test('the language option wins over LANG', { options: { language: 'en' } }, asyn
   const { w } = world(on, { LANG: 'pt_BR.UTF-8' })
   await start($)
   await vitest($, 'tu1')
+  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+})
+
+test('a run in the list shows it, flaky tests are marked, and latest goes back', async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  const pane = await mount($)
+  let drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('43/43 passing')
+  expect(drawn).toContain('duration of the last 6 runs (11s to 14s)')
+  expect(drawn).toContain('press one to see it')
+
+  // Run 3: "rounds half up" failed in run 1, passed in run 2 and failed again.
+  await pane.press({ key: 'run:3' })
+  drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('showing run #3')
+  expect(drawn).toContain('vitest · #3')
+  expect(drawn).toContain('flaky?')
+  expect(drawn.match(/flaky\?/g)).toHaveLength(1)
+  await pane.press({ key: 'fix:src/cart.test.ts > totals > rounds half up' })
+  expect(w.fills.at(-1)?.text).toContain('rounds half up')
+
+  await pane.press({ key: 'latest' })
+  drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).not.toContain('showing run')
+  expect(drawn).toContain('vitest · #6')
+  await pane.unmount()
+})
+
+test('with two runners, tabs pick which one the pane shows', async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  await vitest($, 'tu1')
+  await $.tool.call({ tool: 'Bash', command: 'pytest -q', tool_use_id: 'tu2' } as never)
+  expect(w.statuses.at(-1)).toBe('✗ tests 9/10')
+  const pane = await mount($)
+  let drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('▸ pytest')
+  expect(drawn).toContain('tests/test_api.py::test_routes')
+  expect(drawn).not.toContain('parse > empty')
+
+  await pane.press({ key: 'tab:vitest' })
+  drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('▸ vitest')
+  expect(drawn).toContain('41/43 passing')
+  expect(drawn).toContain('parse > empty')
+  expect(drawn).not.toContain('pytest -q')
+  await pane.unmount()
+})
+
+test('one runner: no tabs, and one run: no duration line', async ($, on) => {
+  world(on)
+  await start($)
+  await vitest($, 'tu1')
+  const pane = await mount($)
+  const drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).not.toContain('tab:')
+  expect(drawn).not.toContain('duration of')
+  await pane.unmount()
+})
+
+test('keepHistory: the next session in the project starts with the runs, demo left out', { options: { keepHistory: true } }, async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  await vitest($, 'tu1')
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  await start($) // a new session reads the store
+  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+  await $.command.run({ ...RUN, args: 'clear' } as never)
+  await start($)
+  const pane = await mount($)
+  expect(JSON.stringify(await pane.drawn())).toContain('No test runs yet')
+  await pane.unmount()
+})
+
+test('without keepHistory nothing is stored', async ($, on) => {
+  const { w } = world(on, {}, false)
+  let writes = 0
+  on('store.set', () => (writes++, { value: undefined }) as never)
+  await start($)
+  await vitest($, 'tu1')
+  expect(writes).toBe(0)
   expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
 })

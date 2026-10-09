@@ -10,7 +10,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
 | [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish |
 | [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
-| [launchpad](launchpad/) | `/pad` | A welcome menu of one-click actions under the header: each button runs an installed command, skill or agent. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
+| [launchpad](launchpad/) | `/pad` | A menu of one-click actions under the header, below the prompt or in a pane: each button runs an installed command, skill or agent. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
 
 ## Using the mods
 
@@ -29,7 +29,8 @@ The band shows on its own after the first response. Commands:
 ```
 
 From 85% context the band and the pane show `compact`, which puts `/compact [focus]` in the
-prompt and runs nothing. `details` on the band opens the pane.
+prompt and runs nothing. `details` on the band opens the pane. The pane also says when a window
+reaches 100% at the current pace, before it resets, and draws the context fill turn by turn.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](screenshots/limits-meter.svg)
 
@@ -38,12 +39,17 @@ prompt and runs nothing. `details` on the band opens the pane.
 It counts on its own each time you answer a permission dialog. Commands:
 
 ```
-/allowlist             open the pane: rules ready to allow, then every counted rule, numbered
-/allowlist allow 1     add rule 1 to permissions.allow (asks first)
+/allowlist             open the pane: every counted rule, numbered, ready ones first
+/allowlist allow 1     add rule 1 to permissions.allow (asks first, and which file)
 /allowlist dismiss 2   stop offering rule 2
+/allowlist remove 1    take rule 1 back out of allow, when the coach added it (asks first)
+/allowlist reset 2     set rule 2's count back to zero (asks first)
 /allowlist reset       clear this project's counts (asks first)
 /allowlist help        list the commands
 ```
+
+The pane has tabs by status, a filter, and a scrolling list. A risky rule says why it is never
+offered.
 
 ![allowlist-coach: the line under the permission dialog, the toast and the /allowlist pane](screenshots/allowlist-coach.svg)
 
@@ -60,7 +66,9 @@ The status line and the toasts show on their own while subagents run. Commands:
 /watch help         list the commands
 ```
 
-Finished agents fold into one line in the pane; press it to open them.
+Finished agents fold into one line in the pane; press it to open them. A bar shows each
+agent's share of the tokens, a name opens its last tool calls, and a stalled agent has an
+`investigate` button that asks about it in the prompt.
 
 ![agent-watch: the /watch pane, the status line and its toasts](screenshots/agent-watch.svg)
 
@@ -77,7 +85,9 @@ The status line and the toast show on their own each time a test runner runs in 
 ```
 
 In the pane, press a failing test to ask Claude for a fix, or `run again` to ask for the same
-command: both put the request in the prompt and run nothing.
+command: both put the request in the prompt and run nothing. Press a run in the list to see it;
+failing tests that failed, passed and failed again are marked `flaky?`. With the `keepHistory`
+option the runs carry over to the next session in the same project.
 
 ![test-hud: the /test-hud pane, the status line and the green toast](screenshots/test-hud.svg)
 
@@ -93,6 +103,7 @@ Commands:
 /pad add 🔎 Revisão | /code-review          add a button for an installed command, skill or @agent
 /pad remove 3                               drop button 3
 /pad reset                                  back to the defaults
+/pad place header | prompt | pane           where the menu shows: under the header, below the prompt, or in a pane
 /pad off | on                               turn the menu off or back on
 ```
 
@@ -123,7 +134,7 @@ it makes.
 | Mod | Network | Runs processes | Files | Calls a model | Sends data anywhere |
 | --- | --- | --- | --- | --- | --- |
 | limits-meter | No | No | No | No | No |
-| allowlist-coach | No | No | Reads and writes `.claude/settings.local.json`, after you confirm | No | No |
+| allowlist-coach | No | No | Reads and writes `.claude/settings.local.json`, or `.claude/settings.json` when you pick it, after you confirm | No | No |
 | agent-watch | No | No | No | No | No |
 | test-hud | No | No | Reads Bash's saved copy of an output too long to show whole | No | No |
 
@@ -141,6 +152,29 @@ claude plugin test ./test-hud
 ```
 
 Every mod ships tests, including a render test on the `terminal` and `desktop` surfaces.
+
+### Checks before a merge
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`,
+with no Claude login and no model call:
+
+- `claude plugin validate` and `claude plugin test` for each mod, on a pinned Claude Code version;
+- `scripts/check-shared.sh`: the shared files are the same in every mod;
+- `scripts/check-manifests.py`: every JSON file parses, the marketplace lists every mod, and each
+  entry's name and description match the mod's `plugin.json`;
+- `scripts/check-versions.sh <base>`: a mod changed in the pull request raised its version, since
+  Claude Code updates an installed plugin only when the version moves;
+- the screenshots match what the mods draw now (`scripts/screenshots/run.sh`, then no diff);
+- `shellcheck` on the scripts.
+
+Run the same checks locally before a push:
+
+```bash
+./scripts/check-shared.sh
+python3 scripts/check-manifests.py
+./scripts/check-versions.sh origin/main
+./scripts/screenshots/run.sh && git diff --stat screenshots
+```
 
 ### Shared helpers
 

@@ -6,6 +6,8 @@ import { clip, elapsed, tokens } from './ui'
 import { WORDS } from './words'
 
 const MAX_AGENTS = 60
+/** Tool calls an agent row keeps for its expanded view. */
+export const RECENT_KEPT = 5
 
 export const ZERO: Tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
@@ -96,12 +98,18 @@ export const addStep = (
 
 export const toolStart = (list: readonly Agent[], id: string, doing: string, now: number): Agent[] => {
   const a = list.find(x => x.id === id)
-  return a ? touch(list, id, now, 'tool', { doing, tools: a.tools + 1 }) : (list as Agent[])
+  const recent = [...(a?.recent ?? []), { doing, ok: null }].slice(-RECENT_KEPT)
+  return a ? touch(list, id, now, 'tool', { doing, tools: a.tools + 1, recent }) : (list as Agent[])
 }
 
 export const toolEnd = (list: readonly Agent[], id: string, ok: boolean, now: number): Agent[] => {
   const a = list.find(x => x.id === id)
-  return a ? touch(list, id, now, 'idle', { errors: a.errors + (ok ? 0 : 1) }) : (list as Agent[])
+  if (!a) return list as Agent[]
+  // The call that ends is the last one still open.
+  const recent = [...(a.recent ?? [])]
+  const open = recent.map(r => r.ok).lastIndexOf(null)
+  if (open >= 0) recent[open] = { ...recent[open]!, ok }
+  return touch(list, id, now, 'idle', { errors: a.errors + (ok ? 0 : 1), recent })
 }
 
 /**
@@ -195,15 +203,53 @@ export const summarize = (wave: readonly Agent[], now: number): Run | null => {
 
 export const runText = (r: Run, lang: Lang = 'en') =>
   WORDS[lang].run(r.count, tokens(r.total), elapsed(r.durationMs)) +
-  (r.top ? WORDS[lang].heaviest(r.top.label, tokens(r.top.total), Math.round(r.top.share * 100)) : '')
+  (r.top ? WORDS[lang].heaviest(r.top.label, tokens(r.top.total), Math.round(r.top.share * 100)) : '') +
+  (r.windowUsed != null && r.windowUsed >= 1 ? WORDS[lang].windowUsed(Math.round(r.windowUsed)) : '')
+
+/** Points of the 5-hour window a wave used, from its reading at the start and at the end; null without both. */
+export const windowUsed = (start: number | null, end: number | null) => (start === null || end === null || end < start ? null : end - start)
+
+/** The 5-hour window's percent in a usage reading, or null. */
+export const fiveHourOf = (usage: { rateLimits?: readonly { kind: string; percentUsed: number }[] } | null | undefined) =>
+  usage?.rateLimits?.find(r => r.kind === 'five_hour')?.percentUsed ?? null
+
+/** One part of the share bar: an agent, or the rest together (`agent` null), and its cells. */
+export type Share = { agent: Agent | null; tokens: number; cells: number }
+
+/**
+ * Each agent's part of `width` cells by tokens: the `top` heaviest on their own, the rest as
+ * one part. Cells go by largest remainder, so they add up to `width`; an agent with tokens gets
+ * a cell at least when there is room.
+ */
+export const shares = (list: readonly Agent[], width: number, top = 4): Share[] => {
+  const withTokens = list.filter(a => total(a.tokens) > 0).sort((x, y) => total(y.tokens) - total(x.tokens))
+  const sum = withTokens.reduce((n, a) => n + total(a.tokens), 0)
+  if (sum === 0 || width <= 0) return []
+  const parts: Share[] = withTokens.slice(0, top).map(a => ({ agent: a, tokens: total(a.tokens), cells: 0 }))
+  const rest = withTokens.slice(top).reduce((n, a) => n + total(a.tokens), 0)
+  if (rest > 0) parts.push({ agent: null, tokens: rest, cells: 0 })
+  const exact = parts.map(p => (p.tokens / sum) * width)
+  parts.forEach((p, i) => (p.cells = Math.floor(exact[i]!)))
+  let left = width - parts.reduce((n, p) => n + p.cells, 0)
+  const order = parts.map((_, i) => i).sort((i, j) => exact[j]! - Math.floor(exact[j]!) - (exact[i]! - Math.floor(exact[i]!)))
+  for (const i of order) {
+    if (left === 0) break
+    parts[i]!.cells++
+    left--
+  }
+  return parts
+}
+
+/** How the pane orders agents among their siblings. */
+export type SortBy = 'start' | 'tokens'
 
 export const nameOf = (a: Agent) => a.name || a.label
 
 /** `prefix` leads the agent's first line, `rail` its second. */
 export type Row = { agent: Agent; prefix: string; rail: string }
 
-/** Depth-first, children under their parent by start time, with tree connectors. */
-export const tree = (list: readonly Agent[]): Row[] => {
+/** Depth-first, children under their parent by start time (or most tokens first), with tree connectors. */
+export const tree = (list: readonly Agent[], sortBy: SortBy = 'start'): Row[] => {
   const ids = new Set(list.map(a => a.id))
   const kids = new Map<string, Agent[]>()
   for (const a of list) {
@@ -212,7 +258,7 @@ export const tree = (list: readonly Agent[]): Row[] => {
   }
   const rows: Row[] = []
   const walk = (parent: string, rail: string) => {
-    const children = (kids.get(parent) ?? []).sort((x, y) => x.startedAt - y.startedAt)
+    const children = (kids.get(parent) ?? []).sort((x, y) => (sortBy === 'tokens' ? total(y.tokens) - total(x.tokens) : 0) || x.startedAt - y.startedAt)
     children.forEach((a, i) => {
       const last = i === children.length - 1
       const below = rail + (last ? '  ' : '│ ')

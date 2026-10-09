@@ -13,6 +13,10 @@
 //            person's list is kept across sessions in the plugin's store.
 //   /pad off | on  turns the menu off (no card at the start, after /clear or on /pad) and back
 //            on, kept across sessions.
+//   /pad place header | prompt | pane  where the menu shows: the card under the header, a row
+//            under the prompt that stays (below the engine's hint line), or a pane of its own, a
+//            tab like other mods' panes, with the card's tiles.
+//            Kept across sessions; the `placement` option is the default.
 //   project  .claude/launchpad.json adds the repository's buttons. They come from the repo, so
 //            a press only puts the text in the prompt: the person reads it before pressing Enter.
 //
@@ -22,7 +26,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
-import type { IconStyle, Lang, Pad, Target } from '../types'
+import type { IconStyle, Lang, Pad, Placement, Target } from '../types'
 import {
   agentName,
   agentOf,
@@ -48,19 +52,24 @@ import {
   padKey,
   parseAdd,
   parseProject,
+  placementOf,
   sameText,
   shownOf,
   spell,
   styleOf,
   tileLabel,
+  unblank,
   WORDS,
 } from './pad'
 
 const PANE = 'launchpad'
+/** The menu's own pane, under `/pad place pane`. */
+const MENU_PANE = 'launchpad-menu'
 const PROJECT_FILE = '.claude/launchpad.json'
 const AGENTS_DIR = '.claude/agents'
 const KEY_MENU = 'menu'
 const KEY_OFF = 'off'
+const KEY_PLACE = 'placement'
 
 const menu = atom({ plugin: 'launchpad', key: 'menu' } as const, [] as Pad[])
 const project = atom({ plugin: 'launchpad', key: 'project' } as const, [] as Pad[])
@@ -68,6 +77,7 @@ const catalog = atom({ plugin: 'launchpad', key: 'catalog' } as const, [] as Tar
 const filter = atom({ plugin: 'launchpad', key: 'filter' } as const, '')
 const offset = atom({ plugin: 'launchpad', key: 'offset' } as const, 0)
 const isOff = atom({ plugin: 'launchpad', key: 'isOff' } as const, false)
+const placement = atom({ plugin: 'launchpad', key: 'placement' } as const, 'header' as Placement)
 
 /**
  * Argument hints by command name, as the engine lists the commands for the typeahead and /help
@@ -83,6 +93,8 @@ let lastStart = 0
 let lang: Lang = 'pt-BR'
 let style: IconStyle = 'emoji'
 let cwd = ''
+/** The `placement` option: where the menu shows until /pad place picks a place. */
+let placeOption: Placement = 'header'
 
 /** The agent types in one `.claude/agents` folder; none where it cannot be read. */
 async function agentsIn($: EngineInterface, dir: string): Promise<Target[]> {
@@ -130,6 +142,8 @@ async function load($: EngineInterface, fresh = false) {
   await update($, menu, () => (stored ? localize(stored, lang) : defaults(lang)))
   const off = (await $.store.get(KEY_OFF).catch(() => undefined)) === true
   await update($, isOff, () => off)
+  const place = await $.store.get(KEY_PLACE).catch(() => undefined)
+  await update($, placement, () => (typeof place === 'string' ? placementOf(place) : placeOption))
   await update($, project, () => parseProject(typeof raw === 'string' ? raw : null))
   if (fresh || (await read($, catalog)).length === 0) {
     const list = await readCatalog($)
@@ -163,8 +177,10 @@ async function press($: EngineInterface, p: Pad) {
     if (p.kind === 'agent') return await fill($, WORDS[lang].useAgent(agentOf(p.text), agentTask(p.text)))
     // A command with a [blank] waits in the prompt for the person to fill in; so does any
     // project button, whose text comes from the repository.
-    if (p.origin === 'project' || blankIn(p.text)) return await fill($, p.text)
-    const { command, args } = commandOf(p.text)
+    // A command whose blanks came from an optional hint (`/clear [name]`) runs bare.
+    const text = p.origin === 'project' ? p.text : unblank(p.text, hints.get(commandOf(p.text).command))
+    if (p.origin === 'project' || blankIn(text)) return await fill($, text)
+    const { command, args } = commandOf(text)
     await $.command.run({ command, args })
   } catch {
     $.ui.toast(WORDS[lang].failed(p.label))
@@ -198,6 +214,7 @@ const PAD_ACTIONS: { verb: string; fill?: (w: (typeof WORDS)[Lang]) => string }[
   { verb: 'add', fill: w => w.addTemplate },
   { verb: 'remove', fill: w => w.removeTemplate },
   { verb: 'reset', fill: () => '/pad reset' },
+  { verb: 'place', fill: w => w.placeTemplate },
   { verb: 'off' },
   { verb: 'help' },
 ]
@@ -207,9 +224,21 @@ async function newId($: EngineInterface) {
   return `user:${await $.clock.now()}:${(await read($, menu)).length}`
 }
 
-/** Draws the menu where /pad printed it. Not awaited: the row lands once the hook has returned. */
-function showMenu($: EngineInterface) {
-  $.command.run({ command: 'pad' }).catch(() => undefined)
+/** Opens the menu's own pane. The host opens a pane only with the keyboard on it; Esc closes it. */
+function openMenuPane($: EngineInterface) {
+  return $.ui.open({ id: MENU_PANE, title: WORDS[lang].menuPane, focus: true, closeOnEscape: true }).catch(() => null)
+}
+
+/**
+ * Shows the menu at the start and after /clear, where it lives: under the header, /pad's row
+ * drawn as the card (not awaited: the row lands once the hook has returned); in its pane, opened
+ * with the keyboard on it, as the host opens every pane. The band above the prompt is there
+ * already.
+ */
+async function showMenu($: EngineInterface) {
+  const place = await read($, placement)
+  if (place === 'header') $.command.run({ command: 'pad' }).catch(() => undefined)
+  else if (place === 'pane') await openMenuPane($)
 }
 
 /** Runs one of /pad's arguments from the row: its answer, if any, as dim lines in the transcript. */
@@ -248,22 +277,14 @@ function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | '
 }
 
 /**
- * The terminal's card: a frame in the accent color, the question, and a grid of bordered tiles.
- * Each tile adds 5 cells to its label (border and padding on both sides, one cell of gap); the
- * frame takes 4 cells.
+ * The terminal's grid of bordered tiles, in columns that fit `columns` cells. Each tile adds 5
+ * cells to its label (border and padding on both sides, one cell of gap).
  */
-function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[], columns: number) {
-  const { Box, Text, Button } = ui
-  const w = WORDS[lang]
-  const visible = list.slice(0, MAX_SHOWN)
-  const more = list.length - visible.length
-  const { width, rows } = layout(visible, style, Math.max(1, columns - 4), 5)
-
+function tiles($: EngineInterface, ui: Elements['terminal'], visible: Pad[], columns: number) {
+  const { Box, Button } = ui
+  const { width, rows } = layout(visible, style, Math.max(1, columns), 5)
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-      <Text color="claude" bold>
-        ✻ {w.ask}
-      </Text>
+    <Box flexDirection="column">
       {rows.map((row, r) => (
         <Box key={`row:${r}`} flexDirection="row">
           {row.map(p => (
@@ -290,6 +311,22 @@ function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[],
           ))}
         </Box>
       ))}
+    </Box>
+  )
+}
+
+/** The terminal's card: a frame in the accent color (4 cells), the question, the tiles and /pad's row. */
+function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[], columns: number) {
+  const { Box, Text } = ui
+  const w = WORDS[lang]
+  const visible = list.slice(0, MAX_SHOWN)
+  const more = list.length - visible.length
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+      <Text color="claude" bold>
+        ✻ {w.ask}
+      </Text>
+      {tiles($, ui, visible, columns - 4)}
       {padRow($, ui, more)}
     </Box>
   )
@@ -303,10 +340,29 @@ async function runPad($: EngineInterface, args: string): Promise<{ text?: string
 
   switch (verb.toLowerCase()) {
     case '':
-    case 'show':
+    case 'show': {
       await load($)
       if (await read($, isOff)) return { text: w.isOff }
-      return { text: (await shown($)).length ? w.shown : w.empty }
+      if (!(await shown($)).length) return { text: w.empty }
+      const place = await read($, placement)
+      if (place === 'prompt') return { text: w.inBand }
+      if (place === 'pane') {
+        const opened = await openMenuPane($)
+        if (opened?.isPlaced) return {}
+        return { text: listText(await shown($), lang, style) }
+      }
+      return { text: w.shown }
+    }
+
+    case 'place': {
+      const where = arg.toLowerCase()
+      if (where !== 'header' && where !== 'prompt' && where !== 'pane') return { text: w.badPlace }
+      await $.store.set(KEY_PLACE, where)
+      await update($, placement, () => where)
+      if (where === 'pane') await openMenuPane($)
+      else await $.ui.close({ id: MENU_PANE }).catch(() => undefined)
+      return { text: w.placed[where] }
+    }
 
     // Kept across sessions. Off hides every card, those already in the transcript too; the
     // commands and the pane go on working, to set the menu up before turning it back on.
@@ -366,6 +422,7 @@ export const register: Register = (on, options) => {
   lang = langOf(options.language)
   style = styleOf(options.icons)
   const showOnStart = options.showOnStart !== false
+  placeOption = placementOf(options.placement)
   let w = WORDS[lang]
 
   on('session.start', async ($, e, next) => {
@@ -378,14 +435,14 @@ export const register: Register = (on, options) => {
       name: 'pad',
       description:
         lang === 'en'
-          ? 'Shortcuts: /pad shows them; configuration, list, add, remove, reset, off, on'
-          : 'Atalhos: /pad mostra; configuration, list, add, remove, reset, off, on',
-      argumentHint: '[configuration|list|add|remove|reset|off|on]',
+          ? 'Shortcuts: /pad shows them; configuration, list, add, remove, reset, place, off, on'
+          : 'Atalhos: /pad mostra; configuration, list, add, remove, reset, place, off, on',
+      argumentHint: '[configuration|list|add|remove|reset|place|off|on]',
     })
     await load($, true)
     if (showOnStart && e.isInteractive) {
       const messages = await $.session.messages().catch(() => [])
-      if (messages.length === 0 && !(await read($, isOff))) showMenu($)
+      if (messages.length === 0 && !(await read($, isOff))) await showMenu($)
     }
     return result
   })
@@ -393,15 +450,21 @@ export const register: Register = (on, options) => {
   // Watches the engine list the commands, to learn which take an argument.
   on('command.describe', async ($, e, next) => {
     const result = await next(e)
-    if (result.argumentHint?.trim()) hints.set(e.command.replace(/^\//, ''), result.argumentHint.trim())
-    else hints.delete(e.command.replace(/^\//, ''))
+    const name = e.command.replace(/^\//, '')
+    const hint = result.argumentHint?.trim()
+    if (hint) hints.set(name, hint)
+    else hints.delete(name)
+    // A button saved with blanks from an optional hint (`/clear [name]`) is saved back bare.
+    const list = await read($, menu)
+    const fixed = list.map(p => (p.kind === 'command' && p.origin === 'user' && commandOf(p.text).command === name ? { ...p, text: unblank(p.text, hint) } : p))
+    if (fixed.some((p, i) => p !== list[i] && p.text !== list[i]!.text)) await saveMenu($, fixed)
     return result
   }).catch(($, e, next) => next(e))
 
   // A /clear starts the conversation over with no session.start; the classic SessionStart says so.
   on('classic.SessionStart', async ($, e, next) => {
     const result = await next(e)
-    if (e.source === 'clear' && showOnStart && !(await read($, isOff))) showMenu($)
+    if (e.source === 'clear' && showOnStart && !(await read($, isOff))) await showMenu($)
     return result
   }).catch(($, e, next) => next(e))
 
@@ -411,7 +474,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'CommandOutput' }, async ($, e, next) => {
     const verb = e.props.args.trim().toLowerCase()
     if (e.props.command !== 'pad' || e.props.isErrored || (verb !== '' && verb !== 'show')) return next(e)
-    if (await read($, isOff)) return next(e)
+    if ((await read($, isOff)) || (await read($, placement)) !== 'header') return next(e)
     const list = await shown($)
     if (list.length === 0) return next(e)
 
@@ -431,6 +494,60 @@ export const register: Register = (on, options) => {
           ))}
         </Box>
         {padRow($, { Box, Text, Button }, more)}
+      </Box>
+    )
+  })
+
+  // `/pad place prompt`: the buttons in a row under the prompt, below the engine's hint line,
+  // which stays as the engine draws it.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const theirs = await next(e)
+    if ((await read($, placement)) !== 'prompt' || (await read($, isOff))) return theirs
+    const list = await shown($)
+    if (list.length === 0) return theirs
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const icons = e.surface === 'terminal' ? style : 'emoji'
+    return (
+      <Box flexDirection="column">
+        {theirs}
+        <Box key="launchpad" flexDirection="row" flexWrap="wrap" gap={2} paddingX={2}>
+          <Text color="claude">✻</Text>
+          {list.slice(0, MAX_SHOWN).map(p => (
+            <Button key={`pad:${p.id}`} plain label={buttonLabel(p, icons)} hover={{ color: 'claude', bold: true }} onPress={() => press($, p)} />
+          ))}
+          <Button key="band:settings" plain dimColor label={w.settings} onPress={() => pressVerb($, PAD_ACTIONS[0]!)} />
+        </Box>
+      </Box>
+    )
+  })
+
+  // `/pad place pane`: the menu in a pane of its own, a tab beside the other mods' panes, with
+  // the card's bordered tiles on the terminal and its native buttons elsewhere.
+  on('ui.render', { component: 'Pane', requestId: MENU_PANE }, async ($, e) => {
+    const ui = $.ui.resolve(e)
+    const { Box, Text, Button } = ui
+    const list = await shown($)
+    const visible = list.slice(0, MAX_SHOWN)
+    const more = list.length - visible.length
+    const columns = Math.max(20, (e.props.bodyColumns || e.viewport?.columns || 80) - 2)
+    const body =
+      e.surface === 'terminal' ? (
+        tiles($, $.ui.resolve({ ...e, surface: 'terminal' }), visible, columns)
+      ) : (
+        <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={1}>
+          {visible.map(p => (
+            <Button key={`pad:${p.id}`} label={buttonLabel(p, 'emoji')} onPress={() => press($, p)} />
+          ))}
+        </Box>
+      )
+    return (
+      <Box flexDirection="column" paddingX={1} gap={1}>
+        <Text color="claude" bold>{`✻ ${w.ask}`}</Text>
+        {(await read($, isOff)) ? <Text dimColor>{w.isOff}</Text> : visible.length === 0 ? <Text dimColor>{w.empty}</Text> : body}
+        <Box flexDirection="row" flexWrap="wrap" gap={2}>
+          {padRow($, { Box, Text, Button }, more)}
+          <Button key="close" role="dismiss" label={w.pane.close} onPress={() => $.ui.close({ id: MENU_PANE })} />
+        </Box>
       </Box>
     )
   })

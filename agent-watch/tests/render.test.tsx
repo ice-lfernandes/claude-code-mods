@@ -72,11 +72,11 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(drawn).toContain('Last run')
     // Finished agents fold into one line, which opens them.
     expect(drawn).toContain('1 finished ▸')
-    expect(drawn).not.toContain('Map the API routes\"')
+    expect(drawn).not.toContain('open:a1')
     await pane.press({ key: 'done' })
     drawn = JSON.stringify(await pane.drawn())
     expect(drawn).toContain('1 finished ▾')
-    expect(drawn).toContain('Map the API routes\"')
+    expect(drawn).toContain('open:a1')
     expect(drawn).toContain(' ✓ ')
     await pane.press({ key: 'clear-done' })
     drawn = JSON.stringify(await pane.drawn())
@@ -98,14 +98,14 @@ test('demo seeds a stalled agent; clear done and clear demo drop one kind each',
   let drawn = JSON.stringify(await pane.drawn())
   expect(drawn).toContain('Fix the flaky test')
   expect(drawn).toContain('demo')
-  expect(drawn).not.toContain('Check sources')
+  expect(drawn).not.toContain('open:demo-3')
   await pane.press({ key: 'done' })
-  expect(JSON.stringify(await pane.drawn())).toContain('Check sources')
+  expect(JSON.stringify(await pane.drawn())).toContain('open:demo-3')
 
   expect((await $.command.run({ ...RUN, args: 'clear done' } as never)).text).toBe('Finished agents cleared.')
   drawn = JSON.stringify(await pane.drawn())
   expect(drawn).not.toContain('Check sources')
-  expect(drawn).toContain('Fix the flaky test')
+  expect(drawn).toContain('open:demo-2')
   await pane.press({ key: 'clear-demo' })
   expect(JSON.stringify(await pane.drawn())).toContain('No subagents yet')
   await pane.unmount()
@@ -161,4 +161,71 @@ test('Portuguese from LANG, and ! for the warning in a JetBrains terminal', asyn
   expect(drawn).toContain('Fechar')
   await clock.advance(5000)
   await pane.unmount()
+})
+
+test('share bar, an opened row with its tool calls, and investigate on a stalled agent', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const fills: string[] = []
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('ui.status', () => ({ value: undefined }) as never)
+  on('prompt.fill', (_$, e: any) => (fills.push(e.text), { isFilled: true, text: e.text, cursor: e.text.length }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  const pane = await $.ui.mount({ plugin: 'agent-watch', surface: 'terminal', component: 'Pane', requestId: 'agent-watch', props: PROPS, viewport: { columns: 102, rows: 40 } } as never)
+  let drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('Fix the flaky test 56%')
+  expect(drawn).toContain('Map the API routes 32%')
+
+  await pane.press({ key: 'open:demo-2' })
+  drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('recent tools')
+  expect(drawn).toContain('no tool calls yet')
+  expect(drawn).toContain('Fix the flaky test ▾')
+
+  await pane.press({ key: 'investigate:demo-2' })
+  expect(fills).toEqual(['The agent "Fix the flaky test" looks stalled: running npm test, for 6m 00s. Check what happened and tell me what to do.'])
+  expect(drawn).not.toContain('investigate:demo-1')
+  await pane.unmount()
+})
+
+test('a long agent list scrolls', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('ui.status', () => ({ value: undefined }) as never)
+  on('agent.list', () => ({ value: Array.from({ length: 8 }, (_, i) => ({ id: `a${i}`, description: `Task ${i}`, type: 'Explore', status: 'running' })) }) as never)
+  await $.command.run(RUN as never)
+  const pane = await $.ui.mount({ plugin: 'agent-watch', surface: 'terminal', component: 'Pane', requestId: 'agent-watch', props: { ...PROPS, scroll: { offset: 0, bodyRows: 30 } }, viewport: { columns: 102, rows: 30 } } as never)
+  // 30 rows: 16 for the rest of the pane, then two rows an agent: 7 agents.
+  expect(JSON.stringify(await pane.drawn())).toContain('1–7 of 8')
+  await ($ as any).ui.scroll({ component: 'Pane', requestId: 'agent-watch', by: 5 })
+  const drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('2–8 of 8')
+  expect(drawn).not.toContain('open:a0')
+  await pane.unmount()
+})
+
+test('the summary says how much of the 5h window the wave used', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const toasts: string[] = []
+  let status = 'running'
+  let fiveHour = 40
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('ui.toast', (_$, e: any) => (toasts.push(e.text), { value: undefined }) as never)
+  on('ui.status', () => ({ value: undefined }) as never)
+  on('session.usage', () => ({ value: { context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: fiveHour }] } }) as never)
+  on('agent.list', () => ({ value: [{ id: 'a1', description: 'Map the API routes', type: 'Explore', status }] }) as never)
+  on('agent.spawn', () => ({ model: 'claude-haiku-4-5', agentId: 'a1' }) as never)
+  on('turn.complete', () => ({ text: 'done' }) as never)
+  on('command.register', () => ({ value: undefined }) as never)
+  on('session.start', () => ({ cwd: '/repo' }) as never)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  await $.agent.spawn(SPAWN as never)
+  await clock.advance(5000)
+  fiveHour = 46
+  status = 'completed'
+  await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer', agentId: 'a1' } as never)
+  await clock.advance(5000)
+  expect(toasts.find(t => t.startsWith('Agents done'))).toContain('. Used ~6% of the 5h window. /watch')
 })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { alerts, bar, label, needsCompact, pct, resetIn, summary, tone, toSnapshot, toTurn } from '../hooks/meter'
+import { addSamples, alerts, bar, contextSpark, heaviest, label, mini, needsCompact, pace, pct, resetIn, summary, tone, toSnapshot, toTurn } from '../hooks/meter'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 
@@ -99,5 +99,46 @@ describe('Portuguese', () => {
     const s = { limits: [{ kind: 'five_hour', percent: 40, resetsAt: at }], contextPercent: 12, contextTokens: 1, contextWindow: 100 }
     expect(summary(s, undefined, NOW, 'pt-BR')).toBe('5h 40% (reinicia em 1h12) · contexto 12%')
     expect(summary({ ...s, limits: [] }, undefined, NOW, 'pt-BR')).toContain('sem leituras de limite do plano')
+  })
+})
+
+describe('stage 2', () => {
+  const MIN = 60_000
+  const reset = NOW + 3 * 60 * MIN
+
+  test('pace: minutes to 100% from a least-squares line', async () => {
+    const points: [number, number][] = [[NOW, 40], [NOW + 10 * MIN, 50], [NOW + 20 * MIN, 60], [NOW + 30 * MIN, 70]]
+    expect(pace(points, NOW + 30 * MIN, reset)).toBe(30 * MIN)
+    // Too few readings, too short a span, a flat pace, a window that resets first.
+    expect(pace(points.slice(0, 2), NOW + 30 * MIN, reset)).toBe(null)
+    expect(pace([[NOW, 40], [NOW + MIN, 50], [NOW + 2 * MIN, 60]], NOW + 2 * MIN, reset)).toBe(null)
+    expect(pace([[NOW, 40], [NOW + 10 * MIN, 40], [NOW + 20 * MIN, 40]], NOW + 20 * MIN, reset)).toBe(null)
+    expect(pace(points, NOW + 30 * MIN, NOW + 40 * MIN)).toBe(null)
+  })
+
+  test('samples: a minute apart, dropped when the window resets', async () => {
+    const s = (percent: number, resetsAt = reset) => ({ limits: [{ kind: 'five_hour', percent, resetsAt }], contextPercent: null, contextTokens: null, contextWindow: 0 })
+    let list = addSamples({}, s(10), NOW)
+    list = addSamples(list, s(10), NOW + 30_000)
+    list = addSamples(list, s(11), NOW + 40_000)
+    expect(list.five_hour!.points).toEqual([[NOW + 40_000, 11]])
+    list = addSamples(list, s(12), NOW + 2 * MIN)
+    expect(list.five_hour!.points).toHaveLength(2)
+    list = addSamples(list, s(1, reset + 5 * 60 * MIN), NOW + 3 * MIN)
+    expect(list.five_hour!.points).toEqual([[NOW + 3 * MIN, 1]])
+  })
+
+  test('mini cells, the context sparkline and the heaviest turn', async () => {
+    expect([0, 50, 100].map(mini).join('')).toBe('▁▅█')
+    const turn = (input: number, contextPercent: number | null) => ({ input, output: 0, cacheHit: null, model: 'm', durationMs: 0, contextPercent })
+    expect(contextSpark([turn(1, 0), turn(1, null), turn(1, 100)])).toBe('▁ █')
+    expect(heaviest([turn(5, 0), turn(9, 0), turn(2, 0)])!.input).toBe(9)
+    expect(heaviest([])).toBe(undefined)
+  })
+
+  test('tone takes the warnAt and dangerAt options', async () => {
+    expect(tone(55, 50, 80)).toBe('warning')
+    expect(tone(80, 50, 80)).toBe('error')
+    expect(tone(49, 50, 80)).toBe('success')
   })
 })

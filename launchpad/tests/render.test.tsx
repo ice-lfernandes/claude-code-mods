@@ -354,3 +354,103 @@ test('an agent button with a task fills it; a project button cannot be added twi
   expect(w.fills.map(f => f.text)).toEqual(['Use o agente revisor para revise o texto de [arquivo]'])
   await card.unmount()
 })
+
+const CLEAR = { name: 'clear', description: 'Start a new conversation', source: 'builtin' }
+const band = ($: any, surface = 'terminal') =>
+  $.ui.mount({ plugin: 'launchpad', surface, component: 'PromptHint', props: { isDraft: false, isWorking: false, hint: '? for shortcuts' }, viewport: { columns: 122, rows: 40 } } as never)
+const menuPane = ($: any, surface = 'terminal') =>
+  $.ui.mount({ plugin: 'launchpad', surface, component: 'Pane', requestId: 'launchpad-menu', props: { title: 'Atalhos', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} }, viewport: { columns: 102, rows: 40 } } as never)
+
+test('a command whose hint is optional runs bare: /clear [name] is /clear', async ($, on) => {
+  const w = world(on, files, undefined, [...COMMANDS, CLEAR])
+  await start($)
+  await ($ as any).command.describe({ command: 'clear', description: 'Start a new conversation', argumentHint: '[name]', isHidden: false })
+  await pad($, 'configuration')
+  const ui = await pane($)
+  await ui.press({ key: 'add:command:clear' })
+  await ui.unmount()
+  expect((await pad($, 'list')).text).toContain('/clear  (comando, seu)')
+
+  const card = await row($)
+  const drawn = JSON.stringify(await card.drawn())
+  const id = new RegExp(`"key":"pad:([^"]+)","label":"[^"]*clear`).exec(drawn)?.[1]
+  await card.press({ key: `pad:${id}` })
+  expect(w.commands).toEqual(['clear'])
+  expect(w.fills).toEqual([])
+  await card.unmount()
+})
+
+test('a button saved as /clear [name] is saved back bare once the hint is known', async ($, on) => {
+  const w = world(on, files, undefined, [...COMMANDS, CLEAR])
+  await start($)
+  expect((await pad($, 'add Limpar | /clear [name]')).text).toContain('Atalho')
+  await ($ as any).command.describe({ command: 'clear', description: 'Start a new conversation', argumentHint: '[name]', isHidden: false })
+  const listed = (await pad($, 'list')).text!
+  expect(listed).toContain('Limpar  /clear  (comando, seu)')
+  expect(listed).not.toContain('[name]')
+  const card = await row($)
+  const drawn = JSON.stringify(await card.drawn())
+  const id = new RegExp(`"key":"pad:([^"]+)","label":"[^"]*Limpar`).exec(drawn)?.[1]
+  await card.press({ key: `pad:${id}` })
+  expect(w.commands).toEqual(['clear'])
+  await card.unmount()
+})
+
+test('/pad place prompt: the menu in a row under the prompt, kept across sessions', async ($, on) => {
+  const w = world(on)
+  await start($)
+  expect((await pad($, 'place prompt')).text).toBe('O menu agora fica numa linha abaixo do prompt, sempre à mão.')
+  // The card is gone from /pad's row; /pad points at the band.
+  const card = await row($)
+  expect(JSON.stringify(await card.drawn())).not.toContain('pad:compact')
+  await card.unmount()
+  expect((await pad($, '')).text).toBe('O menu está na linha abaixo do prompt. /pad place header volta ao cartão.')
+
+  await start($) // a new session reads the store
+  const ui = await band($)
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('"key":"pad:compact"')
+  expect(drawn).toContain('⋯ configurar')
+  await ui.press({ key: 'pad:compact' })
+  expect(w.commands).toEqual(['compact'])
+  await ui.press({ key: 'band:settings' })
+  expect(w.opened).toEqual(['launchpad'])
+  await pad($, 'off')
+  expect(JSON.stringify(await ui.drawn())).not.toContain('pad:compact')
+  await ui.unmount()
+})
+
+test('no row under the prompt unless the menu is placed there', async ($, on) => {
+  world(on)
+  await start($)
+  const ui = await band($)
+  expect(JSON.stringify(await ui.drawn())).not.toContain('pad:compact')
+  await ui.unmount()
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the placement option pane: the menu opens in its own pane at the start, on ${surface}`, { options: { placement: 'pane' } }, async ($, on) => {
+    const w = world(on)
+    await start($)
+    expect(w.opened).toEqual(['launchpad-menu'])
+    expect(w.commands).toEqual([]) // no card in the transcript
+    const ui = await menuPane($, surface)
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn).toContain('O que você quer fazer?')
+    expect(drawn).toContain('"key":"cmd:place"')
+    // The header card's look: bordered tiles on the terminal, native buttons elsewhere.
+    if (surface === 'terminal') expect(drawn).toContain('"key":"tile:compact"')
+    else expect(drawn).not.toContain('tile:')
+    await ui.press({ key: 'pad:compact' })
+    expect(w.commands).toEqual(['compact'])
+    await ui.press({ key: 'close' })
+    expect(w.closed).toEqual(['launchpad-menu'])
+    await ui.unmount()
+
+    expect(await pad($, '')).toEqual({})
+    expect(w.opened).toEqual(['launchpad-menu', 'launchpad-menu'])
+    expect((await pad($, 'place header')).text).toContain('cartão sob o cabeçalho')
+    expect(w.closed).toEqual(['launchpad-menu', 'launchpad-menu'])
+    expect((await pad($, 'place nowhere')).text).toBe('Use: /pad place header | prompt | pane')
+  })
+}

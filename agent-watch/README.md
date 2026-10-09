@@ -14,13 +14,20 @@ the most once they all finish.
   When the agent does something again, the alert re-arms. Teammates between turns (`idle`) and
   agents held on their own background work (`waiting`) never count as stalled.
 - **Summary:** when the last active agent ends, a toast gives the agents, the tokens, the wall
-  time and the heaviest agent with its share. The pane keeps it as "Last run".
+  time and the heaviest agent with its share. On a subscription, it also says how much of the
+  5-hour window the wave used (`Used ~6% of the 5h window`). The pane keeps it as "Last run".
 - **Status line** while agents run: `◇ 2 agents · 365k · ⚠ 1 stalled`. It clears when they
   finish.
 - **`/watch`** opens the pane. A running agent turns a spinner (`◐◓◑◒`) while the pane
   refreshes. Finished agents fold into one line, `✓ 3 finished ▸`, which opens them, with a
   `clear finished` button next to it. Demo agents carry a `demo` badge and their own
   `clear demo` button. The footer has the verbs and a close button. The command runs mid-turn.
+  - A bar shows each agent's share of the tokens, heaviest first, in its own color, with a
+    legend.
+  - Press an agent's name to open its row: its last 5 tool calls, each with how it went.
+  - A stalled agent has an `investigate` button that puts a request about it in the prompt.
+    Nothing stops the agent: Claude Code gives mods no way to.
+  - `⇅ by start` switches the order to `by tokens` and back. A long list scrolls.
 
 ```
 /watch              open the pane

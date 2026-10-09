@@ -18,6 +18,13 @@ type Words = {
   failing: (shown: number, of: number) => string
   noNames: string
   isNew: string
+  /** The badge on a test that failed, passed and failed again in the command's last runs. */
+  flaky: string
+  durationNote: (runs: number, shortest: string, longest: string) => string
+  /** The button back to the runner's latest run, and the note while an earlier one shows. */
+  latest: string
+  earlier: (n: number) => string
+  pickRun: string
   fixed: (n: number) => string
   runs: string
   runAgain: string
@@ -58,6 +65,11 @@ export const WORDS: Record<Lang, Words> = {
     failing: (shown, of) => `Falhando${shown ? ` (${shown}${shown < of ? ` de ${of}` : ''})` : ''}`,
     noNames: 'A saída não nomeou os testes que falharam num formato que este mod lê.',
     isNew: 'nova',
+    flaky: 'instável?',
+    durationNote: (runs, lo, hi) => `duração ${runs === 1 ? 'da última execução' : `das últimas ${runs} execuções`} (${lo === hi ? lo : `de ${lo} a ${hi}`})`,
+    latest: '↩ última execução',
+    earlier: n => `mostrando a execução #${n}`,
+    pickRun: 'clique numa para ver',
     fixed: n => `Corrigidos desde a execução anterior (${n})`,
     runs: 'Execuções',
     runAgain: '↻ rodar de novo',
@@ -96,6 +108,11 @@ export const WORDS: Record<Lang, Words> = {
     failing: (shown, of) => `Failing${shown ? ` (${shown}${shown < of ? ` of ${of}` : ''})` : ''}`,
     noNames: 'The output named no failing tests in a shape this mod reads.',
     isNew: 'new',
+    flaky: 'flaky?',
+    durationNote: (runs, lo, hi) => `duration of the last ${runs} run${runs === 1 ? '' : 's'} (${lo === hi ? lo : `${lo} to ${hi}`})`,
+    latest: '↩ latest run',
+    earlier: n => `showing run #${n}`,
+    pickRun: 'press one to see it',
     fixed: n => `Fixed since the previous run (${n})`,
     runs: 'Runs',
     runAgain: '↻ run again',

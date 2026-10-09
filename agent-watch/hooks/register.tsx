@@ -6,10 +6,14 @@
 //            orphans and show as "other".
 //   stalls   a running agent with no model request and no tool call for `stallMinutes` gets one
 //            toast, saying whether it is thinking, inside a tool, or quiet. Activity re-arms it.
-//   summary  when the last active agent ends, a toast with the wave's agents, tokens, wall time
-//            and the heaviest agent; the pane keeps it as "last run".
+//   summary  when the last active agent ends, a toast with the wave's agents, tokens, wall time,
+//            the heaviest agent and the share of the 5-hour window the wave used; the pane keeps
+//            it as "last run".
 //   /watch   opens the pane: the agent tree with type, model, tokens, tool calls and what each
-//            is doing. Finished agents fold into one line that opens them. /watch clear drops
+//            is doing, a bar of each agent's share of the tokens, and a sort by start or by
+//            tokens. A name opens its row with its last tool calls; a stalled agent has an
+//            `investigate` button that asks about it in the prompt. The list scrolls.
+//            Finished agents fold into one line that opens them. /watch clear drops
 //            finished and demo agents (clear done, clear demo: one kind); /watch demo seeds
 //            three fake ones.
 //
@@ -25,14 +29,17 @@ import {
   adopt,
   clearOut,
   finish,
+  fiveHourOf,
   fromUsage,
   glyphOf,
   isActive,
   isFailed,
   labelOf,
   nameOf,
+  quietFor,
   reconcile,
   runText,
+  shares,
   stalls,
   stallText,
   summarize,
@@ -41,10 +48,12 @@ import {
   total,
   touch,
   tree,
+  windowUsed,
   ZERO,
 } from './watch'
+import type { SortBy } from './watch'
 import type { IconStyle, Lang, Verb } from './ui'
-import { elapsed, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow } from './ui'
+import { clip, elapsed, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'agent-watch'
@@ -60,6 +69,15 @@ const lastRun = atom({ plugin: 'agent-watch', key: 'lastRun' } as const, null as
 const tick = atom({ plugin: 'agent-watch', key: 'tick' } as const, 0)
 const showDone = atom({ plugin: 'agent-watch', key: 'showDone' } as const, false)
 const dropped = atom({ plugin: 'agent-watch', key: 'dropped' } as const, [] as string[])
+const expanded = atom({ plugin: 'agent-watch', key: 'expanded' } as const, [] as string[])
+const sortBy = atom({ plugin: 'agent-watch', key: 'sortBy' } as const, 'start' as SortBy)
+const offset = atom({ plugin: 'agent-watch', key: 'offset' } as const, 0)
+const waveStart = atom({ plugin: 'agent-watch', key: 'waveStart' } as const, null as number | null)
+
+/** Colors of the share bar's parts, heaviest first; the rest of the agents are dim. */
+const SHARE_COLORS = ['claude', 'success', 'warning', 'error'] as const
+// The last first row the list can start at, from the last render: the wheel stops there.
+let lastStart = 0
 
 
 let shownStatus: string | undefined
@@ -110,10 +128,16 @@ const refresh = async ($: EngineInterface) => {
     return active
   })
   if (list.some(a => isActive(a.status))) await update($, tick, n => n + 1)
+  if (before === 0 && active > 0) {
+    const start = fiveHourOf(await $.session.usage().catch(() => null))
+    await update($, waveStart, () => start)
+  }
   if (before > 0 && active === 0) {
     const since = await read($, standDownAt)
-    const run = summarize(list.filter(a => a.startedAt > since && !a.id.startsWith(DEMO)), now)
+    const wave = summarize(list.filter(a => a.startedAt > since && !a.id.startsWith(DEMO)), now)
     await update($, standDownAt, () => now)
+    const used = windowUsed(await read($, waveStart), fiveHourOf(await $.session.usage().catch(() => null)))
+    const run = wave && { ...wave, windowUsed: used }
     if (run) {
       await update($, lastRun, () => run)
       $.ui.toast(w.doneToast(runText(run, lang)), { timeoutMs: 10_000 })
@@ -301,11 +325,19 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
 
+  // The wheel over the pane moves the agent list.
+  on('ui.scroll', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    await update($, offset, o => Math.max(0, Math.min(lastStart, o + e.by)))
+    return {}
+  }).catch(($, e, next) => next(e))
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const w = WORDS[lang]
     const n = await read($, tick)
     const isOpen = await read($, showDone)
+    const opened = await read($, expanded)
+    const order = await read($, sortBy)
     const now = await $.clock.now()
     const list = await read($, agents)
     const spentLead = await read($, lead)
@@ -320,7 +352,24 @@ export const register: Register = (on, options) => {
     const hasDemo = list.some(a => a.id.startsWith(DEMO))
     const sum = list.reduce((s, a) => s + total(a.tokens), 0)
     const tone = (a: Agent) => (a.isStalled && isActive(a.status) ? 'warning' : isActive(a.status) ? 'claude' : isFailed(a.status) ? 'error' : 'success')
-    const shown = isOpen ? list : running
+    const rows = tree(isOpen ? list : running, order)
+    const parts = shares(list, Math.min(60, width - 4))
+    const colorOf = (a: Agent | null) => {
+      const i = parts.findIndex(p => p.agent === a)
+      return a === null || i < 0 ? undefined : SHARE_COLORS[i % SHARE_COLORS.length]
+    }
+    // Two lines an agent, and the open ones' tool calls. The rest of the pane: hint, counts,
+    // the share bar and its legend, the lead, the folded line, other loops, the last run, the
+    // scroll row, the footer and the gaps.
+    const extra = rows.filter(r => opened.includes(r.agent.id)).reduce((k, r) => k + 1 + Math.max(1, r.agent.recent?.length ?? 0), 0)
+    const fixed = 16 + (parts.length ? 2 : 0)
+    const listRows = Math.max(2, Math.floor(((e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 40) - fixed - extra) / 2))
+    const view = windowOf(rows.length, await read($, offset), listRows)
+    lastStart = Math.max(0, rows.length - listRows)
+    const scrollList = (by: number) => update($, offset, o => windowOf(rows.length, o + by, listRows).start)
+    const toggle = (id: string) => update($, expanded, ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]))
+    const investigate = (a: Agent) =>
+      fill($, w.askInvestigate(nameOf(a), a.activity === 'thinking' ? w.thinking : (a.doing ?? w.inATool), elapsed(quietFor(a, now))))
 
     return (
       <Box flexDirection="column" paddingX={1} gap={1}>
@@ -332,26 +381,55 @@ export const register: Register = (on, options) => {
           </Text>
         </Box>
 
+        {parts.length > 0 && (
+          <Box flexDirection="column">
+            <Text>
+              {parts.map(p => (
+                <Text key={`share:${p.agent?.id ?? 'rest'}`} color={colorOf(p.agent)} dimColor={p.agent === null}>
+                  {(p.agent === null ? '░' : '█').repeat(p.cells)}
+                </Text>
+              ))}
+            </Text>
+            <Box flexDirection="row" flexWrap="wrap" gap={2}>
+              {parts.map(p => (
+                <Text key={`legend:${p.agent?.id ?? 'rest'}`}>
+                  <Text color={colorOf(p.agent)} dimColor={p.agent === null}>{p.agent === null ? '░ ' : '█ '}</Text>
+                  <Text dimColor>{`${clip(p.agent ? nameOf(p.agent) : w.others, 20)} ${Math.round((p.tokens / sum) * 100)}%`}</Text>
+                </Text>
+              ))}
+            </Box>
+          </Box>
+        )}
+
         <Box flexDirection="column">
-          <Text>
-            <Text bold>{`◆ ${w.lead}`}</Text>
-            <Text dimColor>{`  ${w.leadLine(tokens(total(spentLead)), tokens(spentLead.output))}`}</Text>
-          </Text>
+          <Box flexDirection="row" gap={2}>
+            <Text>
+              <Text bold>{`◆ ${w.lead}`}</Text>
+              <Text dimColor>{`  ${w.leadLine(tokens(total(spentLead)), tokens(spentLead.output))}`}</Text>
+            </Text>
+            {rows.length > 1 && (
+              <Button key="sort" plain dimColor label={`⇅ ${order === 'start' ? w.sortStart : w.sortTokens}`} onPress={() => update($, sortBy, x => (x === 'start' ? 'tokens' : 'start'))} />
+            )}
+          </Box>
           {list.length === 0 && <Text dimColor>{`  ${w.empty} ${w.emptyNext}`}</Text>}
-          {tree(shown).map(({ agent: a, prefix, rail }) => {
+          {rows.slice(view.start, view.end).map(({ agent: a, prefix, rail }) => {
             const isStuck = a.isStalled && isActive(a.status)
             const state = isStuck ? stallText(a, now, lang) : isActive(a.status) ? (a.activity === 'thinking' ? w.thinking : (a.doing ?? w.starting)) : (w.statuses[a.status] ?? a.status)
             const clock = isActive(a.status) ? elapsed(now - a.startedAt) : elapsed((a.endedAt ?? now) - a.startedAt)
             const meta = `${a.type === 'general-purpose' ? 'general' : a.type}${a.model ? ` · ${shortModel(a.model)}` : ''}`
+            const isExpanded = opened.includes(a.id)
             return (
               <Box key={a.id} flexDirection="column">
-                <Text>
+                <Box flexDirection="row">
                   <Text dimColor>{prefix}</Text>
                   <Text color={tone(a)} bold>{` ${glyphOf(a, n)} `}</Text>
-                  <Text bold>{nameOf(a).slice(0, 28)}</Text>
+                  <Button key={`open:${a.id}`} plain label={`${nameOf(a).slice(0, 28)} ${isExpanded ? '▾' : '▸'}`} onPress={() => toggle(a.id)} />
                   <Text dimColor>{`  ${meta}`}</Text>
+                  {colorOf(a) && <Text color={colorOf(a)}>{'  ■'}</Text>}
                   {a.id.startsWith(DEMO) && <Text color="warning">{`  ${w.demoBadge}`}</Text>}
-                </Text>
+                  {isStuck && <Text>{'  '}</Text>}
+                  {isStuck && <Button key={`investigate:${a.id}`} plain color="warning" label={w.investigate} onPress={() => investigate(a)} />}
+                </Box>
                 <Text>
                   <Text dimColor>{`${rail}   `}</Text>
                   <Text bold>{tokens(total(a.tokens)).padStart(5)}</Text>
@@ -361,9 +439,30 @@ export const register: Register = (on, options) => {
                     {state.slice(0, Math.max(10, width - 50))}
                   </Text>
                 </Text>
+                {isExpanded && (
+                  <Box flexDirection="column">
+                    <Text dimColor>{`${rail}   ${w.recentTitle}`}</Text>
+                    {(a.recent ?? []).length === 0 && <Text dimColor>{`${rail}     ${w.noRecent}`}</Text>}
+                    {(a.recent ?? []).map((r, i) => (
+                      <Text key={`recent:${a.id}:${i}`}>
+                        <Text dimColor>{`${rail}     `}</Text>
+                        <Text color={r.ok === false ? 'error' : r.ok === null ? 'claude' : 'success'}>{r.ok === false ? '× ' : r.ok === null ? '… ' : '✓ '}</Text>
+                        <Text dimColor={r.ok !== false}>{clip(r.doing, Math.max(10, width - rail.length - 12))}</Text>
+                        {r.ok === false && <Text color="error">{`  ${w.failedMark}`}</Text>}
+                      </Text>
+                    ))}
+                  </Box>
+                )}
               </Box>
             )
           })}
+          {rows.length > listRows && (
+            <Box flexDirection="row" gap={2}>
+              <Button key="list:up" plain dimColor={view.start === 0} label={w.up} onPress={() => scrollList(-listRows + 1)} />
+              <Button key="list:down" plain dimColor={view.end === rows.length} label={w.down} onPress={() => scrollList(listRows - 1)} />
+              <Text dimColor>{w.range(view.start + 1, view.end, rows.length)}</Text>
+            </Box>
+          )}
           {done > 0 && (
             <Box flexDirection="row" gap={2}>
               <Text color="success">{'  ✓'}</Text>

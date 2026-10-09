@@ -9,6 +9,9 @@ import {
   available,
   blankIn,
   blanksOf,
+  isOptionalHint,
+  placementOf,
+  unblank,
   buttonLabel,
   cells,
   commandOf,
@@ -233,4 +236,21 @@ test('list shows number, what it runs, kind and origin', async () => {
   expect(text).toContain('1. ≡ Switch model  /model  (command, default)')
   expect(text).toContain('2. Δ Explore code  @Explore  (agent, default)')
   expect(listText([], 'pt-BR', 'emoji')).toContain('/pad configuration')
+})
+
+test('a hint of optional arguments only: no blanks, and a saved button runs bare', async () => {
+  for (const hint of ['[name]', '[auto|<tokens>]', '[a] [b]', ' [UC-NNN-slug | empty to list] ']) expect(isOptionalHint(hint)).toBe(true)
+  for (const hint of ['<level>', 'message', '[feature] | UC-NNN | empty', '', undefined]) expect(isOptionalHint(hint)).toBe(false)
+  const clear = { kind: 'command' as const, name: 'clear', description: '', source: 'builtin' }
+  expect(padFor(clear, 'x', '[name]').text).toBe('/clear')
+  expect(padFor({ ...clear, name: 'review' }, 'y', '<level>').text).toBe('/review [level]')
+  expect(unblank('/clear [name]', '[name]')).toBe('/clear')
+  expect(unblank('/autocompact [auto|<tokens>]', '[auto|<tokens>]')).toBe('/autocompact')
+  // A text the person wrote their own way stays.
+  expect(unblank('/clear chore', '[name]')).toBe('/clear chore')
+  expect(unblank('/review [level]', '<level>')).toBe('/review [level]')
+})
+
+test('placement: the three places, header otherwise', async () => {
+  expect(['header', 'prompt', 'pane', 'tab', undefined].map(placementOf)).toEqual(['header', 'prompt', 'pane', 'header', 'header'])
 })

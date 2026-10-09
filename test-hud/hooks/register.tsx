@@ -7,10 +7,14 @@
 //            last 8 runs. ▁ is a green run.
 //   toasts   when a runner turns green after red runs, once, with how many red runs it took;
 //            with the `regressionToast` option, also when it turns red after a green run.
-//   /test-hud  opens the pane: the last run, its failing tests (new ones marked), the tests it
-//            fixed, the sparkline and the recent runs. A failing test is a button that asks for
-//            a fix in the prompt; `run again` puts the command there. Nothing runs on a press.
-//            /test-hud clear drops the runs; /test-hud demo seeds a red-to-green streak.
+//   /test-hud  opens the pane: the last run, its failing tests (new and flaky ones marked), the
+//            tests it fixed, sparklines of failures and duration, and the recent runs. A failing
+//            test is a button that asks for a fix in the prompt; `run again` puts the command
+//            there. Nothing runs on a press. A recent run is a button that shows it; with two
+//            runners or more, tabs pick one. /test-hud clear drops the runs; /test-hud demo
+//            seeds a red-to-green streak.
+//   history  with the `keepHistory` option, the runs are kept per project root in the plugin's
+//            store, so the next session starts with them.
 //
 // Reads one file: Bash's saved copy of an output too long to show whole, so the summary at its
 // end is not lost. Runs no process, calls no model.
@@ -19,7 +23,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { Parsed, Run } from '../types'
-import { commandLine, fixed, fresh, greenText, parseRun, quietPass, record, redText, runnerOf, score, spark, statusText, trail, wholeCommand } from './hud'
+import { commandLine, durationSpark, fixed, flaky, fresh, greenText, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, statusText, trail, wholeCommand } from './hud'
 import type { Lang, Verb } from './ui'
 import { clip, elapsed, fillArgs, langOf, linesOf, verbRow } from './ui'
 import { COMMAND, WORDS } from './words'
@@ -29,11 +33,25 @@ const PANE_SPARK = 24
 const PANE_RUNS = 10
 
 const runs = atom({ plugin: 'test-hud', key: 'runs' } as const, [] as Run[])
+const selected = atom({ plugin: 'test-hud', key: 'selected' } as const, null as number | null)
+const tab = atom({ plugin: 'test-hud', key: 'tab' } as const, null as string | null)
 
 let shownStatus: string | undefined
 // Set by register from the options, and by session.start from the system's LANG.
 let lang: Lang = 'en'
 let regressionToast = false
+let keepHistory = false
+let root = ''
+
+const storeKey = () => `runs:${root}`
+
+/** Keeps the runs for the next session in this project, demo runs left out; with the option only. */
+const save = async ($: EngineInterface, list: readonly Run[]) => {
+  if (keepHistory) await $.store.set(storeKey(), list.filter(r => !r.isDemo))
+}
+
+const isRun = (x: unknown): x is Run =>
+  typeof x === 'object' && x !== null && typeof (x as Run).n === 'number' && typeof (x as Run).runner === 'string' && Array.isArray((x as Run).failures)
 
 const show = ($: EngineInterface, list: readonly Run[]) => {
   const text = statusText(list, lang)
@@ -68,6 +86,7 @@ const add = async ($: EngineInterface, parsed: Parsed, meta: Omit<Run, keyof Par
   })
   show($, list)
   if (!run) return
+  if (!run.isDemo) await save($, list)
   const green = greenText(list, run, lang)
   if (green) $.ui.toast(`${green} /${COMMAND}`, { timeoutMs: 8000 })
   const red = regressionToast ? redText(list, run, lang) : null
@@ -112,7 +131,10 @@ const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: st
   switch (args.trim().toLowerCase()) {
     case 'clear':
       await update($, runs, () => [])
+      await update($, selected, () => null)
+      await update($, tab, () => null)
       show($, [])
+      await save($, [])
       return { text: w.cleared }
     case 'demo':
       await runDemo($)
@@ -155,6 +177,7 @@ const pressVerb = async ($: EngineInterface, v: Verb) => {
 export const register: Register = (on, options) => {
   lang = langOf(options.language)
   regressionToast = options.regressionToast === true
+  keepHistory = options.keepHistory === true
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -165,6 +188,15 @@ export const register: Register = (on, options) => {
       argumentHint: '[clear|demo|help]',
       immediate: true,
     })
+    if (keepHistory) {
+      root = await $.session.root()
+      const stored = await $.store.get(storeKey()).catch(() => undefined)
+      const kept = Array.isArray(stored) ? stored.filter(isRun) : []
+      if (kept.length) {
+        await update($, runs, () => kept)
+        show($, kept)
+      }
+    }
     return result
   })
 
@@ -197,7 +229,6 @@ export const register: Register = (on, options) => {
     const w = WORDS[lang]
     const list = await read($, runs)
     const width = Math.max(40, (e.props.bodyColumns || e.viewport?.columns || 80) - 2)
-    const r = list.at(-1)
     const footer = (
       <Box flexDirection="row" flexWrap="wrap" gap={2}>
         {verbRow({ Box, Text, Button }, COMMAND, VERBS, v => pressVerb($, v))}
@@ -205,7 +236,7 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
-    if (!r) {
+    if (list.length === 0) {
       return (
         <Box flexDirection="column" paddingX={1} gap={1}>
           <Box flexDirection="column">
@@ -217,22 +248,46 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // The runner on show: the tab picked, else the latest run's. The run on show: the one
+    // picked in the list, else that runner's latest.
+    const runners = runnersOf(list)
+    const picked = await read($, tab)
+    const runner = picked !== null && runners.includes(picked) ? picked : list.at(-1)!.runner
+    const mine = list.filter(x => x.runner === runner)
+    const chosen = await read($, selected)
+    const r = mine.find(x => x.n === chosen) ?? mine.at(-1)!
+    const isEarlier = r !== mine.at(-1)
+
     const isRed = r.failed > 0
     const counts = [
       r.passed === null ? (isRed ? '' : w.passedNoCounts) : w.passing(r.passed, r.passed + r.failed),
       isRed ? w.failed(r.failed) : '',
       r.skipped ? w.skipped(r.skipped) : '',
     ].filter(Boolean)
-    const line = trail(list, PANE_SPARK)
+    const line = mine.filter(x => x.n <= r.n).slice(-PANE_SPARK)
     const most = Math.max(...line.map(x => x.failed))
+    const ms = line.map(x => x.durationMs)
     const isNew = fresh(list, r)
+    const isFlaky = flaky(list, r)
     const gone = fixed(list, r)
-    const recent = list.slice(-PANE_RUNS).reverse()
+    const recent = mine.slice(-PANE_RUNS).reverse()
     const tone = isRed ? 'error' : 'success'
+    const pickTab = async (name: string) => {
+      await update($, tab, () => name)
+      await update($, selected, () => null)
+    }
 
     return (
       <Box flexDirection="column" paddingX={1} gap={1}>
         <Text dimColor>{w.hint}</Text>
+
+        {runners.length > 1 && (
+          <Box flexDirection="row" flexWrap="wrap" gap={2}>
+            {runners.map(name => (
+              <Button key={`tab:${name}`} plain dimColor={name !== runner} label={name === runner ? `▸ ${name}` : name} onPress={() => pickTab(name)} />
+            ))}
+          </Box>
+        )}
 
         <Box flexDirection="column">
           <Text color={tone} bold>{`${isRed ? '✗' : '✓'} ${counts.join(' · ')}`}</Text>
@@ -240,12 +295,26 @@ export const register: Register = (on, options) => {
             <Text dimColor>{clip(`${r.runner} · #${r.n} · ${elapsed(r.durationMs)}${r.agentId ? ` · ${w.subagent}` : ''} · ${r.command}`, width - w.runAgain.length - 2)}</Text>
             <Button key="rerun" plain label={w.runAgain} onPress={() => fill($, w.rerun(r.fullCommand))} />
           </Box>
+          {isEarlier && (
+            <Box flexDirection="row" gap={2}>
+              <Text color="warning">{w.earlier(r.n)}</Text>
+              <Button key="latest" plain label={w.latest} onPress={() => update($, selected, () => null)} />
+            </Box>
+          )}
         </Box>
 
-        <Text>
-          <Text color={tone}>{spark(line)}</Text>
-          <Text dimColor>{`  ${w.sparkNote(line.length, r.runner, most)}`}</Text>
-        </Text>
+        <Box flexDirection="column">
+          <Text>
+            <Text color={tone}>{spark(line)}</Text>
+            <Text dimColor>{`  ${w.sparkNote(line.length, r.runner, most)}`}</Text>
+          </Text>
+          {line.length > 1 && (
+            <Text>
+              <Text>{durationSpark(line)}</Text>
+              <Text dimColor>{`  ${w.durationNote(line.length, elapsed(Math.min(...ms)), elapsed(Math.max(...ms)))}`}</Text>
+            </Text>
+          )}
+        </Box>
 
         {isRed && (
           <Box flexDirection="column">
@@ -254,8 +323,10 @@ export const register: Register = (on, options) => {
             {r.failures.map(f => (
               <Box key={`fail:${f}`} flexDirection="row">
                 <Text color="error">{'  ✗ '}</Text>
-                <Button key={`fix:${f}`} plain label={clip(f, width - 12)} onPress={() => fill($, w.askFix(f, r.fullCommand))} />
-                {isNew.has(f) && <Text color="warning">{`  ${w.isNew}`}</Text>}
+                <Button key={`fix:${f}`} plain label={clip(f, width - 22)} onPress={() => fill($, w.askFix(f, r.fullCommand))} />
+                {isNew.has(f) && !isFlaky.has(f) && <Text color="warning">{`  ${w.isNew}`}</Text>}
+                {/* flaky says more than new: it failed here before. */}
+                {isFlaky.has(f) && <Text color="warning">{`  ${w.flaky}`}</Text>}
               </Box>
             ))}
           </Box>
@@ -274,14 +345,18 @@ export const register: Register = (on, options) => {
         )}
 
         <Box flexDirection="column">
-          <Text bold>{w.runs}</Text>
+          <Text>
+            <Text bold>{w.runs}</Text>
+            <Text dimColor>{`  ${w.pickRun}`}</Text>
+          </Text>
           {recent.map(x => (
-            <Text key={String(x.n)}>
-              <Text dimColor>{`  #${String(x.n).padEnd(4)}`}</Text>
+            <Box key={`run:${x.n}`} flexDirection="row">
+              <Text color={x === r ? 'claude' : undefined}>{x === r ? '▸ ' : '  '}</Text>
+              <Button key={`run:${x.n}`} plain dimColor={x !== r} label={`#${String(x.n).padEnd(4)}`} onPress={() => update($, selected, () => x.n)} />
               <Text>{x.runner.padEnd(8)}</Text>
               <Text color={x.failed ? 'error' : 'success'}>{score(x, lang).padEnd(8)}</Text>
               <Text dimColor>{`${elapsed(x.durationMs).padStart(6)}  ${clip(x.command, Math.max(10, width - 34))}${x.agentId ? ` (${w.subagent})` : ''}`}</Text>
-            </Text>
+            </Box>
           ))}
         </Box>
 

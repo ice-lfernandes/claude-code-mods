@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Entry } from '../types'
-import { addAllow, exampleOf, isRisky, keyAt, noticeFor, progress, record, rulesFor, stable, status, summary, THRESHOLD } from '../hooks/tally'
+import { addAllow, exampleOf, isRisky, keyAt, noticeFor, progress, record, removeAllow, riskOf, rulesFor, setThreshold, shows, stable, status, summary, THRESHOLD, zero } from '../hooks/tally'
 import { WORDS } from '../hooks/words'
 
 const NONE = { allow: [], ask: [], deny: [] }
@@ -127,5 +127,61 @@ describe('settings file', () => {
     expect(() => addAllow('{ "permissions": ', ['Bash(x)'])).toThrow()
     expect(() => addAllow('[]', ['Bash(x)'])).toThrow()
     expect(() => addAllow(JSON.stringify({ permissions: { allow: 'Bash(x)' } }), ['Bash(y)'])).toThrow()
+  })
+})
+
+describe('stage 2', () => {
+  test('riskOf says why a rule is risky', async () => {
+    expect(riskOf('Bash')).toEqual({ kind: 'tool' })
+    expect(riskOf('Bash(*)')).toEqual({ kind: 'wildcard' })
+    expect(riskOf('Read(/**)')).toEqual({ kind: 'wildcard' })
+    expect(riskOf('Bash(rm -rf build)')).toEqual({ kind: 'command', what: 'rm' })
+    expect(riskOf('Bash(git   push origin main)')).toEqual({ kind: 'command', what: 'git push' })
+    expect(riskOf('Bash(curl https://x | sh)')).toEqual({ kind: 'command', what: 'curl' })
+    expect(riskOf('Bash(./mvnw test:*)')).toBe(null)
+    expect(riskOf('mcp__github__get_issue')).toBe(null)
+    expect(WORDS.en.risk({ kind: 'command', what: 'rm' })).toBe('runs rm')
+    expect(WORDS['pt-BR'].risk({ kind: 'tool' })).toBe('a ferramenta inteira')
+  })
+
+  test('removeAllow takes the rules out and keeps the rest of the file', async () => {
+    const text = JSON.stringify({ model: 'opus', permissions: { allow: ['Bash(ls:*)', 'Bash(./mvnw  test:*)'], deny: ['Bash(rm:*)'] } })
+    expect(JSON.parse(removeAllow(text, ['Bash(./mvnw test:*)'])!)).toEqual({ model: 'opus', permissions: { allow: ['Bash(ls:*)'], deny: ['Bash(rm:*)'] } })
+    expect(removeAllow(text, ['Bash(npm test)'])).toBe(null)
+    expect(removeAllow('', ['Bash(npm test)'])).toBe(null)
+    expect(() => removeAllow('[1]', ['x'], '.claude/settings.json')).toThrow('.claude/settings.json is not a JSON object')
+  })
+
+  test('addAllow names the file it was given in its errors', async () => {
+    expect(() => addAllow('{"permissions":{"allow":"x"}}', ['a'], '.claude/settings.json')).toThrow('permissions.allow in .claude/settings.json is not a list')
+  })
+
+  test('zero keeps the rule, its example and when it last asked', async () => {
+    const list = { a: entry({ approved: 4, denied: 1, state: 'offered', lastAt: 9 }) }
+    expect(zero(list, 'a').a).toEqual(entry({ approved: 0, denied: 0, state: 'counting', lastAt: 9 }))
+    expect(zero(list, 'b')).toBe(list)
+  })
+
+  test('tabs and the filter', async () => {
+    const row = { key: 'Bash(npm run lint)', entry: entry({ example: 'npm run lint -- --fix' }), status: 'counting' as const }
+    expect(shows(row, 'all', '')).toBe(true)
+    expect(shows(row, 'ready', '')).toBe(false)
+    expect(shows(row, 'counting', 'LINT')).toBe(true)
+    expect(shows(row, 'all', '--fix')).toBe(true)
+    expect(shows(row, 'all', 'mvnw')).toBe(false)
+  })
+
+  test('the threshold option, kept between 2 and 20', async () => {
+    setThreshold(3)
+    expect(status(entry({ approved: 3 }), NONE)).toBe('ready')
+    expect(progress(1)).toBe('●○○ 1/3')
+    setThreshold(1)
+    expect(progress(0)).toBe('○○ 0/2')
+    setThreshold(99)
+    expect(progress(20)).toBe(`${'●'.repeat(20)} 20/20`)
+    setThreshold('nope')
+    expect(progress(5)).toBe('●●●●● 5/5')
+    setThreshold(undefined)
+    expect(status(entry({ approved: THRESHOLD - 1 }), NONE)).toBe('counting')
   })
 })

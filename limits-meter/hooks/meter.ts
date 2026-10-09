@@ -1,4 +1,4 @@
-import type { Snapshot, Turn } from '../types'
+import type { Samples, Snapshot, Turn } from '../types'
 import type { Lang } from './ui'
 import { WORDS } from './words'
 
@@ -7,6 +7,11 @@ export const CONTEXT_ALERT = 85
 /** Below this the context alert re-arms (after a compaction or /clear). */
 export const CONTEXT_REARM = 50
 export const TURNS_KEPT = 20
+/** Readings kept per plan window for the pace, and how far apart they need to be. */
+export const SAMPLES_KEPT = 60
+const SAMPLE_GAP_MS = 60_000
+/** The pace needs readings over this long before it says anything. */
+const PACE_SPAN_MS = 10 * 60_000
 
 export const label = (kind: string, lang: Lang = 'en') => WORDS[lang].labels[kind] ?? kind
 
@@ -44,9 +49,60 @@ export const bar = (width: number, percent: number) => {
   return '█'.repeat(filled) + '░'.repeat(width - filled)
 }
 
-/** The theme's colors: error from 90%, warning from 70%, success below. */
-export const tone = (percent: number | null) =>
-  percent === null ? undefined : percent >= 90 ? 'error' : percent >= 70 ? 'warning' : 'success'
+/** The theme's colors: error from `dangerAt` (90%), warning from `warnAt` (70%), success below. */
+export const tone = (percent: number | null, warnAt = 70, dangerAt = 90) =>
+  percent === null ? undefined : percent >= dangerAt ? 'error' : percent >= warnAt ? 'warning' : 'success'
+
+const CELLS = '▁▂▃▄▅▆▇█'
+
+/** One cell for a percent, ▁ empty to █ full: the bar of a narrow terminal. */
+export const mini = (percent: number) => CELLS[Math.round((Math.max(0, Math.min(100, percent)) / 100) * 7)]!
+
+/** Context fill per turn, oldest first, on the 0 to 100 scale; a turn with no reading is a space. */
+export const contextSpark = (turns: readonly Turn[]) => turns.map(t => (t.contextPercent == null ? ' ' : mini(t.contextPercent))).join('')
+
+/** The turn with the most input, the one to look at first; undefined with no turns. */
+export const heaviest = (turns: readonly Turn[]) => turns.reduce<Turn | undefined>((top, t) => (!top || t.input > top.input ? t : top), undefined)
+
+/**
+ * The readings with the snapshot's added: one per window a minute apart at least, dropped when
+ * the window resets (its reset time moves), at most SAMPLES_KEPT.
+ */
+export const addSamples = (samples: Samples, s: Snapshot, now: number): Samples => {
+  const next: Samples = { ...samples }
+  for (const l of s.limits) {
+    if (l.resetsAt === null) continue
+    const was = samples[l.kind]
+    const points = was && was.resetsAt === l.resetsAt ? was.points : []
+    const last = points[points.length - 1]
+    if (last && now - last[0] < SAMPLE_GAP_MS && last[1] === l.percent) continue
+    const kept = last && now - last[0] < SAMPLE_GAP_MS ? points.slice(0, -1) : points
+    next[l.kind] = { resetsAt: l.resetsAt, points: [...kept, [now, l.percent] as [number, number]].slice(-SAMPLES_KEPT) }
+  }
+  return next
+}
+
+/**
+ * Milliseconds until the window reaches 100% at the pace of its readings (a least-squares
+ * line), or null: too few readings, too short a span, a flat or falling pace, or a window that
+ * resets first.
+ */
+export const pace = (points: readonly (readonly [number, number])[], now: number, resetsAt: number): number | null => {
+  if (points.length < 3) return null
+  const first = points[0]![0]
+  const last = points[points.length - 1]!
+  if (last[0] - first < PACE_SPAN_MS) return null
+  const n = points.length
+  const mx = points.reduce((a, p) => a + (p[0] - first), 0) / n
+  const my = points.reduce((a, p) => a + p[1], 0) / n
+  const sxx = points.reduce((a, p) => a + (p[0] - first - mx) ** 2, 0)
+  const sxy = points.reduce((a, p) => a + (p[0] - first - mx) * (p[1] - my), 0)
+  const slope = sxx > 0 ? sxy / sxx : 0
+  if (slope <= 0) return null
+  const at = first + mx + (100 - my) / slope
+  const left = Math.max(0, at - now)
+  return now + left < resetsAt ? left : null
+}
 
 export const toTurn = (
   usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number; model: string },

@@ -16,11 +16,10 @@ const turn = (n: number) => ({
   usage: { input_tokens: 1000, output_tokens: 1300, cache_read_input_tokens: 40_000, cache_creation_input_tokens: 2000, model: 'claude-opus-5-5' },
 })
 
-type World = { toasts: string[]; fills: string[]; logs: string[]; opened: string[]; closed: string[] }
+type World = { toasts: string[]; fills: string[]; logs: string[]; opened: string[]; closed: string[]; clock: ReturnType<typeof mock.clock> }
 
 function engine(on: any, env: Record<string, string> = {}): World {
-  const world: World = { toasts: [], fills: [], logs: [], opened: [], closed: [] }
-  mock.clock(on, { now: NOW })
+  const world: World = { toasts: [], fills: [], logs: [], opened: [], closed: [], clock: mock.clock(on, { now: NOW }) }
   mock.store(on)
   on('env.get', ($: any, e: any) => ({ value: env[e.name] }) as never)
   on('command.register', () => ({ value: undefined }) as never)
@@ -69,7 +68,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(shown).toContain('Figures the engine reports after each turn')
     expect(shown).toContain('resets in 1h12')
     expect(shown).toContain('116k of 200k')
-    expect(shown).toContain('out  1.3k')
+    expect(shown).toContain('\"    1.3k\"')
+    expect(shown).toContain('model')
     expect(shown).toContain('opus 5.5')
     expect(shown).toContain('Close')
     await p.unmount()
@@ -144,12 +144,12 @@ test('the pane fits the turns to its rows', async ($, on) => {
   await start($)
   await $.session.measure(MEASURE as never)
   for (let i = 1; i <= 20; i++) await $.turn.complete(turn(i) as never)
-  // 20 rows: 13 for the rest of the pane with two plan windows, 7 turns.
+  // 20 rows: 15 for the rest of the pane with two plan windows and the trend line, 5 turns.
   const p = await pane($, 'terminal', 20)
   const shown = JSON.stringify(await p.drawn())
   expect(shown).toContain('#20')
-  expect(shown).toContain('#14')
-  expect(shown).not.toContain('#13')
+  expect(shown).toContain('#16')
+  expect(shown).not.toContain('#15')
   await p.unmount()
 })
 
@@ -176,4 +176,77 @@ test('Portuguese from LANG: band, pane, toasts and answers', async ($, on) => {
   expect(shown).toContain('Fechar')
   await p.unmount()
   expect((await run($, 'hide')).text).toBe('Banda oculta. /limits show traz de volta.')
+})
+
+const at = (percent: number, minutes: number) => ({
+  context: { tokens: 116_000, window: 200_000, percent: 58 },
+  rateLimits: [{ kind: 'five_hour', percentUsed: percent, resetsAt: '2026-10-08T15:00:00Z' }],
+  changed: ['rateLimits'],
+  minutes,
+})
+
+test('the pane says when a window reaches 100% at the current pace, before it resets', async ($, on) => {
+  const { clock } = engine(on)
+  await start($)
+  // 40% to 70% in 30 minutes: 100% about 30 minutes later, well before the 15:00 reset.
+  for (const [percent, minutes] of [[40, 0], [50, 10], [60, 20], [70, 30]] as const) {
+    await clock.advance(minutes === 0 ? 0 : 10 * 60_000)
+    await $.session.measure(at(percent, minutes) as never)
+  }
+  const p = await pane($)
+  expect(JSON.stringify(await p.drawn())).toContain('at this pace, 5h reaches 100% in ~30m, before it resets')
+  await p.unmount()
+})
+
+test('no pace line when the window resets first', async ($, on) => {
+  const { clock } = engine(on)
+  await start($)
+  for (const percent of [10, 11, 12, 13]) {
+    await $.session.measure(at(percent, 0) as never)
+    await clock.advance(10 * 60_000)
+  }
+  const p = await pane($)
+  expect(JSON.stringify(await p.drawn())).not.toContain('at this pace')
+  await p.unmount()
+})
+
+test('the context trend and the heaviest turn', async ($, on) => {
+  engine(on)
+  await start($)
+  for (const percent of [20, 35, 58]) {
+    await $.session.measure({ ...MEASURE, context: { tokens: 1000, window: 200_000, percent } } as never)
+    await $.turn.complete({ ...turn(percent), usage: { ...turn(0).usage, input_tokens: percent * 1000 } } as never)
+  }
+  const p = await pane($)
+  const shown = JSON.stringify(await p.drawn())
+  expect(shown).toContain('▂▃▅')
+  expect(shown).toContain('context at the end of the last 3 turns')
+  expect(shown).toContain('{\"color\":\"claude\",\"bold\":true},\"children\":[\"    100k\"]')
+  await p.unmount()
+})
+
+test('cells and density shape the band', { options: { cells: 'ctx, cache', density: 'numbers' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await $.turn.complete(turn(1) as never)
+  const b = await band($)
+  const drawn = JSON.stringify(await b.drawn())
+  expect(drawn).not.toContain('64%')
+  expect(drawn).toContain('58%')
+  expect(drawn).toContain('cache')
+  expect(drawn).not.toContain('█')
+  await b.unmount()
+})
+
+test('below 90 columns each bar is one cell, and warnAt sets the warning color', { options: { warnAt: 50 } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const b = await $.ui.mount({ plugin: 'limits-meter', surface: 'terminal', component: 'AbovePrompt', props: { bodyColumns: 80, hasSurvey: false }, viewport: { columns: 80, rows: 40 } } as never)
+  const drawn = JSON.stringify(await b.drawn())
+  expect(drawn).toContain('\"▅\"')
+  expect(drawn).not.toContain('█')
+  expect(drawn).toContain('{\"color\":\"warning\",\"bold\":true},\"children\":[\"58%\"]')
+  await b.unmount()
 })

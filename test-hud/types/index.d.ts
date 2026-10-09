@@ -30,6 +30,10 @@ declare module 'claude-code' {
     'test-hud': {
       /** The last runs, oldest first. */
       runs: Run[]
+      /** The run the pane shows, picked in its list; null for the runner's latest. */
+      selected: number | null
+      /** The runner the pane shows, picked in its tabs; null for the latest run's. */
+      tab: string | null
     }
   }
 }

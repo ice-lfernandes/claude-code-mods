@@ -14,14 +14,17 @@ test('snap', async ($, on) => {
   on('ui.toast', (_$, e: any) => (console.log('TOAST', e.text), { value: undefined }) as never)
   on('ui.status', (_$, e: any) => (console.log('STATUS', e.text), { value: undefined }) as never)
   let out = ''
+  const durations = [44_000, 38_000, 35_000, 33_000]
+  let i = 0
   on('tool.call', (async () => {
-    await clock.advance(38_000)
+    await clock.advance(durations[i++]!)
     return out.includes('FAILURE') ? { result: undefined, text: `Exit code 1\n${out}`, isError: true } : { result: { stdout: out, stderr: '', interrupted: false }, text: out }
   }) as never)
   const rounds = [
     ['OrderServiceTest.placesOrder:41', 'OrderServiceTest.rejectsEmptyCart:58', 'PricingTest.appliesCoupon:22', 'PricingTest.roundsHalfUp:35', 'InvoiceTest.totals:19'],
     ['OrderServiceTest.placesOrder:41', 'PricingTest.appliesCoupon:22', 'PricingTest.roundsHalfUp:35'],
-    ['PricingTest.roundsHalfUp:35', 'InventoryTest.reservesStock:73'],
+    // InvoiceTest.totals fails, passes and fails again: flaky.
+    ['PricingTest.roundsHalfUp:35', 'InventoryTest.reservesStock:73', 'InvoiceTest.totals:19'],
   ]
   for (const failing of rounds) {
     out = mvn(failing)

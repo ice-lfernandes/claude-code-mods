@@ -15,4 +15,12 @@ test('snap', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'launchpad', surface: 'terminal', component: 'CommandOutput', props: { command: 'pad', args: '', text: 'Menu de atalhos do launchpad.', isErrored: false }, viewport: { columns: 78, rows: 40 } } as never)
   console.log('MENU', JSON.stringify(await ui.drawn()))
   await ui.press({ key: 'pad:explore' })
+  // /pad place prompt: the same buttons in a row under the prompt.
+  await $.command.run({ command: 'pad', args: 'place prompt' } as never)
+  const band = await $.ui.mount({ plugin: 'launchpad', surface: 'terminal', component: 'PromptHint', props: { isDraft: false, isWorking: false, hint: '? for shortcuts' }, viewport: { columns: 78, rows: 40 } } as never)
+  console.log('BAND', JSON.stringify(await band.drawn()))
+  // /pad place pane: the card's tiles in a pane of its own.
+  await $.command.run({ command: 'pad', args: 'place pane' } as never)
+  const pane = await $.ui.mount({ plugin: 'launchpad', surface: 'terminal', component: 'Pane', requestId: 'launchpad-menu', props: { title: 'Atalhos', isFocused: true, bodyColumns: 76, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} }, viewport: { columns: 78, rows: 40 } } as never)
+  console.log('PANE', JSON.stringify(await pane.drawn()))
 })

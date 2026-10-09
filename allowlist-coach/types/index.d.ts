@@ -12,7 +12,12 @@ export type Entry = {
   /** When the last dialog was answered, in epoch milliseconds. */
   lastAt: number
   state: EntryState
+  /** The settings file the coach added the rules to, project-relative; set with `added`. */
+  file?: string
 }
+
+/** The pane's tabs: one status each, and all of them. */
+export type Tab = 'all' | 'ready' | 'counting' | 'refused'
 
 /** The permission lists as the merged settings hold them. */
 export type Configured = {
@@ -27,6 +32,10 @@ declare module 'claude-code' {
       /** Keyed by `rules.join(', ')`. */
       entries: Record<string, Entry>
       configured: Configured
+      /** The pane: the first row of its list, its tab, and the text typed in its filter. */
+      offset: number
+      tab: Tab
+      filter: string
     }
   }
 }
