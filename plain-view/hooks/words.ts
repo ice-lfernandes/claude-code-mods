@@ -8,6 +8,9 @@ export const COMMAND = 'plain-view'
 /** The label the prompt footer shows while the mod is on. */
 export const MODE = 'plain view'
 
+/** agent-watch's command: the agents row offers it when agent-watch is installed. */
+export const WATCH = 'watch'
+
 type Words = {
   description: string
   /** The two steps the card shows before the agent writes a task list. */
@@ -34,6 +37,15 @@ type Words = {
   moreAfter: (n: number) => string
   /** What the turn touched: `mudei 2 arquivos · li 3 arquivos`. */
   files: (changed: number, read: number) => string
+  /** The badge of the small card a turn with no task list leaves. */
+  ready: string
+  /** The agents row: `2 agentes rodando`, `1 agente terminou`. */
+  agentsRunning: (n: number) => string
+  agentsFinished: (n: number) => string
+  /** The waiting card, once the main turn ended with an agent running. */
+  waiting: (n: number) => string
+  /** How many agents ran, on the small end card: `1 agente`. */
+  agents: (n: number) => string
   on: string
   off: string
   alreadyOn: string
@@ -94,6 +106,11 @@ export const WORDS: Record<Lang, Words> = {
     moreAfter: n => `○ mais ${n} depois`,
     files: (changed, read) =>
       changed > 0 ? `mudei ${plural(changed, 'arquivo', 'arquivos')} · li ${plural(read, 'arquivo', 'arquivos')}` : `li ${plural(read, 'arquivo', 'arquivos')}`,
+    ready: '✓ Pronto',
+    agentsRunning: n => `${plural(n, 'agente', 'agentes')} rodando`,
+    agentsFinished: n => `${plural(n, 'agente', 'agentes')} ${n === 1 ? 'terminou' : 'terminaram'}`,
+    waiting: n => `Esperando ${plural(n, 'agente', 'agentes')}`,
+    agents: n => plural(n, 'agente', 'agentes'),
     on: 'plain-view ligado · /plain-view off desliga',
     off: 'plain-view desligado · /plain-view on liga',
     alreadyOn: 'plain-view já está ligado.',
@@ -153,6 +170,11 @@ export const WORDS: Record<Lang, Words> = {
     moreAfter: n => `○ ${n} more after`,
     files: (changed, read) =>
       changed > 0 ? `changed ${plural(changed, 'file', 'files')} · read ${plural(read, 'file', 'files')}` : `read ${plural(read, 'file', 'files')}`,
+    ready: '✓ Done',
+    agentsRunning: n => `${plural(n, 'agent', 'agents')} running`,
+    agentsFinished: n => `${plural(n, 'agent', 'agents')} finished`,
+    waiting: n => `Waiting for ${plural(n, 'agent', 'agents')}`,
+    agents: n => plural(n, 'agent', 'agents'),
     on: 'plain-view on · /plain-view off turns it off',
     off: 'plain-view off · /plain-view on turns it on',
     alreadyOn: 'plain-view is already on.',

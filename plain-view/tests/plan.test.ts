@@ -1,9 +1,35 @@
 import { expect, test } from 'claude-code/testing'
 
-import type { Item, Turn } from '../types'
+import type { Agent, Item, Turn } from '../types'
 import { barCells, base64, layoutOf, rasterCells } from '../hooks/card'
 import { mix, paletteOf, PALETTES, stopsOf, hex, titleColor } from '../hooks/palettes'
-import { agentTextOf, applyAnswer, applyTask, cardOf, checklistOf, doingOf, firstSentence, showsBlock, countCall, currentOf, demoOf, endTurn, estimate, MAX_ESTIMATE, startTurn, titleOf, touch, windowAround } from '../hooks/plan'
+import {
+  agentsRowOf,
+  agentTextOf,
+  applyAnswer,
+  applyTask,
+  cardOf,
+  checklistOf,
+  doingOf,
+  finishAgent,
+  firstSentence,
+  GONE_MS,
+  keepAgents,
+  reconcileAgents,
+  runningOf,
+  showsBlock,
+  countCall,
+  currentOf,
+  demoOf,
+  endTurn,
+  estimate,
+  MAX_ESTIMATE,
+  spawnAgent,
+  startTurn,
+  titleOf,
+  touch,
+  windowAround,
+} from '../hooks/plan'
 
 const NOW = Date.parse('2026-10-09T12:00:00Z')
 const TASKS = ['Escolher o estilo e o layout da página', 'Ver como a página pega o tempo ao vivo', 'Montar o painel do tempo', 'Publicar e compartilhar o link']
@@ -147,10 +173,13 @@ test('plano longo: a window of five around the current task', () => {
   expect(windowAround(12, 6)).toEqual({ start: 5, end: 10 })
 })
 
-test('sem lista de tarefas: the tool in flight; fim sem lista: no card', () => {
+test('sem lista de tarefas: the tool in flight; fim sem lista: the small card', () => {
   const turn = touch(fresh('O que o weather.ts faz?').turn, 'Read', { file_path: 'src/weather.ts' }, 'pt-BR', null)
   expect(cardOf(turn, [], NOW + 4000, 'pt-BR')).toEqual({ kind: 'phrase', title: 'O que o weather.ts faz?', time: '4s', doing: 'Lendo weather.ts' })
-  expect(cardOf(endTurn(turn, 'answer', NOW + 12_000), [], NOW + 12_000, 'pt-BR')).toBeNull()
+  const read = touch(turn, 'Read', { file_path: 'src/weather.ts' }, 'pt-BR', true)
+  expect(cardOf(endTurn(read, 'answer', NOW + 12_000), [], NOW + 12_000, 'pt-BR')).toEqual({
+    kind: 'summary', state: 'done', title: 'O que o weather.ts faz?', badge: '✓ Pronto', time: 'levou 12s', detail: 'li 1 arquivo',
+  })
   expect(cardOf(null, [], NOW, 'pt-BR')).toBeNull()
 })
 
@@ -333,4 +362,135 @@ test('agentText: final by default; which blocks show; the answer\'s first senten
   expect(withAnswer.kind === 'plan' && withAnswer.answer).toBe('Feito: o painel abriu.')
   const without = cardOf(t, items, NOW, 'pt-BR')!
   expect(without.kind === 'plan' && without.answer).toBeUndefined()
+})
+
+// 0.1.5: the agents the main loop spawns, and the end of a turn with no task list.
+const MIN = 60_000
+const spawned = (labels: string[], every = MIN) => labels.reduce<Agent[]>((list, label, i) => spawnAgent(list, `a${i + 1}`, label, NOW + i * every), [])
+const working = (text = 'Revise o código e abra a PR') => touch(fresh(text).turn, 'Agent', { description: 'code-review', prompt: 'x' }, 'pt-BR', null)
+
+test('turno chama um agente: the phrase card carries the agents row, count, latest label and time', () => {
+  const team = spawned(['code-review'])
+  const card = cardOf(working(), [], NOW + 192_000, 'pt-BR', false, team)!
+  if (card.kind !== 'phrase') throw new Error('phrase card expected')
+  expect(card.agents).toEqual({ isRunning: true, text: '1 agente rodando', label: 'code-review', time: '3m 12s' })
+  // Spawning the same id again keeps one row.
+  expect(spawnAgent(team, 'a1', 'code-review', NOW + 5000)).toHaveLength(1)
+})
+
+test('esperando o agente: the main turn ended, no list, an agent runs', () => {
+  const team = spawned(['code-review'])
+  const turn = endTurn(working(), 'answer', NOW + 30_000)
+  const card = cardOf(turn, [], NOW + 241_000, 'pt-BR', false, team)!
+  expect(card).toEqual({
+    kind: 'waiting',
+    title: 'Revise o código e abra a PR',
+    time: '4m 01s',
+    text: 'Esperando 1 agente',
+    agents: { isRunning: true, text: '1 agente rodando', label: 'code-review', time: '4m 01s' },
+  })
+  const en = cardOf(turn, [], NOW + 241_000, 'en', false, spawned(['code-review', 'tests']))!
+  if (en.kind !== 'waiting') throw new Error('waiting card expected')
+  expect(en.text).toBe('Waiting for 2 agents')
+  expect(en.agents.text).toBe('2 agents running')
+})
+
+test('turno da notificação: the finished agent stays through the notification turn, a new request drops it', () => {
+  const notice = '<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>'
+  const team = finishAgent(spawned(['code-review']), 'a1', NOW + 219_000)
+  expect(runningOf(team)).toHaveLength(0)
+  const kept = keepAgents(team, notice)
+  expect(kept).toHaveLength(1)
+  const first = working()
+  const turn = touch(startTurn(first, [], notice, NOW + 220_000, 'pt-BR').turn, 'Read', { file_path: 'plan.ts' }, 'pt-BR', null)
+  const card = cardOf(turn, [], NOW + 262_000, 'pt-BR', false, kept)!
+  if (card.kind !== 'phrase') throw new Error('phrase card expected')
+  expect(card.title).toBe('Revise o código e abra a PR')
+  expect(card.agents).toEqual({ isRunning: false, text: '1 agente terminou', label: 'code-review' })
+  // A new request keeps the running agents and drops the finished ones.
+  const mixed = finishAgent(spawned(['code-review', 'tests']), 'a1', NOW + MIN)
+  expect(keepAgents(mixed, 'E agora?').map(a => a.id)).toEqual(['a2'])
+})
+
+test('fim sem lista: badge, time, files and the agents that ran', () => {
+  const team = finishAgent(spawned(['code-review']), 'a1', NOW + 200_000)
+  const turn = endTurn({ ...working(), changed: ['a', 'b', 'c', 'd', 'e', 'f'], read: ['g', 'h', 'i'] }, 'answer', NOW + 454_000, 'A PR está aberta: corrigi 10 dos 11 apontamentos. Veja o link.')
+  expect(cardOf(turn, [], NOW + 500_000, 'pt-BR', false, team)).toEqual({
+    kind: 'summary',
+    state: 'done',
+    title: 'Revise o código e abra a PR',
+    badge: '✓ Pronto',
+    time: 'levou 7m 34s',
+    detail: 'mudei 6 arquivos · li 3 arquivos · 1 agente',
+  })
+  const en = cardOf(turn, [], NOW + 500_000, 'en', false, team)!
+  if (en.kind !== 'summary') throw new Error('summary card expected')
+  expect(en.badge).toBe('✓ Done')
+  expect(en.time).toBe('took 7m 34s')
+  expect(en.detail).toBe('changed 6 files · read 3 files · 1 agent')
+})
+
+test('Esc sem lista: grey, where it stopped; an API error says so', () => {
+  const turn = { ...working(), read: ['a', 'b'], changed: ['c'] }
+  const card = cardOf(endTurn(turn, 'aborted', NOW + 52_000), [], NOW + 60_000, 'pt-BR')!
+  expect(card).toEqual({ kind: 'summary', state: 'stopped', title: 'Revise o código e abra a PR', badge: '■ Interrompido', time: 'parou em 52s', detail: 'mudei 1 arquivo · li 2 arquivos' })
+  const error = cardOf(endTurn(turn, 'error', NOW + 52_000), [], NOW + 60_000, 'pt-BR')!
+  if (error.kind !== 'summary') throw new Error('summary card expected')
+  expect(error.badge).toBe('■ Parou com erro')
+})
+
+test('com plano + agente: the plan card adds the agents row, working and once it ended', () => {
+  const items = at(created(), ['completed', 'in_progress'])
+  const team = spawned(['code-review'])
+  const card = cardOf(working(), items, NOW + 41_000, 'pt-BR', false, team)!
+  if (card.kind !== 'plan') throw new Error('plan card expected')
+  expect(card.state).toBe('work')
+  expect(card.agents?.text).toBe('1 agente rodando')
+  // The turn ended with the agent running: the plan keeps its ended state, with the row.
+  const ended = cardOf(endTurn(working(), 'answer', NOW + 60_000), items, NOW + 90_000, 'pt-BR', false, team)!
+  if (ended.kind !== 'plan') throw new Error('plan card expected')
+  expect(ended.state).toBe('done')
+  expect(ended.agents).toEqual({ isRunning: true, text: '1 agente rodando', label: 'code-review', time: '1m 30s' })
+})
+
+test('agents: plurals in both languages, the latest label, time since the oldest running one', () => {
+  const team = spawned(['code-review', 'tests', 'docs'])
+  expect(agentsRowOf(team, NOW + 3 * MIN, 'pt-BR')).toEqual({ isRunning: true, text: '3 agentes rodando', label: 'docs', time: '3m 00s' })
+  expect(agentsRowOf(team, NOW + 3 * MIN, 'en')!.text).toBe('3 agents running')
+  const done = finishAgent(finishAgent(finishAgent(team, 'a3', NOW + 4 * MIN), 'a1', NOW + 5 * MIN), 'a2', NOW + 4.5 * MIN)
+  expect(agentsRowOf(done, NOW + 6 * MIN, 'pt-BR')).toEqual({ isRunning: false, text: '3 agentes terminaram', label: 'code-review' })
+  expect(agentsRowOf(done.slice(0, 2), NOW, 'en')!.text).toBe('2 agents finished')
+  expect(agentsRowOf(done.slice(0, 1), NOW, 'en')!.text).toBe('1 agent finished')
+  expect(agentsRowOf([], NOW, 'pt-BR')).toBeUndefined()
+  const turn = endTurn(working(), 'answer', NOW + MIN)
+  const two = cardOf(turn, [], NOW + 2 * MIN, 'pt-BR', false, done.slice(0, 2))!
+  if (two.kind !== 'summary') throw new Error('summary card expected')
+  expect(two.detail).toBe('2 agentes')
+})
+
+test('the agent list settles agents whose end the events missed', () => {
+  const team = spawned(['code-review', 'tests', 'docs', 'lint'], 1000)
+  const listed = [
+    { id: 'a1', status: 'completed' },
+    { id: 'a2', status: 'running' },
+    { id: 'a3', status: 'killed' },
+  ]
+  // a4 is not listed: it counts as ended only GONE_MS after it started.
+  const soon = reconcileAgents(team, listed, NOW + 5000)
+  expect(runningOf(soon).map(a => a.id)).toEqual(['a2', 'a4'])
+  expect(runningOf(reconcileAgents(soon, listed, NOW + 3000 + GONE_MS)).map(a => a.id)).toEqual(['a2'])
+  // An agent that already ended keeps its end.
+  expect(reconcileAgents(soon, [], NOW + 99_000).find(a => a.id === 'a1')!.endedAt).toBe(NOW + 5000)
+})
+
+test('plain conversation leaves no card; agentText card puts the answer on the small card', () => {
+  const chat = endTurn(fresh('Oi, tudo bem?').turn, 'answer', NOW + 3000, 'Tudo ótimo, e você?')
+  expect(cardOf(chat, [], NOW + 4000, 'pt-BR', true)).toBeNull()
+  const turn = endTurn(touch(working(), 'Agent', {}, 'pt-BR', true), 'answer', NOW + MIN, 'A PR está aberta: corrigi 10 dos 11 apontamentos. Veja o link.')
+  const card = cardOf(turn, [], NOW + MIN, 'pt-BR', true)!
+  if (card.kind !== 'summary') throw new Error('summary card expected')
+  expect(card.answer).toBe('A PR está aberta: corrigi 10 dos 11 apontamentos.')
+  const stopped = cardOf(endTurn(working(), 'aborted', NOW + MIN, 'x y z w.'), [], NOW + MIN, 'pt-BR', true)!
+  if (stopped.kind !== 'summary') throw new Error('summary card expected')
+  expect(stopped.answer).toBeUndefined()
 })

@@ -167,6 +167,11 @@ sempre aparecem inteiros. Acima do prompt, um cartão acompanha o pedido: o tít
 `~40%` no passo atual, `Próximo`, `Depois`). O % do passo atual é uma estimativa pelas chamadas
 de tool, por isso o `~`. No fim do turno o cartão fica verde, com o tempo que levou e os
 arquivos mudados e lidos, ou cinza no Esc; o próximo pedido começa um novo, e o `[-]` recolhe.
+Os agentes a quem o turno principal passa trabalho aparecem numa linha do cartão (`◇ 1 agente
+rodando · code-review · 3m 12s`, com o `/watch` do agent-watch quando ele está instalado), e sem
+lista de tarefas o cartão espera por eles (`Esperando 1 agente`). Um turno sem lista que chamou
+tools ou agentes termina num cartão verde pequeno (`✓ Pronto`, o tempo, os arquivos e os
+agentes); uma conversa simples não deixa cartão.
 
 Duas opções mudam o que você vê, as duas em `/config`:
 
@@ -191,7 +196,7 @@ As barras são um degradê das cores da opção `palette` (padrão `claude`), co
 enquanto o agente trabalha. Cada paleta tem uma versão escura e uma clara, escolhida pelo seu
 tema. `animation: off` deixa as barras paradas, nas cores do próprio tema.
 
-![plain-view: o cartão enquanto o agente trabalha, no fim do turno, e as paletas](screenshots/plain-view.svg)
+![plain-view: o cartão enquanto o agente trabalha, no fim do turno, esperando um agente, e as paletas](screenshots/plain-view.svg)
 
 #### Instalação
 

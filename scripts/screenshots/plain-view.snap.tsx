@@ -12,6 +12,9 @@ test('snap', { options: { enabled: true, language: 'en', icons: 'symbol' } }, as
   on('turn.complete', () => ({ text: 'done' }) as never)
   on('tool.call', ($: any, e: any) => (e.tool === 'TaskCreate' ? { result: { task: { id: String(++id) } }, text: 'ok' } : { result: 'ok', text: 'ok' }) as never)
   on('ui.render', ($, e) => $.ui.resolve(e).Box({ key: 'engine' }) as never)
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }) as never)
+  on('agent.list', () => ({ value: [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'running' }] }) as never)
+  on('command.list', () => ({ value: [{ name: 'watch', description: 'Agents', source: 'plugin', plugin: 'agent-watch' }] }) as never)
   const band = async () => {
     const ui = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'AbovePrompt', props: { bodyColumns: 110, hasSurvey: false, isWorking: true, maxRows: 20 }, viewport: { columns: 110, rows: 40 } } as never)
     console.log('BAND', JSON.stringify(await ui.drawn()))
@@ -32,6 +35,14 @@ test('snap', { options: { enabled: true, language: 'en', icons: 'symbol' } }, as
   for (const taskId of ['2', '3', '4']) await $.tool.call({ tool: 'TaskUpdate', taskId, status: 'completed' } as never)
   now += 96_000
   await $.turn.complete({ answer: 'ok', durationMs: 107_000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
+  await band()
+  // A request that hands the review to a background agent: the main turn ends, the card waits.
+  await $.turn.start({ text: 'Review the code and open the PR', turnId: 't2' } as never)
+  await $.tool.call({ tool: 'Agent', description: 'code-review', prompt: 'review', subagent_type: 'general-purpose', run_in_background: true } as never)
+  await $.agent.spawn({ tool_use_id: 'tu9', prompt: 'review', description: 'code-review', subagentType: 'general-purpose', provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background: true, fork: false } as never)
+  now += 30_000
+  await $.turn.complete({ answer: 'ok', durationMs: 30_000, isAborted: false, turnId: 't2', reason: 'answer' } as never)
+  now += 162_000
   await band()
   const out = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'CommandOutput', props: { command: 'plain-view', args: 'palette', text: '', isErrored: false }, viewport: { columns: 110, rows: 40 } } as never)
   console.log('TREE', JSON.stringify(await out.drawn()))

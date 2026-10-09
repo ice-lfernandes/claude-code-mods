@@ -1,6 +1,6 @@
 {
   "name": "plain-view",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends",
   "types": "./types/index.d.ts",
   "userConfig": {

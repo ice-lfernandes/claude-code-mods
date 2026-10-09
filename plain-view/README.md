@@ -4,7 +4,7 @@ A quiet transcript. The tool rows step aside, and the agent's plan shows as a ca
 prompt: the current step, a bar for the request and one for each task, and a summary when the
 turn ends.
 
-![plain-view: the card while the agent works, when the turn ends, and the palettes](../screenshots/plain-view.svg)
+![plain-view: the card while the agent works, when the turn ends, waiting for an agent, and the palettes](../screenshots/plain-view.svg)
 
 - **Off until you turn it on:** `/plain-view on`, the `enabled` option in `/config`, or the
   switch in launchpad's panel (`◆ pad`). The hint line under the prompt ends in `plain view`
@@ -35,7 +35,16 @@ turn ends.
   - with no task tool, the last checklist the agent writes in its answer (`1. [ ] Read the API`,
     `- [x] Build the page`) is the list;
   - before the agent writes a list: `Understand your request` and `Plan the steps`; with no
-    list at all, the tool in flight.
+    list at all, the tool in flight;
+  - the agents (subagents) the main turn starts, in one row: `◇ 1 agent running · code-review ·
+    3m 12s` (the latest one's name, the time since the oldest running one started), then
+    `◇ 1 agent finished · code-review` once they end. Only the count, the name and the time:
+    tokens and cost are agent-watch's. With agent-watch installed, the row ends in `/watch`,
+    which opens its pane. An agent that another agent starts does not count, nor a workflow's.
+- **Waiting for an agent:** when the main turn ends with an agent still running in the
+  background and no task list, the card stays: `◐ Waiting for 1 agent` with a moving bar, and
+  the agents row. With a task list, the plan card shows its end and keeps the agents row. The
+  shine runs until the last agent ends.
 - **Ask for a list** (`askForTasks`, on by default): the agent does not always keep a task list;
   in a live test it wrote its plan as a checklist in its answer. While the mod is on, one line in
   the system prompt asks it to keep one with `TodoWrite` or `TaskCreate` for work of more than two
@@ -48,8 +57,12 @@ turn ends.
   It is a guess, hence the `~`. The request's bar counts done steps plus that estimate.
 - **When the turn ends:** the card turns green, `✓ All done`, `took 1m 47s`, 100%, and a line
   with the files changed and read (`changed 2 files · read 3 files`). On Esc it turns grey,
-  `■ Interrupted`, with the step it left. A turn with no task list leaves no card. The next
-  request starts a fresh card; the engine's `[-]` folds it.
+  `■ Interrupted`, with the step it left. A turn with no task list that called tools or
+  agents ends in a small card: `✓ Done`, the request, `took 7m 34s`, and a line with the files
+  and the agents (`changed 6 files · read 3 files · 1 agent`); grey on Esc (`■ Interrupted`,
+  `stopped at 52s`) or on an error. Under `agentText: card` it carries the answer too. A plain
+  conversation (no tool, no agent) leaves no card. The next request starts a fresh card, keeps
+  the agents still running and drops the finished ones; the engine's `[-]` folds it.
 
 ```
 /plain-view on | off          show or hide the card and the tool rows
@@ -112,12 +125,15 @@ Or for one session: `claude --plugin-dir ./plain-view`
 
 It reads the agent's task list and the files it touches from the `tool.call` event, the
 request from `turn.start`, and the agent's answer at the end of each step from `turn.step`, for
-a checklist. That hook passes every response through unchanged. With `askForTasks` on (the
+a checklist. It counts the agents the main turn starts from `agent.spawn` (their name and start
+time) and their end from `turn.complete`; while one runs it asks `$.agent.list()` at most every
+2 seconds for an end it missed, and `$.command.list()` whether agent-watch's `/watch` is there.
+Its `agent.spawn` hook only observes: the spawn goes on whatever happens after it. That hook passes every response through unchanged. With `askForTasks` on (the
 default), its `prompt.compose` hook adds one line to the system prompt while the mod is on. Under
 `agentText` it hides the agent's messages from the drawing only; the session keeps them. Its `tool.call` hook only observes: if it fails, the call goes on, and
 nothing after the call can make it run twice. The only thing it writes is its own options
 (`enabled`, `palette`) through `$.config.set`, when you run `on`, `off` or `palette`. It keeps
 its values in the session's plugin state and nothing across sessions.
 
-While the agent works, the card redraws 10 times a second for the shine. `animation: off` stops
-that.
+While the agent works, or one of its agents runs, the card redraws 10 times a second for the
+shine. `animation: off` stops that.

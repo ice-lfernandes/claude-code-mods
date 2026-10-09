@@ -253,11 +253,12 @@ open(f'{out}/launchpad.svg', 'w').write(svg([
 
 # plain-view
 d = load(f'{snap}/plain-view.txt')
-work, done = trim(tree(d['BAND'][0])), trim(tree(d['BAND'][1]))
+work, done, waiting = trim(tree(d['BAND'][0])), trim(tree(d['BAND'][1])), trim(tree(d['BAND'][2]))
 pw = max(width(l) for l in work) - 2
 prompt = [plain('─' * (pw - 12) + ' plain view ─', dimColor=True), plain('> ')]
 open(f'{out}/plain-view.svg', 'w').write(svg([
     ('card above the prompt while the agent works (palette claude)', 'raw', work + prompt),
     ('when the turn ends', 'raw', done),
+    ('no task list, the turn over, a background agent still running', 'raw', waiting),
     ('/plain-view palette', 'raw', trim(tree(d['TREE'][0]))),
 ], 60, 'plain-view'))

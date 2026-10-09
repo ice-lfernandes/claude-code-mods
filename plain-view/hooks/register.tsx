@@ -8,6 +8,11 @@
 //          and `Planejar os passos`; with no list at all, the tool in flight. When the turn ends
 //          the card turns green (`✓ Tudo pronto`, `levou 1m 47s`, the files changed and read), or
 //          grey on Esc; the next request starts a fresh one. The engine's `[-]` folds it.
+//   agents the agents (subagents) the main loop spawns, in one row of the card: `◇ 1 agente
+//          rodando · code-review · 3m 12s`, with agent-watch's `/watch` when it is installed.
+//          With the main turn over and no task list, the card waits for them (`Esperando 1
+//          agente`). A turn with no list that called tools or agents ends in a small card
+//          (`✓ Pronto`, the time, the files and the agents); a plain conversation leaves none.
 //   plan   from the agent's TaskCreate, TaskUpdate and TodoWrite calls, else from a checklist it
 //          writes in its answer (`1. [ ] Ler a API`). The `askForTasks` option asks the model, in
 //          the system prompt, to keep a task list with those tools, or a checklist in its reply
@@ -19,26 +24,49 @@
 //          works (`animation`); see palettes.ts and the design guide's "Exception: gradients".
 //   /plain-view on | off | demo | palette [name] | help
 //
-// The task list comes from the agent's TaskCreate, TaskUpdate and TodoWrite calls. Reads nothing
-// from disk, runs no process, calls no model; the only writes are its own options, through
-// $.config.set, when the person asks for them.
+// The task list comes from the agent's TaskCreate, TaskUpdate and TodoWrite calls, the agents from
+// agent.spawn, their turn.complete and $.agent.list(). Reads nothing from disk, runs no process,
+// calls no model; the only writes are its own options, through $.config.set, when the person asks
+// for them.
 
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register, Timer } from 'claude-code'
 
-import type { AgentText, Item, Turn } from '../types'
+import type { Agent, AgentText, Item, Turn } from '../types'
 import { drawCard, rasterCells, barCells } from './card'
 import { PALETTES, paletteOf, stopsOf } from './palettes'
 import type { Palette } from './palettes'
-import { agentTextOf, applyAnswer, applyTask, cardOf, countCall, demoOf, endTurn, MID_KEPT, NEVER_HIDDEN, normalize, showsBlock, startTurn, TASK_TOOLS, touch } from './plan'
+import {
+  agentTextOf,
+  applyAnswer,
+  applyTask,
+  cardOf,
+  countCall,
+  demoOf,
+  endTurn,
+  finishAgent,
+  keepAgents,
+  LIST_MS,
+  MID_KEPT,
+  NEVER_HIDDEN,
+  normalize,
+  reconcileAgents,
+  runningOf,
+  showsBlock,
+  spawnAgent,
+  startTurn,
+  TASK_TOOLS,
+  touch,
+} from './plan'
 import type { IconStyle, Lang, Verb } from './ui'
 import { langOf, linesOf, styleOf, verbRow } from './ui'
-import { COMMAND, MODE, WORDS } from './words'
+import { COMMAND, MODE, WATCH, WORDS } from './words'
 
 const turn = atom({ plugin: 'plain-view', key: 'turn' } as const, null as Turn | null)
 const items = atom({ plugin: 'plain-view', key: 'items' } as const, [] as Item[])
 const tick = atom({ plugin: 'plain-view', key: 'tick' } as const, 0)
 const mids = atom({ plugin: 'plain-view', key: 'mids' } as const, [] as string[])
+const agents = atom({ plugin: 'plain-view', key: 'agents' } as const, [] as Agent[])
 
 /** How often the shine moves while the agent works. */
 const TICK_MS = 100
@@ -57,17 +85,53 @@ let theme: unknown = 'dark'
 // The timers of this load; a reload starts them again from session.start.
 let ticker: Timer | null = null
 let demoTimer: Timer | null = null
+// When the ticker last asked $.agent.list(), and whether agent-watch's /watch is there to offer.
+let listedAt = 0
+let hasWatch = false
 
 const quietly = (p: Promise<unknown>) => void p.catch(() => undefined)
 
-const startTicking = ($: EngineInterface) => {
-  if (!animate || ticker) return
-  ticker = $.clock.every(TICK_MS, () => quietly(update($, tick, n => n + 1)))
+/**
+ * The ticker: it moves the shine while the agent works (`animation`), and while the main loop's
+ * agents run it also asks $.agent.list() every LIST_MS, for an end their turn.complete missed.
+ * With animation off it runs only for the agents, at LIST_MS.
+ */
+const startTicking = ($: EngineInterface, forAgents = false) => {
+  if (ticker || (!animate && !forAgents)) return
+  ticker = $.clock.every(animate ? TICK_MS : LIST_MS, () => quietly(onTick($)))
 }
 const stopTicking = () => {
   ticker?.cancel()
   ticker = null
 }
+
+const onTick = async ($: EngineInterface) => {
+  if (animate) await update($, tick, n => n + 1)
+  const now = await $.clock.now()
+  if (now - listedAt < LIST_MS) return
+  listedAt = now
+  await reconcile($, now)
+}
+
+/** Folds $.agent.list() into the running agents, then stops the ticker when nothing is left to show moving. */
+const reconcile = async ($: EngineInterface, now: number) => {
+  if (runningOf(await read($, agents)).length > 0) {
+    const listed = await $.agent.list().catch(() => null)
+    if (listed) await update($, agents, list => reconcileAgents(list, listed, now))
+  }
+  await settle($)
+}
+
+/** Stops the ticker once the main turn is over and no agent of it runs. */
+const settle = async ($: EngineInterface) => {
+  const t = await read($, turn)
+  if (t?.isDemo && t.end === undefined) return
+  if ((!t || t.end !== undefined) && runningOf(await read($, agents)).length === 0) stopTicking()
+}
+
+/** Whether agent-watch's /watch is among the commands the person can run. */
+const watchOf = async ($: EngineInterface) =>
+  (await $.command.list().catch(() => [])).some(c => c.name === WATCH && c.plugin === 'agent-watch')
 
 /** Changes one of the mod's options as /config would; the engine reloads the mod with it. */
 const setOption = async ($: EngineInterface, key: string, value: unknown): Promise<string | null> => {
@@ -167,6 +231,14 @@ export const register: Register = (on, options) => {
       await update($, turn, () => null)
       await update($, items, () => [])
     } else if (isOn && t && t.end === undefined) startTicking($)
+    // Agents that ran across the reload: settle the ones that ended meanwhile, and keep watching.
+    if (runningOf(await read($, agents)).length > 0) {
+      hasWatch = await watchOf($)
+      const listed = await $.agent.list().catch(() => null)
+      const now = await $.clock.now()
+      if (listed) await update($, agents, list => reconcileAgents(list, listed, now))
+      if (isOn && runningOf(await read($, agents)).length > 0) startTicking($, true)
+    }
     return result
   })
 
@@ -183,7 +255,27 @@ export const register: Register = (on, options) => {
     const fresh = startTurn(await read($, turn), await read($, items), e.text, now, lang)
     await update($, items, () => fresh.items)
     await update($, turn, () => fresh.turn)
-    if (isOn) startTicking($)
+    // A new request keeps the agents still running; a notification keeps the finished ones too.
+    await update($, agents, list => keepAgents(list, e.text))
+    if (isOn) startTicking($, runningOf(await read($, agents)).length > 0)
+    return result
+  })
+
+  // An agent the main loop spawns joins the card's agents row; one spawned by another agent does
+  // not, nor a workflow's (no $.agent.list() row settles it).
+  on('agent.spawn', async ($, e, next) => {
+    const result = await next(e)
+    const id = result.agentId
+    if (result.deny !== undefined || !id || e.parentAgentId || e.workflow) return result
+    // After next(e) nothing throws, so the spawn never runs twice.
+    try {
+      const now = await $.clock.now()
+      await update($, agents, list => spawnAgent(list, id, e.description || e.subagentType, now))
+      hasWatch = await watchOf($)
+      if (isOn) startTicking($, true)
+    } catch {
+      // An observer: the spawn goes on.
+    }
     return result
   })
 
@@ -231,12 +323,15 @@ export const register: Register = (on, options) => {
     // An observer: fail open. After next(e) nothing throws, so the call never runs twice.
   }).catch(($, e, next) => next(e))
 
+  // The main turn ends the card's turn; an agent's run ends that agent. The ticker stops once both
+  // are over.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId) return result
     const now = await $.clock.now()
-    await update($, turn, v => (v && v.end === undefined && !v.isDemo ? endTurn(v, e.reason, now, e.answer) : v))
-    stopTicking()
+    const id = e.agentId
+    if (id) await update($, agents, list => finishAgent(list, id, now))
+    else await update($, turn, v => (v && v.end === undefined && !v.isDemo ? endTurn(v, e.reason, now, e.answer) : v))
+    await settle($)
     return result
   })
 
@@ -246,19 +341,22 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey) return next(e)
     const t = await read($, turn)
     if (!isOn && !t?.isDemo) return next(e)
-    const card = cardOf(t, await read($, items), await $.clock.now(), lang, agentText === 'card')
+    // A demo's card shows no agents.
+    const team = t?.isDemo ? [] : await read($, agents)
+    const card = cardOf(t, await read($, items), await $.clock.now(), lang, agentText === 'card', team)
     if (!card) return next(e)
     const n = await read($, tick)
-    const isWorking = t !== null && t.end === undefined
+    const isWorking = (t !== null && t.end === undefined) || runningOf(team).length > 0
     // Rasters only on the terminal; another surface's table draws one as an empty box.
     const all = $.ui.resolve(e)
-    const ui = { Box: all.Box, Text: all.Text, Raster: e.surface === 'terminal' ? (all as Elements['terminal']).Raster : undefined }
+    const ui = { Box: all.Box, Text: all.Text, Button: all.Button, Raster: e.surface === 'terminal' ? (all as Elements['terminal']).Raster : undefined }
     const mine = drawCard(ui, card, {
       stops: animate ? stopsOf(palette, theme) : null,
       tick: animate && isWorking ? n : null,
       columns: e.props.bodyColumns || e.viewport?.columns || 80,
       icons: style,
       answerLabel: WORDS[lang].answer,
+      ...(hasWatch ? { onWatch: () => quietly($.command.run({ command: WATCH, args: '' })) } : {}),
     })
     const { Box } = $.ui.resolve(e)
     const theirs = await next(e)

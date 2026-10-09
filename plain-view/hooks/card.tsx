@@ -6,7 +6,7 @@
 
 import type { Elements } from 'claude-code'
 
-import type { Card, Row } from './plan'
+import type { AgentsRow, Card, Row } from './plan'
 import type { Stops } from './palettes'
 import { hex, mix, titleColor } from './palettes'
 import type { IconStyle } from './ui'
@@ -86,7 +86,7 @@ const ICONS = {
   halted: { emoji: '⏹️', symbol: '■' },
 }
 
-type Ui = Pick<Elements[keyof Elements], 'Box' | 'Text'> & { Raster?: Elements['terminal']['Raster'] }
+type Ui = Pick<Elements[keyof Elements], 'Box' | 'Text'> & { Raster?: Elements['terminal']['Raster']; Button?: Elements[keyof Elements]['Button'] }
 
 export type DrawOptions = {
   /** The palette's colors; null draws in theme keys with no gradient. */
@@ -98,11 +98,13 @@ export type DrawOptions = {
   icons: IconStyle
   /** `Resposta: ` before the answer's first sentence. */
   answerLabel?: string
+  /** Opens agent-watch's pane: the agents row shows `/watch` only when this is given. */
+  onWatch?: () => void
 }
 
 /** The plan card: a bordered box above the prompt, as the approved prototype draws it. */
 export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
-  const { Box, Text, Raster } = ui
+  const { Box, Text, Raster, Button } = ui
   const inner = Math.max(30, o.columns - 4)
   const L = layoutOf(inner)
   const gradient = o.stops !== null && Raster !== undefined
@@ -137,16 +139,38 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
     )
   }
 
+  // One row for the main loop's agents: `◇ 1 agente rodando · code-review · 3m 12s   /watch`.
+  const agentsLine = (a: AgentsRow) => {
+    const onWatch = o.onWatch
+    const watch = onWatch !== undefined && Button !== undefined
+    const room = inner - a.text.length - (a.time ? a.time.length + 3 : 0) - (watch ? 9 : 0) - 6
+    return (
+      <Box key="agents" flexDirection="row">
+        <Text>
+          <Text color={a.isRunning ? 'claude' : 'success'}>◇ </Text>
+          <Text bold={a.isRunning}>{a.text}</Text>
+          <Text dimColor>{` · ${clip(a.label, Math.max(8, room))}${a.time ? ` · ${a.time}` : ''}`}</Text>
+        </Text>
+        {watch ? <Text>   </Text> : null}
+        {onWatch && Button ? <Button key="watch" plain dimColor label="/watch" onPress={() => onWatch()} /> : null}
+      </Box>
+    )
+  }
+
+  const titleRow = (text: string, time: string) => (
+    <Box flexDirection="row" justifyContent="space-between">
+      <Text>
+        <Text color="claude">✦ </Text>
+        {title(text, inner - 10, 'work')}
+      </Text>
+      <Text dimColor>{time}</Text>
+    </Box>
+  )
+
   if (card.kind === 'phrase') {
     return (
       <Box key="plain-view" flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text>
-            <Text color="claude">✦ </Text>
-            {title(card.title, inner - 10, 'work')}
-          </Text>
-          <Text dimColor>{card.time}</Text>
-        </Box>
+        {titleRow(card.title, card.time)}
         <Box flexDirection="row" gap={2}>
           <Text>
             <Text color="claude">{`${glyph(o.icons, ICONS.now)} `}</Text>
@@ -154,18 +178,61 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
           </Text>
           {bar('doing', L.item, 0, 'comet')}
         </Box>
+        {card.agents !== undefined && agentsLine(card.agents)}
+      </Box>
+    )
+  }
+
+  if (card.kind === 'waiting') {
+    return (
+      <Box key="plain-view" flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+        {titleRow(card.title, card.time)}
+        <Box flexDirection="row" gap={2}>
+          <Text>
+            <Text color="claude">◐ </Text>
+            <Text bold>{card.text}</Text>
+          </Text>
+          {bar('waiting', L.item, 0, 'comet')}
+        </Box>
+        {agentsLine(card.agents)}
+      </Box>
+    )
+  }
+
+  // A badge, then the title in the end's colors.
+  const badged = (badge: string, state: 'done' | 'stopped', text: string) => (
+    <Text>
+      <Text bold inverse color={state === 'done' ? 'success' : 'inactive'}>{` ${badge} `}</Text>
+      <Text> </Text>
+      {title(text, inner - badge.length - 18, state === 'done' ? 'ok' : 'off')}
+    </Text>
+  )
+
+  const answerLine = (answer: string | undefined) =>
+    answer !== undefined && (
+      <Text>
+        <Text dimColor>{`  ${o.answerLabel ?? ''}`}</Text>
+        <Text>{answer}</Text>
+      </Text>
+    )
+
+  if (card.kind === 'summary') {
+    return (
+      <Box key="plain-view" flexDirection="column" borderStyle="round" borderColor={card.state === 'done' ? 'success' : 'inactive'} paddingX={1}>
+        <Box flexDirection="row" justifyContent="space-between">
+          {badged(card.badge, card.state, card.title)}
+          <Text dimColor>{card.time}</Text>
+        </Box>
+        {card.detail !== undefined && <Text dimColor>{`  ${card.detail}`}</Text>}
+        {answerLine(card.answer)}
       </Box>
     )
   }
 
   const pal = card.state === 'done' ? 'ok' : card.state === 'stopped' ? 'off' : 'work'
   const border = card.state === 'done' ? 'success' : card.state === 'stopped' ? 'inactive' : 'claude'
-  const head = card.badge ? (
-    <Text>
-      <Text bold inverse color={card.state === 'done' ? 'success' : 'inactive'}>{` ${card.badge} `}</Text>
-      <Text> </Text>
-      {title(card.title, inner - card.badge.length - 18, pal)}
-    </Text>
+  const head = card.badge && card.state !== 'work' ? (
+    badged(card.badge, card.state, card.title)
   ) : (
     <Text>
       <Text color="claude">✦ </Text>
@@ -210,12 +277,8 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
       {card.rows.map(row)}
       {card.after !== undefined && <Text dimColor>{`  ${card.after}`}</Text>}
       {card.files !== undefined && <Text dimColor>{`  ${card.files}`}</Text>}
-      {card.answer !== undefined && (
-        <Text>
-          <Text dimColor>{`  ${o.answerLabel ?? ''}`}</Text>
-          <Text>{card.answer}</Text>
-        </Text>
-      )}
+      {answerLine(card.answer)}
+      {card.agents !== undefined && agentsLine(card.agents)}
     </Box>
   )
 }

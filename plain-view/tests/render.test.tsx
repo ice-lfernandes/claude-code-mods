@@ -12,12 +12,25 @@ const show = (tree: unknown) => {
   return `${JSON.stringify(tree)}\n${texts.join('')}`
 }
 
-type World = { answer: string; toolUses: unknown[]; refused: string[]; sets: { key: string; value: unknown }[]; logs: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
+type World = {
+  answer: string
+  toolUses: unknown[]
+  refused: string[]
+  sets: { key: string; value: unknown }[]
+  logs: string[]
+  toasts: string[]
+  clock: ReturnType<typeof mock.clock>
+  /** What $.agent.list() answers, $.command.list() answers, and the commands the mod ran. */
+  listed: { id: string; description: string; type: string; status: string }[]
+  commands: { name: string; description: string; source: string; plugin?: string }[]
+  ran: string[]
+}
 
 /** The engine beneath the mod: options, turns and tools answered as a session would. */
 function engine(on: any, theme = 'dark'): World {
-  const world: World = { answer: '', toolUses: [], refused: [], sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }) }
+  const world: World = { answer: '', toolUses: [], refused: [], sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }), listed: [], commands: [], ran: [] }
   let id = 0
+  let agent = 0
   on('env.get', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: undefined }) as never)
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd }) as never)
@@ -31,6 +44,10 @@ function engine(on: any, theme = 'dark'): World {
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' }] }) as never)
   on('ui.toast', ($: any, e: any) => (world.toasts.push(e.text), { value: undefined }) as never)
   on('ui.log', ($: any, e: any) => (world.logs.push(e.text), { value: undefined }) as never)
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `a${++agent}` }) as never)
+  on('agent.list', () => ({ value: world.listed }) as never)
+  on('command.list', () => ({ value: world.commands }) as never)
+  on('command.run', ($: any, e: any) => (world.ran.push(e.command), { text: '' }) as never)
   on('tool.call', ($: any, e: any) => {
     if (e.tool === 'TaskCreate') return { result: { task: { id: String(++id), subject: e.subject } }, text: 'ok' } as never
     if (e.tool === 'TaskUpdate' && world.refused.includes(e.taskId)) return { result: { success: false, taskId: e.taskId, updatedFields: [], error: 'blocked' }, text: 'blocked' } as never
@@ -133,7 +150,7 @@ test('plano longo: five rows around the current task and the count of the rest',
   expect(drawn).not.toContain('Tarefa 3')
 })
 
-test('sem lista de tarefas: the tool in flight; fim sem lista: the engine band alone', ON, async ($, on) => {
+test('sem lista de tarefas: the tool in flight; fim sem lista: the small card over the engine band', ON, async ($, on) => {
   engine(on)
   await start($)
   await ask($, 'O que o weather.ts faz?')
@@ -143,7 +160,9 @@ test('sem lista de tarefas: the tool in flight; fim sem lista: the engine band a
   expect(drawn).toContain('O que o weather.ts faz?')
   await end($)
   drawn = await card($)
-  expect(drawn).not.toContain('weather.ts')
+  expect(drawn).not.toContain('Lendo weather.ts')
+  expect(drawn).toContain(' ✓ Pronto ')
+  expect(drawn).toContain('li 1 arquivo')
   expect(drawn).toContain('engine row')
 })
 
@@ -514,4 +533,253 @@ test('icons: emoji in the steps when asked', { options: { enabled: true, icons: 
   const drawn = await card($)
   expect(drawn).toContain('✅')
   expect(drawn).toContain('🟠')
+})
+
+// 0.1.5: the agents the main loop spawns, and the end of a turn with no task list.
+const REQUEST = 'Revise o código e abra a PR'
+const SPAWN = { tool_use_id: 'tu9', prompt: 'review', description: 'code-review', subagentType: 'general-purpose', provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background: true, fork: false }
+const NOTICE = '<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>'
+const WATCH_CMD = { name: 'watch', description: 'Agents', source: 'plugin', plugin: 'agent-watch' }
+const spawn = ($: any, more: Record<string, unknown> = {}) => $.agent.spawn({ ...SPAWN, ...more } as never)
+const agentDone = ($: any, agentId = 'a1', reason = 'answer') =>
+  $.turn.complete({ answer: 'report', durationMs: 1000, isAborted: false, turnId: `t-${agentId}`, reason, agentId } as never)
+/** A request that hands the code review to a background agent. */
+const delegate = async ($: any) => {
+  await ask($, REQUEST)
+  await call($, 'Agent', { description: 'code-review', prompt: 'review', subagent_type: 'general-purpose', run_in_background: true })
+  await spawn($)
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`turno chama um agente: the agents row under the tool phrase on ${surface}`, ON, async ($, on) => {
+    const w = engine(on)
+    w.listed = [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'running' }]
+    await start($, surface)
+    await delegate($)
+    await w.clock.advance(192_000)
+    const drawn = await card($, surface)
+    expect(drawn).toContain(REQUEST)
+    expect(drawn).toContain('◇ ')
+    expect(drawn).toContain('1 agente rodando')
+    expect(drawn).toContain(' · code-review · 3m 12s')
+    expect(drawn).not.toContain('/watch')
+    expect(drawn).not.toMatch(/tokens|\$/)
+  })
+
+  test(`esperando o agente: the main turn ended, the card waits with the comet on ${surface}`, ON, async ($, on) => {
+    const w = engine(on)
+    await start($, surface)
+    await delegate($)
+    await end($)
+    await w.clock.advance(1000)
+    const drawn = await card($, surface)
+    expect(drawn).toContain('◐ ')
+    expect(drawn).toContain('Esperando 1 agente')
+    expect(drawn).toContain('1 agente rodando')
+    expect(drawn).not.toContain('Pronto')
+    if (surface === 'terminal') expect(drawn).toContain('"cells"')
+    else expect(drawn).toContain('░')
+  })
+
+  test(`turno da notificação: the finished agent in the row on ${surface}`, ON, async ($, on) => {
+    const w = engine(on)
+    await start($, surface)
+    await delegate($)
+    await end($)
+    await w.clock.advance(219_000)
+    await agentDone($)
+    await ask($, NOTICE)
+    await call($, 'Read', { file_path: '/repo/hooks/plan.ts' })
+    const drawn = await card($, surface)
+    expect(drawn).toContain(REQUEST)
+    expect(drawn).toContain('Lendo plan.ts')
+    expect(drawn).toContain('1 agente terminou · code-review')
+    expect(drawn).toContain('"success"')
+  })
+
+  test(`fim sem lista: the small green card with the files and the agent on ${surface}`, ON, async ($, on) => {
+    const w = engine(on)
+    await start($, surface)
+    await delegate($)
+    await call($, 'Read', { file_path: '/repo/a.ts' })
+    await call($, 'Edit', { file_path: '/repo/b.ts' })
+    await w.clock.advance(60_000)
+    await agentDone($)
+    await end($)
+    const drawn = await card($, surface)
+    expect(drawn).toContain(' ✓ Pronto ')
+    expect(drawn).toContain('levou 1m 00s')
+    expect(drawn).toContain('mudei 1 arquivo · li 1 arquivo · 1 agente')
+    expect(drawn).toContain('"borderColor":"success"')
+    expect(drawn).toContain('engine row')
+    // It goes on the next request.
+    await ask($, 'E agora?')
+    expect(await card($, surface)).not.toContain('Pronto')
+  })
+
+  test(`Esc sem lista: grey, where it stopped on ${surface}`, ON, async ($, on) => {
+    const w = engine(on)
+    await start($, surface)
+    await ask($, REQUEST)
+    await call($, 'Read', { file_path: '/repo/a.ts' })
+    await w.clock.advance(52_000)
+    await end($, 'aborted')
+    const drawn = await card($, surface)
+    expect(drawn).toContain(' ■ Interrompido ')
+    expect(drawn).toContain('parou em 52s')
+    expect(drawn).toContain('"borderColor":"inactive"')
+  })
+
+  test(`com plano + agente: the plan card adds the row, and keeps it once ended on ${surface}`, ON, async ($, on) => {
+    engine(on)
+    await start($, surface)
+    await ask($)
+    await plan($)
+    await spawn($)
+    let drawn = await card($, surface)
+    expect(drawn).toContain('Passo 2 de 4')
+    expect(drawn).toContain('1 agente rodando · code-review')
+    await end($)
+    drawn = await card($, surface)
+    expect(drawn).toContain('✓ Turno pronto')
+    expect(drawn).toContain('1 agente rodando · code-review')
+    expect(drawn).not.toContain('Esperando')
+  })
+}
+
+test('plurals: two agents running, then finished, in pt-BR and en', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await delegate($)
+  await spawn($, { description: 'tests' })
+  expect(await card($)).toContain('2 agentes rodando · tests')
+  await end($)
+  expect(await card($)).toContain('Esperando 2 agentes')
+  await agentDone($, 'a1')
+  await agentDone($, 'a2')
+  await ask($, NOTICE)
+  expect(await card($)).toContain('2 agentes terminaram')
+})
+
+test('plurals in en', { options: { enabled: true, language: 'en', icons: 'symbol' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await delegate($)
+  await spawn($, { description: 'tests' })
+  await end($)
+  const drawn = await card($)
+  expect(drawn).toContain('Waiting for 2 agents')
+  expect(drawn).toContain('2 agents running')
+  await agentDone($, 'a1')
+  await agentDone($, 'a2')
+  expect(await card($)).toContain(' ✓ Done ')
+  expect(await card($)).toContain('2 agents')
+})
+
+test('/watch shows only with agent-watch\'s command, and its press runs it', ON, async ($, on) => {
+  const w = engine(on)
+  w.commands = [{ ...WATCH_CMD, plugin: 'other' }]
+  await start($)
+  await delegate($)
+  expect(await card($)).not.toContain('/watch')
+  w.commands = [WATCH_CMD]
+  await spawn($, { description: 'tests' })
+  const ui = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'AbovePrompt', props: { bodyColumns: 120, hasSurvey: false, isWorking: true, maxRows: 20 }, viewport: { columns: 120, rows: 40 } } as never)
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('"label":"/watch"')
+  expect(drawn).toContain('"dimColor":true')
+  await ui.press({ key: 'watch' })
+  expect(w.ran).toEqual(['watch'])
+  await ui.unmount()
+})
+
+test('agents spawned by a subagent, or a workflow, stay out of the row', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, REQUEST)
+  await call($, 'Read', { file_path: '/repo/a.ts' })
+  await spawn($, { parentAgentId: 'a0' })
+  await spawn($, { workflow: { runId: 'wf_1', agentIndex: 1 } })
+  expect(await card($)).not.toContain('◇')
+  await end($)
+  const drawn = await card($)
+  expect(drawn).not.toContain('Esperando')
+  expect(drawn).toContain('✓ Pronto')
+  expect(drawn).not.toContain('agente')
+})
+
+test('plain conversation: no tool call, no agent, no card', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, 'Oi, tudo bem?')
+  await end($)
+  const drawn = await card($)
+  expect(drawn).not.toContain('Oi, tudo bem?')
+  expect(drawn).toContain('engine row')
+})
+
+test('agentText card: the answer on the small card', { options: { enabled: true, agentText: 'card', language: 'pt-BR' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, REQUEST)
+  await call($, 'Read', { file_path: '/repo/a.ts' })
+  await turnOver($, FINAL)
+  const drawn = await card($)
+  expect(drawn).toContain(' ✓ Pronto ')
+  expect(drawn).toContain('Resposta: Pronto: o painel mostra o tempo agora e as próximas 24 h em localhost:5173.')
+})
+
+test('the ticker runs while an agent runs after the turn, and stops after the last one', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await delegate($)
+  await end($)
+  const before = await card($)
+  await w.clock.advance(100)
+  expect(await card($)).not.toBe(before)
+  await agentDone($)
+  const done = await card($)
+  expect(done).toContain('✓ Pronto')
+  await w.clock.advance(500)
+  expect(await card($)).toBe(done)
+})
+
+test('an end the events missed: the agent list says completed, and the card stops waiting', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await delegate($)
+  await end($)
+  expect(await card($)).toContain('Esperando 1 agente')
+  w.listed = [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'completed' }]
+  await w.clock.advance(2100)
+  const drawn = await card($)
+  expect(drawn).not.toContain('Esperando')
+  expect(drawn).toContain('✓ Pronto')
+  expect(drawn).toContain('1 agente')
+})
+
+test('animation off: the agents are still settled from the list', { options: { enabled: true, animation: false, language: 'pt-BR' } }, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await delegate($)
+  await end($)
+  w.listed = [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'failed' }]
+  await w.clock.advance(2100)
+  expect(await card($)).toContain('✓ Pronto')
+})
+
+test('80 columns: the waiting card and a long agent label fit', { options: { enabled: true, language: 'pt-BR', icons: 'symbol' } }, async ($, on) => {
+  const w = engine(on)
+  w.commands = [WATCH_CMD]
+  await start($)
+  await ask($, REQUEST)
+  await spawn($, { description: 'revisar todo o código do repositório com muito cuidado e abrir a PR com as correções' })
+  await end($)
+  const drawn = await card($, 'terminal', 80)
+  expect(drawn).toContain('"columns":10')
+  expect(drawn).toContain('…')
+  expect(drawn).toContain('"label":"/watch"')
+  // The agents row (its spaces before `/watch` included) and `/watch` within the card's 76 inner columns.
+  const row = drawn.split('\n')[1]!.split('◇ ')[1]!.replace('engine row', '')
+  expect(row.length + 2 + '/watch'.length).toBeLessThanOrEqual(76)
 })

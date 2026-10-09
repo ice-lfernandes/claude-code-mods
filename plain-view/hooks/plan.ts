@@ -1,7 +1,8 @@
 // The plan card's logic, with no `$`: the agent's task list from its tool calls, the estimate of
-// the current step, what the turn touched, and the card as plain data that card.tsx draws.
+// the current step, what the turn touched, the agents the main loop spawned, and the card as
+// plain data that card.tsx draws.
 
-import type { AgentText, End, Item, Turn } from '../types'
+import type { Agent, AgentText, End, Item, Turn } from '../types'
 import { phraseOf } from './phrases'
 import type { Lang } from './ui'
 import { clip, elapsed } from './ui'
@@ -52,6 +53,59 @@ export const startTurn = (prev: Turn | null, items: Item[], text: string, now: n
     turn: { title, startedAt: now, calls: 0, changed: [], read: [] },
     items: open ? items : [],
   }
+}
+
+/** How often, at most, the ticker asks $.agent.list() about an agent whose end it may have missed. */
+export const LIST_MS = 2000
+
+/** An agent $.agent.list() no longer names this long after it started counts as ended. */
+export const GONE_MS = 10_000
+
+/** The statuses $.agent.list() gives an agent that ended. */
+const ENDED: readonly string[] = ['completed', 'failed', 'killed']
+
+/** The agents a turn starts with: a request keeps the running ones, a notification keeps them all. */
+export const keepAgents = (list: readonly Agent[], text: string): Agent[] =>
+  isNotice(text) ? [...list] : list.filter(a => a.endedAt === undefined)
+
+/** One more agent of the main loop, as agent.spawn answered it. */
+export const spawnAgent = (list: readonly Agent[], id: string, label: string, now: number): Agent[] =>
+  list.some(a => a.id === id) ? [...list] : [...list, { id, label, startedAt: now }]
+
+/** The agent's run ended (its turn.complete). */
+export const finishAgent = (list: readonly Agent[], id: string, now: number): Agent[] =>
+  list.map(a => (a.id === id && a.endedAt === undefined ? { ...a, endedAt: now } : a))
+
+/**
+ * The agents after a look at $.agent.list(): one it lists as completed, failed or killed ended,
+ * and so did one it no longer names GONE_MS after it started (its task dropped).
+ */
+export const reconcileAgents = (list: readonly Agent[], listed: readonly { id: string; status: string }[], now: number): Agent[] =>
+  list.map(a => {
+    if (a.endedAt !== undefined) return a
+    const l = listed.find(x => x.id === a.id)
+    const isOver = l ? ENDED.includes(l.status) : now - a.startedAt >= GONE_MS
+    return isOver ? { ...a, endedAt: now } : a
+  })
+
+/** The agents still running. */
+export const runningOf = (list: readonly Agent[]) => list.filter(a => a.endedAt === undefined)
+
+/** The card's agents row: how many run (or finished), the latest one's label, and the time since the oldest running one started. */
+export type AgentsRow = { isRunning: boolean; text: string; label: string; time?: string }
+
+/** The agents row, or none when no agent ran this request. Never tokens or cost: those are agent-watch's. */
+export const agentsRowOf = (list: readonly Agent[], now: number, lang: Lang): AgentsRow | undefined => {
+  if (list.length === 0) return undefined
+  const w = WORDS[lang]
+  const running = runningOf(list)
+  if (running.length > 0) {
+    const latest = running.reduce((a, b) => (b.startedAt >= a.startedAt ? b : a))
+    const oldest = Math.min(...running.map(a => a.startedAt))
+    return { isRunning: true, text: w.agentsRunning(running.length), label: latest.label, time: elapsed(now - oldest) }
+  }
+  const latest = list.reduce((a, b) => ((b.endedAt ?? 0) >= (a.endedAt ?? 0) ? b : a))
+  return { isRunning: false, text: w.agentsFinished(list.length), label: latest.label }
 }
 
 /** The index of the task being worked on: the first in progress, else the first pending; -1 when all are done. */
@@ -245,8 +299,13 @@ export type Card =
       files?: string
       /** The answer's first sentence, under `agentText: card`. */
       answer?: string
+      agents?: AgentsRow
     }
-  | { kind: 'phrase'; title: string; time: string; doing: string }
+  | { kind: 'phrase'; title: string; time: string; doing: string; agents?: AgentsRow }
+  /** The main turn ended with no task list and an agent still runs: `Esperando 1 agente`. */
+  | { kind: 'waiting'; title: string; time: string; text: string; agents: AgentsRow }
+  /** A turn with no task list that called tools or agents ended: a small card with badge, time and files. */
+  | { kind: 'summary'; state: 'done' | 'stopped'; title: string; badge: string; time: string; detail?: string; answer?: string }
 
 /** The rows a long plan shows: WINDOW of them around the current one. */
 export const windowAround = (total: number, at: number): { start: number; end: number } => {
@@ -255,23 +314,44 @@ export const windowAround = (total: number, at: number): { start: number; end: n
   return { start, end: start + WINDOW }
 }
 
-/** The card for a turn, or null when there is none to show (no turn, or a turn with no list that ended). */
-export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, lang: Lang, withAnswer = false): Card | null => {
+/**
+ * The card for a turn, or null when there is none to show: no turn, or a turn with no list that
+ * ended with no tool call and no agent (a plain conversation). `agents` are the main loop's.
+ */
+export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, lang: Lang, withAnswer = false, agents: readonly Agent[] = []): Card | null => {
   if (!turn) return null
   const w = WORDS[lang]
   const span = elapsed((turn.endedAt ?? now) - turn.startedAt)
   const isOver = turn.end !== undefined
+  const team = agentsRowOf(agents, now, lang)
 
   // No task list yet: the two first steps until the agent calls a tool, then the tool's phrase.
   if (items.length === 0) {
-    if (isOver) return null
-    if (turn.calls > 0) return { kind: 'phrase', title: turn.title, time: span, doing: capital(turn.doing ?? '') }
+    if (isOver) {
+      // The main turn ended with an agent running: the card waits for it.
+      const running = runningOf(agents).length
+      if (running > 0 && team) return { kind: 'waiting', title: turn.title, time: elapsed(now - turn.startedAt), text: w.waiting(running), agents: team }
+      if (turn.calls === 0 && agents.length === 0) return null
+      const isDone = turn.end === 'answer'
+      const touched = turn.changed.length + turn.read.length > 0 ? w.files(turn.changed.length, turn.read.length) : ''
+      const detail = [touched, agents.length > 0 ? w.agents(agents.length) : ''].filter(x => x !== '').join(' · ')
+      return {
+        kind: 'summary',
+        state: isDone ? 'done' : 'stopped',
+        title: turn.title,
+        badge: isDone ? w.ready : turn.end === 'aborted' ? w.interrupted : w.stopped,
+        time: isDone ? w.took(span) : w.stoppedAt(span),
+        ...(detail ? { detail } : {}),
+        ...(withAnswer && isDone && turn.answer ? { answer: turn.answer } : {}),
+      }
+    }
+    if (turn.calls > 0) return { kind: 'phrase', title: turn.title, time: span, doing: capital(turn.doing ?? ''), ...(team ? { agents: team } : {}) }
     const est = Math.min(0.9, (now - turn.startedAt) / 1000 / FIRST_STEP_SECONDS)
     const rows: Row[] = [
       { kind: 'now', text: w.first[0], frac: est, status: `~${Math.round(est * 100)}%` },
       { kind: 'next', text: w.first[1], frac: 0, status: w.next },
     ]
-    return { kind: 'plan', state: 'work', title: turn.title, time: span, label: w.step(1, 2), frac: est / 2, pct: pct(est / 2), rows }
+    return { kind: 'plan', state: 'work', title: turn.title, time: span, label: w.step(1, 2), frac: est / 2, pct: pct(est / 2), rows, ...(team ? { agents: team } : {}) }
   }
 
   const total = items.length
@@ -315,6 +395,7 @@ export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, l
     ...(after ? { after } : {}),
     ...(isOver && touched ? { files: touched } : {}),
     ...(withAnswer && state === 'done' && turn.answer ? { answer: turn.answer } : {}),
+    ...(team ? { agents: team } : {}),
   }
 }
 

@@ -33,6 +33,17 @@ export type Turn = {
   answer?: string
 }
 
+/** An agent (subagent) the main loop spawned, from its agent.spawn to its turn.complete. Epoch ms. */
+export type Agent = {
+  /** agent.spawn's agentId, as $.agent.list() names it. */
+  id: string
+  /** The Agent call's description, else its agent type. */
+  label: string
+  startedAt: number
+  /** Set when it ended: its turn.complete, or $.agent.list() says completed, failed or killed. */
+  endedAt?: number
+}
+
 /** What stays of the agent's words in the transcript while the mod is on. */
 export type AgentText = 'final' | 'none' | 'card' | 'all'
 
@@ -46,6 +57,8 @@ declare module 'claude-code' {
       tick: number
       /** Texts of steps that went on to call tools, normalized: the blocks `agentText: final` hides. */
       mids: string[]
+      /** The agents the main loop spawned: running ones, and the ones that ended during this request. */
+      agents: Agent[]
     }
   }
 }

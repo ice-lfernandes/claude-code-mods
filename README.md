@@ -166,6 +166,11 @@ row per task of the agent's list with its own bar (`Done`, `~40%` for the curren
 `Up next`). The current step's percentage is an estimate from its tool calls, hence the `~`.
 When the turn ends the card turns green with the time it took and the files changed and read,
 or grey on Esc; the next request starts a fresh one, and `[-]` folds it.
+The agents the main turn hands work to show in one row of the card (`◇ 1 agent running ·
+code-review · 3m 12s`, with agent-watch's `/watch` when it is installed), and with no task list
+the card waits for them (`Waiting for 1 agent`). A turn with no list that called tools or agents
+ends in a small green card (`✓ Done`, the time, the files and the agents); a plain conversation
+leaves none.
 
 Two options shape what you see, both in `/config`:
 
@@ -189,7 +194,7 @@ The bars are a gradient of the `palette` option's colors (default `claude`) with
 runs while the agent works. Each palette has a dark and a light set, picked by your theme.
 `animation: off` keeps the bars still, in the theme's own colors.
 
-![plain-view: the card while the agent works, when the turn ends, and the palettes](screenshots/plain-view.svg)
+![plain-view: the card while the agent works, when the turn ends, waiting for an agent, and the palettes](screenshots/plain-view.svg)
 
 #### Install
 
