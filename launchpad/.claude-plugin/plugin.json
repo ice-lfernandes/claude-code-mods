@@ -1,7 +1,7 @@
 {
   "name": "launchpad",
-  "version": "0.4.1",
-  "description": "A menu of one-click actions under the header, below the prompt or in a pane: each button runs an installed command, skill or agent. Pick and order up to 8 with /pad configuration",
+  "version": "0.5.4",
+  "description": "A menu of one-click actions under the header, above the prompt or in a pane, and a control panel from ◆ pad: model and effort in one click, this collection's mods, the shortcuts. Pick and order up to 8 with /pad configuration",
   "types": "./types/index.d.ts",
   "userConfig": {
     "language": {
@@ -35,7 +35,7 @@
     "placement": {
       "type": "string",
       "title": "Where the menu shows",
-      "description": "header: a card under the header when a session starts and after /clear; prompt: a row below the prompt that stays; pane: a pane of its own, a tab like other mods' panes, with the card's tiles. /pad place changes it from the prompt",
+      "description": "header: a card under the header when a session starts and after /clear; prompt: a row right above the prompt that stays; pane: a pane of its own, a tab like other mods' panes, with the card's tiles. /pad place changes it from the prompt",
       "options": [
         "header",
         "prompt",

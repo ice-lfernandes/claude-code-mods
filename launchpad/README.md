@@ -1,10 +1,11 @@
 # launchpad
 
-A menu of one-click actions under the Claude Code header, below the prompt or in a pane of its
-own, so nobody has to know a `/command` before they can get something done. Each button runs a command, a skill or an agent
-that this session has installed.
+A menu of one-click actions under the Claude Code header, right above the prompt or in a pane of
+its own, so nobody has to know a `/command` before they can get something done. Each button runs a
+command, a skill or an agent that this session has installed. `◆ pad` opens a control panel: the
+session's model and effort in one click, this collection's mods, and the shortcuts.
 
-![launchpad: the welcome menu under the header, and an agent request waiting in the prompt with its blank marked](../screenshots/launchpad.svg)
+![launchpad: the welcome menu, the row above the prompt, ◆ pad and the control panel](../screenshots/launchpad.svg)
 
 - **Shows when a session starts** with an empty conversation, and after `/clear`: a framed card
   under the header, each button an icon and an action in a bordered tile, in columns that fit the
@@ -24,17 +25,34 @@ that this session has installed.
   and of your home folder. A button whose command another session has (`/limits` comes with
   [limits-meter](../limits-meter/)) stays in your list and shows where it works.
 - **A row of /pad's own arguments** under the buttons: `configuration · list · add · remove ·
-  reset · place · off · help`. `configuration` opens the pane, `list` and `help` print as a dim line in
-  the conversation (Claude does not read it), `off` turns the menu off. `add`, `remove` and
-  `reset` wait in the prompt (`/pad add [nome] | [/comando ou @agente]`), so a stray click changes
-  nothing.
+  reset · place · off · help`. Nothing there leaves a command in the prompt for you to type:
+  `configuration` opens the pane, and so do `add` and `remove`, which are a press there; `place`
+  asks where the menu goes and `reset` asks before it resets, in Claude Code's own dialog, where
+  each choice says what it does and each place shows a sketch of itself; `list`
+  and `help` print as a dim line in the conversation (Claude does not read it); `off` turns the
+  menu off, and the row then offers `on`.
 - **Where it shows is your choice** (`/pad place`, or the `placement` option):
   - `header`, the default: the card under the header described above.
-  - `prompt`: the buttons in a row below the prompt that stays there, under Claude Code's own
-    hint line (`? for shortcuts`), with `⋯ configure` to open the pane.
+  - `prompt`: the buttons in a row right above the prompt box that stays there, under the bands
+    of other mods (limits-meter's), with `⋯ configure` to open the pane.
   - `pane`: a pane of its own, a tab like those of `/limits` and `/watch`, with the card's
     bordered tiles. It opens when a session starts and after `/clear`, and on `/pad`. Claude
     Code opens a pane only with the keyboard on it: `Esc` closes it and gives the prompt back.
+- **`◆ pad`, the control panel.** A bordered button under Claude Code's hint line, below the
+  prompt, in every placement, and while the menu is off too. It opens a pane with:
+  - **Controls:** the models (`haiku · sonnet · opus`, or the plain names the `/config` model row
+    lists) and the effort levels (`low` to `max`) as buttons, the current ones marked `●`. A press
+    runs `/model sonnet` or `/effort low`, as typing would. The model comes from the session; the
+    effort from the last request, so before the first one none is marked. With the 5-hour window
+    at 70% or more, `opus` and `max` get a yellow border and a line says so; a press still
+    switches at once.
+  - **Mods:** a button for each mod of this collection installed (limits-meter, allowlist-coach,
+    agent-watch) that opens its pane, then one for each missing, which puts its
+    `/plugin install` command in the prompt, or a line saying all are installed. test-hud is left
+    out: it is a tool for developers. A mod whose command takes `on` and `off` also
+    gets its switch, its state read from its `enabled` option.
+  - **Shortcuts:** the menu's tiles, less `Trocar modelo`, which the controls replace.
+  `/pad configuration` lists the mods installed and missing the same way.
 - **Up to 8 buttons** that work here. The defaults: compact the chat, see context, see limits,
   resume a chat, edit memory, switch model, explore the code, help.
 
@@ -42,13 +60,14 @@ that this session has installed.
 
 ```
 /pad                                  show the menu again
-/pad configuration                    pane to order, remove and add buttons
+/pad panel                            open the control panel, as ◆ pad does
+/pad configuration                    pane to order, remove and add buttons, and the mods to install
 /pad list                             every button, numbered, with what it runs
 /pad add 🔎 Revisão | /code-review    a button that runs a command or skill
 /pad add Revisor | @revisor           a button that calls an agent
 /pad remove 3                         drop button 3
 /pad reset                            back to the default buttons
-/pad place header | prompt | pane     where the menu shows: under the header, below the prompt, or in a pane
+/pad place header | prompt | pane     where the menu shows: under the header, right above the prompt, or in a pane
 /pad off                              turn the menu off: no card at the start, after /clear or on /pad
 /pad on                               turn it back on
 ```
@@ -112,8 +131,9 @@ to `auto` yourself to get the new behaviour.
 
 ## Known limits
 
-- **Hover needs a terminal that reports mouse motion.** Over a tile, the border and label turn the
-  accent color and the tile tints. VS Code's terminal reports the pointer as it moves; a JetBrains
+- **Hover needs a terminal that reports mouse motion.** Over a tile or any bordered button, the
+  border turns the accent color and the button fills with it, its label dark. With the pointer
+  right on the label, the terminal inverts the label as it does every button. VS Code's terminal reports the pointer as it moves; a JetBrains
   IDE's terminal reports clicks but not motion, so there the tiles do not light up. Clicks work in
   both.
 - **The border rows of a tile do not take a click.** Only a button takes a press, and a terminal
@@ -130,6 +150,10 @@ to `auto` yourself to get the new behaviour.
 - **Argument hints come from the `/` menu.** The pane gives a command its argument as a blank
   from the hint Claude Code shows in the `/` menu. The mod learns the hints as that menu lists the
   commands, and forgets them when it reloads.
+- **`◆ pad` adds three rows under the prompt.** A bordered button is three rows tall, under the
+  hint line.
+- **The effort shows after the first request.** Claude Code tells a mod the effort only as each
+  request goes out.
 - **The menu is a row of the conversation.** It scrolls away with the conversation, and `/pad`
   draws a new one. Claude reads `/pad`'s one-line output (`Menu de atalhos do launchpad.`), not
   the buttons.
@@ -148,6 +172,8 @@ Or for one session: `claude --plugin-dir ./launchpad`
 | --- | --- | --- | --- | --- | --- |
 | launchpad | No | No | Reads `.claude/launchpad.json`, and the agent files in `.claude/agents/` of the session's folder and of `$HOME` | No | No |
 
-A pressed button does what typing would do: it runs a slash command or fills the prompt box.
+The panel also reads the `/config` rows (the model row's options, a mod's `enabled`), the
+session's model and its rate-limit windows. A pressed button does what typing would do: it runs a
+slash command (`/model`, `/effort`, a mod's command) or fills the prompt box.
 Those go through Claude Code and every other mod's hooks as usual, so permission dialogs and other
 guards still apply. The mod keeps your list of buttons in its plugin store, on this machine.

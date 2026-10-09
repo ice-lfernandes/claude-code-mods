@@ -1,7 +1,20 @@
 import { expect, test } from 'claude-code/testing'
 
-import type { Target } from '../types'
+import type { ModInfo, Target } from '../types'
 import {
+  activeModel,
+  ASK_HEADER,
+  dressQuestion,
+  effortOf,
+  fiveHourOf,
+  installText,
+  isWarned,
+  modelsOf,
+  modLabel,
+  MODS,
+  modsOf,
+  panelShortcuts,
+  toggleOf,
   agentName,
   agentOf,
   agentTask,
@@ -253,4 +266,94 @@ test('a hint of optional arguments only: no blanks, and a saved button runs bare
 
 test('placement: the three places, header otherwise', async () => {
   expect(['header', 'prompt', 'pane', 'tab', undefined].map(placementOf)).toEqual(['header', 'prompt', 'pane', 'header', 'header'])
+})
+
+// The control panel (prototype notes/prototypes/launchpad-0.5.0.html, approved 2026-10-09).
+
+const fromPlugin = (name: string, plugin?: string): Target => ({ kind: 'command', name, description: '', source: 'plugin', ...(plugin ? { plugin } : {}) })
+
+test('mods: found by command and plugin; a command without a plugin name counts, another plugin\'s does not', async () => {
+  const { installed, missing } = modsOf([fromPlugin('limits', 'limits-meter'), fromPlugin('watch'), fromPlugin('allowlist', 'someone-else')])
+  expect(installed.map(m => m.plugin)).toEqual(['limits-meter', 'agent-watch'])
+  expect(missing.map(m => m.plugin)).toEqual(['allowlist-coach'])
+  expect(modsOf([]).installed).toEqual([])
+  expect(MODS.map(m => m.plugin)).not.toContain('launchpad')
+  expect(MODS.map(m => m.plugin)).not.toContain('test-hud') // for developers; leaves the collection after plan v2
+  expect(modsOf([fromPlugin('test-hud', 'test-hud')]).installed).toEqual([])
+})
+
+test('mods: the install command for the prompt', async () => {
+  expect(installText('agent-watch')).toBe('/plugin install agent-watch --marketplace ice-lfernandes/claude-code-mods')
+})
+
+test('mods: a label in each language and icon style', async () => {
+  expect(modLabel(MODS[0]!, 'pt-BR', 'emoji')).toBe('⏱️ limites')
+  expect(modLabel(MODS[2]!, 'en', 'symbol')).toBe('◈ agents')
+})
+
+const CLEAN: ModInfo = { plugin: 'clean-view', command: 'clean', icon: 'spark', label: { 'pt-BR': 'clean-view', en: 'clean-view' }, toggles: true }
+
+test('on and off: the state of a mod that toggles, from its enabled row', async () => {
+  expect(toggleOf(CLEAN, [{ key: 'clean-view.enabled', value: true }])).toBe(true)
+  expect(toggleOf(CLEAN, [{ key: 'clean-view.enabled', value: false }])).toBe(false)
+  expect(toggleOf(CLEAN, [])).toBeNull()
+  expect(toggleOf(MODS[0]!, [{ key: 'limits-meter.enabled', value: true }])).toBeNull() // does not toggle
+})
+
+test('model chips: the plain aliases of the /config row, else haiku, sonnet, opus', async () => {
+  expect(modelsOf(undefined)).toEqual(['haiku', 'sonnet', 'opus'])
+  expect(modelsOf([])).toEqual(['haiku', 'sonnet', 'opus'])
+  expect(modelsOf(['default', 'Sonnet', 'opus', 'sonnet[1m]', 'opus', 'fable'])).toEqual(['sonnet', 'opus', 'fable'])
+  expect(modelsOf(['a', 'b', 'c', 'd', 'e', 'f'])).toHaveLength(5)
+})
+
+test('active chip: the one the model id holds', async () => {
+  expect(activeModel('claude-opus-5-5', ['haiku', 'sonnet', 'opus'])).toBe('opus')
+  expect(activeModel('sonnet', ['haiku', 'sonnet', 'opus'])).toBe('sonnet')
+  expect(activeModel('some-other-model', ['haiku', 'sonnet', 'opus'])).toBeNull()
+  expect(activeModel('', ['haiku'])).toBeNull()
+})
+
+test('effort: a level, else none', async () => {
+  expect(effortOf('high')).toBe('high')
+  expect(effortOf('xhigh')).toBe('xhigh')
+  expect(effortOf(8000)).toBeNull()
+  expect(effortOf(undefined)).toBeNull()
+  expect(effortOf('extreme')).toBeNull()
+})
+
+test('5-hour warning: opus and max from 70%', async () => {
+  expect(fiveHourOf([{ kind: 'seven_day', percentUsed: 90 }, { kind: 'five_hour', percentUsed: 74 }])).toBe(74)
+  expect(fiveHourOf([])).toBeNull()
+  expect(isWarned('opus', 74)).toBe(true)
+  expect(isWarned('max', 70)).toBe(true)
+  expect(isWarned('opus', 69.9)).toBe(false)
+  expect(isWarned('sonnet', 99)).toBe(false)
+  expect(isWarned('opus', null)).toBe(false)
+})
+
+test('panel shortcuts: the menu less /model', async () => {
+  const list = defaults('pt-BR')
+  expect(panelShortcuts(list).map(p => p.id)).toEqual(['compact', 'context', 'limits', 'resume', 'memory', 'explore', 'help'])
+})
+
+test('the dialog for place: each place with what it is and a sketch, labels unchanged', async () => {
+  const q = dressQuestion({ question: 'Onde o menu deve ficar?', header: ASK_HEADER, multiSelect: false, options: [{ label: 'Sob o cabeçalho (atual)' }, { label: 'Acima do prompt' }, { label: 'Num painel' }] }, 'pt-BR')
+  const options = q.options as { label: string; description?: string; preview?: string }[]
+  expect(options.map(o => o.label)).toEqual(['Sob o cabeçalho (atual)', 'Acima do prompt', 'Num painel'])
+  expect(options[0]!.description).toContain('Um cartão sob o cabeçalho')
+  expect(options[1]!.description).toBe('Uma linha logo acima da caixa do prompt, sempre à mão.')
+  expect(options[1]!.preview).toContain('✻ Compactar  Ver contexto')
+  expect(options[2]!.preview).toContain('Esc fecha')
+  const en = dressQuestion({ header: ASK_HEADER, options: [{ label: 'In a pane' }] }, 'en')
+  expect((en.options as { preview?: string }[])[0]!.preview).toContain('Esc closes')
+})
+
+test('the dialog for reset says what each answer does; anyone else\'s question is left alone', async () => {
+  const q = dressQuestion({ header: ASK_HEADER, options: [{ label: 'Voltar aos padrões' }, { label: 'Cancelar' }] }, 'pt-BR')
+  expect((q.options as { description?: string }[]).map(o => o.description)).toEqual(['Volta aos 8 atalhos padrão. Os que você adicionou somem; os do projeto ficam.', 'Nada muda.'])
+  const theirs = { question: 'Qual banco?', header: 'DB', options: [{ label: 'Cancelar' }] }
+  expect(dressQuestion(theirs, 'pt-BR')).toBe(theirs)
+  const unknown = dressQuestion({ header: ASK_HEADER, options: [{ label: 'outra coisa' }] }, 'pt-BR')
+  expect(unknown.options).toEqual([{ label: 'outra coisa' }])
 })

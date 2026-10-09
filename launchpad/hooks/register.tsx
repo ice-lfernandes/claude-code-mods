@@ -14,31 +14,47 @@
 //   /pad off | on  turns the menu off (no card at the start, after /clear or on /pad) and back
 //            on, kept across sessions.
 //   /pad place header | prompt | pane  where the menu shows: the card under the header, a row
-//            under the prompt that stays (below the engine's hint line), or a pane of its own, a
-//            tab like other mods' panes, with the card's tiles.
+//            right above the prompt box that stays (under the other mods' bands), or a pane of
+//            its own, a tab like other mods' panes, with the card's tiles.
 //            Kept across sessions; the `placement` option is the default.
+//   panel    `◆ pad`, a bordered button at the end of the engine's hint line in every placement,
+//            or /pad panel: a pane with the session's model and effort as chips (a press runs
+//            /model or /effort), a warning on opus and max when the 5-hour window passes 70%,
+//            a button per mod of this collection installed (it opens the mod's pane) and the
+//            shortcuts. /pad configuration lists the mods missing, with their install command
+//            for the prompt.
 //   project  .claude/launchpad.json adds the repository's buttons. They come from the repo, so
 //            a press only puts the text in the prompt: the person reads it before pressing Enter.
 //
 // Reads .claude/launchpad.json and the agent files in .claude/agents/ (the session's folder and
-// the home folder). Runs no process, calls no model.
+// the home folder), the /config rows (the model row's options, a mod's `enabled`) and the
+// session's model and rate limits. Runs no process, calls no model.
 
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
-import type { IconStyle, Lang, Pad, Placement, Target } from '../types'
+import type { Effort, IconStyle, Lang, ModInfo, Pad, Placement, Target } from '../types'
 import {
   agentName,
   agentOf,
   agentTask,
   asPads,
   available,
+  activeModel,
+  ASK_HEADER,
   BUILTIN_AGENTS,
   blankIn,
   blanksOf,
   buttonLabel,
+  cells,
   commandOf,
   defaults,
+  dressQuestion,
+  EFFORTS,
+  effortOf,
+  fiveHourOf,
+  installText,
+  isWarned,
   keyOf,
   langOf,
   layout,
@@ -46,10 +62,14 @@ import {
   localize,
   matches,
   MAX_SHOWN,
+  modelsOf,
+  modLabel,
+  modsOf,
   moveId,
   windowOf,
   padFor,
   padKey,
+  panelShortcuts,
   parseAdd,
   parseProject,
   placementOf,
@@ -58,6 +78,7 @@ import {
   spell,
   styleOf,
   tileLabel,
+  toggleOf,
   unblank,
   WORDS,
 } from './pad'
@@ -65,6 +86,8 @@ import {
 const PANE = 'launchpad'
 /** The menu's own pane, under `/pad place pane`. */
 const MENU_PANE = 'launchpad-menu'
+/** The control panel: model, effort, mods and shortcuts. */
+const PANEL = 'launchpad-panel'
 const PROJECT_FILE = '.claude/launchpad.json'
 const AGENTS_DIR = '.claude/agents'
 const KEY_MENU = 'menu'
@@ -78,6 +101,8 @@ const filter = atom({ plugin: 'launchpad', key: 'filter' } as const, '')
 const offset = atom({ plugin: 'launchpad', key: 'offset' } as const, 0)
 const isOff = atom({ plugin: 'launchpad', key: 'isOff' } as const, false)
 const placement = atom({ plugin: 'launchpad', key: 'placement' } as const, 'header' as Placement)
+const model = atom({ plugin: 'launchpad', key: 'model' } as const, '')
+const effort = atom({ plugin: 'launchpad', key: 'effort' } as const, null as Effort | null)
 
 /**
  * Argument hints by command name, as the engine lists the commands for the typeahead and /help
@@ -124,7 +149,7 @@ async function readCatalog($: EngineInterface): Promise<Target[]> {
   }
   for (const c of commands) {
     const name = c.name.replace(/^\//, '')
-    if (name && name !== 'pad') push({ kind: 'command', name, description: c.description, source: c.source })
+    if (name && name !== 'pad') push({ kind: 'command', name, description: c.description, source: c.source, ...(c.plugin ? { plugin: c.plugin } : {}) })
   }
   for (const name of BUILTIN_AGENTS) push({ kind: 'agent', name, description: '', source: 'agent' })
   for (const a of files) push(a)
@@ -204,17 +229,25 @@ async function add($: EngineInterface, p: Pad): Promise<string | null> {
   return null
 }
 
-/** The tile's background under the pointer: the theme's subtle gray, so it reads on dark and light. */
-const TILE_HOVER = 'subtle'
+/**
+ * Every bordered button under the pointer: the whole box in the accent, its label in the theme's
+ * text for a filled background, so it reads on dark and light.
+ */
+const BOX_HOVER = { borderColor: 'claude', borderDimColor: false, backgroundColor: 'claude' } as const
+const LABEL_HOVER = { color: 'inverseText', bold: true } as const
 
-/** /pad's arguments in the row under the menu; `fill` is the text the prompt waits with. */
-const PAD_ACTIONS: { verb: string; fill?: (w: (typeof WORDS)[Lang]) => string }[] = [
+/**
+ * /pad's arguments in the row under the menu. None waits in the prompt for typing: `add` and
+ * `remove` open /pad configuration, where both are a press; `place` and `reset` ask in the
+ * engine's dialog; the rest run.
+ */
+const PAD_ACTIONS: { verb: string; via?: 'pane' | 'ask' }[] = [
   { verb: 'configuration' },
   { verb: 'list' },
-  { verb: 'add', fill: w => w.addTemplate },
-  { verb: 'remove', fill: w => w.removeTemplate },
-  { verb: 'reset', fill: () => '/pad reset' },
-  { verb: 'place', fill: w => w.placeTemplate },
+  { verb: 'add', via: 'pane' },
+  { verb: 'remove', via: 'pane' },
+  { verb: 'reset', via: 'ask' },
+  { verb: 'place', via: 'ask' },
   { verb: 'off' },
   { verb: 'help' },
 ]
@@ -241,12 +274,30 @@ async function showMenu($: EngineInterface) {
   else if (place === 'pane') await openMenuPane($)
 }
 
+/**
+ * The question a `place` or `reset` press asks, and the /pad arguments its answer runs; null when
+ * dismissed or answered with no choice of the list.
+ */
+async function askVerb($: EngineInterface, verb: string): Promise<string | null> {
+  const w = WORDS[lang]
+  if (verb === 'place') {
+    const now = await read($, placement)
+    const places = (['header', 'prompt', 'pane'] as const).map(p => ({ p, label: p === now ? `${w.ask2.places[p]} ${w.ask2.current}` : w.ask2.places[p] }))
+    const answer = await $.ui.ask(w.ask2.place, { options: places.map(x => x.label), header: ASK_HEADER }).catch(() => null)
+    const hit = places.find(x => x.label === answer)
+    return hit ? `place ${hit.p}` : null
+  }
+  const answer = await $.ui.ask(w.ask2.reset, { options: [w.ask2.resetYes, w.ask2.cancel], header: ASK_HEADER }).catch(() => null)
+  return answer === w.ask2.resetYes ? 'reset' : null
+}
+
 /** Runs one of /pad's arguments from the row: its answer, if any, as dim lines in the transcript. */
 async function pressVerb($: EngineInterface, a: (typeof PAD_ACTIONS)[number]) {
   const w = WORDS[lang]
   try {
-    if (a.fill) return await fill($, a.fill(w))
-    const { text } = await runPad($, a.verb)
+    const args = a.via === 'pane' ? 'configuration' : a.via === 'ask' ? await askVerb($, a.verb) : a.verb
+    if (!args) return
+    const { text } = await runPad($, args)
     // A log line is drawn as one row: a list or the help goes out a line at a time.
     for (const line of text?.split('\n') ?? []) if (line.trim()) $.ui.log(line)
   } catch {
@@ -259,14 +310,16 @@ async function pressVerb($: EngineInterface, a: (typeof PAD_ACTIONS)[number]) {
  * pane, the list, off, help) run; those that take an argument or undo the person's list (add,
  * remove, reset) wait in the prompt, so nothing is lost on a stray click.
  */
-function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | 'Text' | 'Button'>, more: number) {
+function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | 'Text' | 'Button'>, more: number, off = false) {
   const { Box, Text, Button } = ui
   const w = WORDS[lang]
+  // Off, the row offers `on`: the way back is a press, not something to type.
+  const actions = off ? PAD_ACTIONS.map(a => (a.verb === 'off' ? { verb: 'on' } : a)) : PAD_ACTIONS
   return (
     <Box flexDirection="row" flexWrap="wrap">
       {more > 0 && <Text dimColor>{`${w.more(more)} · `}</Text>}
       <Text dimColor>/pad </Text>
-      {PAD_ACTIONS.map((a, i) => (
+      {actions.map((a, i) => (
         <Box key={`padrow:${a.verb}`} flexDirection="row">
           {i > 0 && <Text dimColor> · </Text>}
           <Button key={`cmd:${a.verb}`} plain dimColor label={a.verb} onPress={() => pressVerb($, a)} />
@@ -291,19 +344,19 @@ function tiles($: EngineInterface, ui: Elements['terminal'], visible: Pad[], col
             <Box key={`cell:${p.id}`} width={width} paddingRight={1}>
               {/* The border is the Box's: a Button there would show inverted under the pointer.
                   The label fills the row inside it, so a press anywhere on that row counts.
-                  Over the tile, it tints and its border and label turn the accent color. */}
+                  Over the tile, the whole tile turns the accent color. */}
               <Box
                 key={`tile:${p.id}`}
                 flexGrow={1}
                 borderStyle="round"
                 borderDimColor
-                hover={{ borderColor: 'claude', borderDimColor: false, backgroundColor: TILE_HOVER }}
+                hover={BOX_HOVER}
               >
                 <Button
                   key={`pad:${p.id}`}
                   plain
                   label={tileLabel(buttonLabel(p, style), width - 3)}
-                  hover={{ color: 'claude', bold: true }}
+                  hover={LABEL_HOVER}
                   onPress={() => press($, p)}
                 />
               </Box>
@@ -330,6 +383,90 @@ function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[],
       {padRow($, ui, more)}
     </Box>
   )
+}
+
+/**
+ * A bordered button, the tiles' look: a dim border at rest, the whole box in the accent under
+ * the pointer. `isOn` draws the current choice, in the accent and not pressable; `isWarned` gives
+ * the border the warning color. `width` pads the label to that many cells inside the border.
+ */
+function boxButton(
+  ui: Elements['terminal'],
+  key: string,
+  label: string,
+  onPress: () => unknown,
+  opts: { isOn?: boolean; isWarned?: boolean; width?: number } = {},
+) {
+  const { Box, Button, Text } = ui
+  const text = opts.width ? tileLabel(label, opts.width) : ` ${label} `
+  if (opts.isOn) {
+    return (
+      <Box key={`box:${key}`} borderStyle="round" borderColor={opts.isWarned ? 'warning' : 'claude'}>
+        <Text color="claude" bold>
+          {text}
+        </Text>
+      </Box>
+    )
+  }
+  return (
+    <Box key={`box:${key}`} borderStyle="round" {...(opts.isWarned ? { borderColor: 'warning' } : { borderDimColor: true })} hover={BOX_HOVER}>
+      <Button key={key} plain label={text} hover={LABEL_HOVER} onPress={onPress} />
+    </Box>
+  )
+}
+
+/**
+ * A control on any surface: the bordered button on the terminal, the surface's own button
+ * elsewhere, and the current choice as accent text there.
+ */
+function control(
+  $: EngineInterface,
+  e: { surface: string },
+  key: string,
+  label: string,
+  onPress: () => unknown,
+  opts: { isOn?: boolean; isWarned?: boolean; width?: number } = {},
+) {
+  if (e.surface === 'terminal') return boxButton($.ui.resolve({ ...e, surface: 'terminal' } as never) as Elements['terminal'], key, label, onPress, opts)
+  const { Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
+  if (opts.isOn) {
+    return (
+      <Text key={`on:${key}`} color="claude" bold>
+        {label}
+      </Text>
+    )
+  }
+  return <Button key={key} label={label} onPress={onPress} />
+}
+
+/** Opens the control panel, with the model read fresh. Opened by the person, it seats at any width. */
+async function openPanel($: EngineInterface) {
+  await load($)
+  const now = await $.session.model().catch(() => '')
+  if (now) await update($, model, () => now)
+  return $.ui.open({ id: PANEL, title: WORDS[lang].panel.title, focus: true, closeOnEscape: true }).catch(() => null)
+}
+
+/** A chip's press: /model or /effort with the chip's value, as if typed; the chip moves at once. */
+async function choose($: EngineInterface, command: 'model' | 'effort', value: string) {
+  try {
+    await $.command.run({ command, args: value })
+    if (command === 'model') {
+      const now = await $.session.model().catch(() => value)
+      await update($, model, () => now || value)
+    } else await update($, effort, () => effortOf(value))
+  } catch {
+    $.ui.toast(WORDS[lang].failed(`/${command} ${value}`))
+  }
+}
+
+/** A mod's button or switch: its command, as if typed. */
+async function runMod($: EngineInterface, m: ModInfo, args = '') {
+  try {
+    await $.command.run({ command: m.command, args })
+  } catch {
+    $.ui.toast(WORDS[lang].failed(`/${m.command}${args ? ` ${args}` : ''}`))
+  }
 }
 
 /** /pad and its arguments: what the command answers, and what the row under the menu runs. */
@@ -372,6 +509,12 @@ async function runPad($: EngineInterface, args: string): Promise<{ text?: string
       await $.store.set(KEY_OFF, off)
       await update($, isOff, () => off)
       return { text: off ? w.off : w.on }
+    }
+
+    case 'panel': {
+      const opened = await openPanel($)
+      if (opened?.isPlaced) return {}
+      return { text: listText(await shown($), lang, style) }
     }
 
     case 'configuration':
@@ -440,6 +583,8 @@ export const register: Register = (on, options) => {
       argumentHint: '[configuration|list|add|remove|reset|place|off|on]',
     })
     await load($, true)
+    const now = await $.session.model().catch(() => '')
+    if (now) await update($, model, () => now)
     if (showOnStart && e.isInteractive) {
       const messages = await $.session.messages().catch(() => [])
       if (messages.length === 0 && !(await read($, isOff))) await showMenu($)
@@ -470,6 +615,19 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'pad' }, ($, e) => runPad($, e.args))
 
+  // The main loop's model and effort, as each request goes out: the panel's active chips.
+  on('turn.step', async function* ($, e, next) {
+    if (!e.agentId) {
+      try {
+        await update($, model, () => e.model)
+        await update($, effort, () => effortOf(e.effort))
+      } catch {
+        // The chips keep what they had.
+      }
+    }
+    return yield* next(e)
+  })
+
   // /pad's own row, drawn as the menu. Any other /pad output (list, add, ...) stays text.
   on('ui.render', { component: 'CommandOutput' }, async ($, e, next) => {
     const verb = e.props.args.trim().toLowerCase()
@@ -498,24 +656,154 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // `/pad place prompt`: the buttons in a row under the prompt, below the engine's hint line,
-  // which stays as the engine draws it.
+  // `◆ pad` under the engine's hint line, at its left, in every placement and while the menu is off
+  // too (the panel's /pad row turns it back on). The engine's hint stays as it draws it, above.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const theirs = await next(e)
-    if ((await read($, placement)) !== 'prompt' || (await read($, isOff))) return theirs
+    const { Box } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column" alignItems="flex-start">
+        {theirs}
+        {control($, e, 'pad:panel', w.panel.entry, () => openPanel($))}
+      </Box>
+    )
+  })
+
+  // `/pad place prompt`: the buttons in a row right above the prompt box. The row goes after what
+  // the mods beneath drew, so it sits against the box whatever order the mods load in.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const theirs = await next(e)
+    if (e.props.hasSurvey || (await read($, placement)) !== 'prompt' || (await read($, isOff))) return theirs
     const list = await shown($)
     if (list.length === 0) return theirs
     const { Box, Text, Button } = $.ui.resolve(e)
     const icons = e.surface === 'terminal' ? style : 'emoji'
-    return (
+    const mine = (
+      <Box key="launchpad" flexDirection="row" flexWrap="wrap" gap={2} paddingX={1}>
+        <Text color="claude">✻</Text>
+        {list.slice(0, MAX_SHOWN).map(p => (
+          <Box key={`cell:${p.id}`}>
+            <Button key={`pad:${p.id}`} plain label={buttonLabel(p, icons)} hover={{ backgroundColor: 'claude', ...LABEL_HOVER }} onPress={() => press($, p)} />
+          </Box>
+        ))}
+        <Button key="band:settings" plain dimColor label={w.settings} onPress={() => pressVerb($, PAD_ACTIONS[0]!)} />
+      </Box>
+    )
+    return theirs ? (
       <Box flexDirection="column">
         {theirs}
-        <Box key="launchpad" flexDirection="row" flexWrap="wrap" gap={2} paddingX={2}>
-          <Text color="claude">✻</Text>
-          {list.slice(0, MAX_SHOWN).map(p => (
-            <Button key={`pad:${p.id}`} plain label={buttonLabel(p, icons)} hover={{ color: 'claude', bold: true }} onPress={() => press($, p)} />
-          ))}
-          <Button key="band:settings" plain dimColor label={w.settings} onPress={() => pressVerb($, PAD_ACTIONS[0]!)} />
+        {mine}
+      </Box>
+    ) : (
+      mine
+    )
+  })
+
+  // The /pad row's questions (place, reset) in the engine's dialog, with a line on what each choice
+  // does and a sketch of each place. The engine draws them; only the launchpad's own are touched.
+  on('ui.render', { component: 'AskUserQuestion' }, async ($, e, next) => {
+    const questions = e.props.questions as Parameters<typeof dressQuestion>[0][]
+    if (questions.length !== 1 || questions[0]?.header !== ASK_HEADER) return next(e)
+    return next({ ...e, props: { ...e.props, questions: [dressQuestion(questions[0], lang)] } })
+  }).catch(($, e, next) => next(e))
+
+  // The control panel: the session's model and effort, this collection's mods, the shortcuts.
+  on('ui.render', { component: 'Pane', requestId: PANEL }, async ($, e) => {
+    const ui = $.ui.resolve(e)
+    const { Box, Text, Button } = ui
+    const p = w.panel
+    const all = await read($, catalog)
+    const has = (name: string) => all.some(t => t.kind === 'command' && t.name === name)
+    const rows = await $.config.list().catch(() => [])
+    const chips = modelsOf(rows.find(r => r.key === 'model')?.options)
+    const current = activeModel(await read($, model), chips)
+    const level = await read($, effort)
+    const usage = await $.session.usage().catch(() => null)
+    const fiveHour = fiveHourOf(usage?.rateLimits)
+    const warned = chips.some(c => isWarned(c, fiveHour)) || EFFORTS.some(x => isWarned(x, fiveHour))
+    const { installed, missing } = modsOf(all)
+    const icons = e.surface === 'terminal' ? style : 'emoji'
+    const shortcuts = panelShortcuts(await shown($)).slice(0, MAX_SHOWN)
+    const columns = Math.max(20, (e.props.bodyColumns || e.viewport?.columns || 80) - 2)
+    const chipRow = (label: string, command: 'model' | 'effort', values: readonly string[], active: string | null) => (
+      <Box key={`chips:${command}`} flexDirection="row" flexWrap="wrap" alignItems="center" gap={1}>
+        <Text dimColor>{label}</Text>
+        {values.map(v =>
+          control($, e, `${command}:${v}`, `${v === active ? '●' : '○'} ${v}`, () => choose($, command, v), { isOn: v === active, isWarned: isWarned(v, fiveHour) }),
+        )}
+      </Box>
+    )
+
+    return (
+      <Box flexDirection="column" paddingX={1} gap={1}>
+        <Box flexDirection="column">
+          <Text color="claude" bold>{`✻ ${p.title}`}</Text>
+          <Text dimColor>{p.hint}</Text>
+        </Box>
+
+        {(has('model') || has('effort')) && (
+          <Box flexDirection="column">
+            <Text bold>{p.controls}</Text>
+            {has('model') && chipRow(p.model, 'model', chips, current)}
+            {has('effort') && chipRow(p.effort, 'effort', EFFORTS, level)}
+            {has('effort') && level === null && <Text dimColor>{p.effortUnknown}</Text>}
+            {warned && fiveHour !== null && <Text color="warning">{p.warn(Math.round(fiveHour))}</Text>}
+          </Box>
+        )}
+
+        <Box flexDirection="column">
+          <Text bold>{p.mods}</Text>
+          {installed.length > 0 && (
+            <Box flexDirection="column">
+              <Box flexDirection="row" flexWrap="wrap" gap={1}>
+                {installed.map(m => control($, e, `mod:${m.plugin}`, modLabel(m, lang, icons), () => runMod($, m), { width: 17 }))}
+              </Box>
+              {installed
+                .filter(m => m.toggles)
+                .map(m => {
+                  const isOn = toggleOf(m, rows)
+                  return (
+                    <Box key={`toggle:${m.plugin}`} flexDirection="row" alignItems="center" gap={2}>
+                      <Text>{modLabel(m, lang, icons)}</Text>
+                      {isOn !== null && <Text color={isOn ? 'success' : 'inactive'}>{isOn ? p.isOn : p.isOff}</Text>}
+                      {isOn !== false && control($, e, `off:${m.plugin}`, p.turnOff, () => runMod($, m, 'off'))}
+                      {isOn !== true && control($, e, `on:${m.plugin}`, p.turnOn, () => runMod($, m, 'on'))}
+                    </Box>
+                  )
+                })}
+            </Box>
+          )}
+          {/* What is missing, each with a button that puts its install command in the prompt. */}
+          {missing.length === 0 ? (
+            <Text dimColor>{w.modsSection.allInstalled}</Text>
+          ) : (
+            <Box flexDirection="column">
+              <Text dimColor>{installed.length === 0 ? p.noMods : w.modsSection.missing}</Text>
+              <Box flexDirection="row" flexWrap="wrap" gap={1}>
+                {missing.map(m => control($, e, `install:${m.plugin}`, w.modsSection.install(m.plugin), () => fill($, installText(m.plugin))))}
+              </Box>
+            </Box>
+          )}
+        </Box>
+
+        {shortcuts.length > 0 && (
+          <Box flexDirection="column">
+            <Text bold>{p.shortcuts}</Text>
+            {e.surface === 'terminal' ? (
+              tiles($, $.ui.resolve({ ...e, surface: 'terminal' }), shortcuts, columns)
+            ) : (
+              <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={1}>
+                {shortcuts.map(x => (
+                  <Button key={`pad:${x.id}`} label={buttonLabel(x, 'emoji')} onPress={() => press($, x)} />
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        <Box flexDirection="column" alignItems="flex-start">
+          {padRow($, { Box, Text, Button }, 0, await read($, isOff))}
+          {control($, e, 'close', p.close, () => $.ui.close({ id: PANEL }))}
         </Box>
       </Box>
     )
@@ -545,7 +833,7 @@ export const register: Register = (on, options) => {
         <Text color="claude" bold>{`✻ ${w.ask}`}</Text>
         {(await read($, isOff)) ? <Text dimColor>{w.isOff}</Text> : visible.length === 0 ? <Text dimColor>{w.empty}</Text> : body}
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
-          {padRow($, { Box, Text, Button }, more)}
+          {padRow($, { Box, Text, Button }, more, await read($, isOff))}
           <Button key="close" role="dismiss" label={w.pane.close} onPress={() => $.ui.close({ id: MENU_PANE })} />
         </Box>
       </Box>
@@ -572,9 +860,15 @@ export const register: Register = (on, options) => {
     const working = available(mine, all)
     const query = await read($, filter)
     const found = matches(all, mine, query)
+    const mods = modsOf(all)
     // The catalog list takes the rows the rest leaves: hint, menu, project, headings, filter,
     // the scroll row, the footer and the gaps between them. The pane keeps it in view whole.
-    const fixed = 10 + mine.length + (theirs.length ? theirs.length + 2 : 0)
+    // The Mods section: its heading and gap, a row of the installed, and the missing as bordered
+    // buttons (3 rows a line) under their line of text.
+    const installWidth = Math.max(0, ...mods.missing.map(m => cells(w.modsSection.install(m.plugin)) + 5))
+    const perLine = Math.max(1, Math.floor((e.props.bodyColumns - 2) / Math.max(1, installWidth)))
+    const modsRows = 2 + (mods.installed.length ? 1 : 0) + (mods.missing.length ? 1 + 3 * Math.ceil(mods.missing.length / perLine) : 0)
+    const fixed = 10 + mine.length + (theirs.length ? theirs.length + 2 : 0) + modsRows
     const listRows = Math.max(5, e.props.scroll.bodyRows - fixed)
     const view = windowOf(found.length, await read($, offset), listRows)
     const nameWidth = Math.max(24, Math.min(44, Math.floor(e.props.bodyColumns * 0.4)))
@@ -680,8 +974,32 @@ export const register: Register = (on, options) => {
           )}
         </Box>
 
+        <Box flexDirection="column">
+          <Text bold>{w.modsSection.title}</Text>
+          {mods.installed.length > 0 && (
+            <Box flexDirection="row" flexWrap="wrap" gap={2}>
+              {mods.installed.map(m => (
+                <Text key={`has:${m.plugin}`}>
+                  <Text color="success">✓ </Text>
+                  {m.plugin}
+                </Text>
+              ))}
+            </Box>
+          )}
+          {mods.missing.length === 0 && <Text dimColor>{w.modsSection.allInstalled}</Text>}
+          {mods.missing.length > 0 && (
+            <Box flexDirection="column">
+              <Text dimColor>{w.modsSection.missing}</Text>
+              <Box flexDirection="row" flexWrap="wrap" gap={1}>
+                {mods.missing.map(m => control($, e, `install:${m.plugin}`, w.modsSection.install(m.plugin), () => fill($, installText(m.plugin))))}
+              </Box>
+            </Box>
+          )}
+        </Box>
+
         <Box flexDirection="row" gap={2}>
           <Button key="reset" label={w.pane.reset} onPress={() => saveMenu($, defaults(lang))} />
+          <Button key="panel" label={w.modsSection.back} onPress={() => openPanel($)} />
           <Button key="close" role="dismiss" label={w.pane.close} onPress={() => $.ui.close({ id: PANE })} />
         </Box>
       </Box>

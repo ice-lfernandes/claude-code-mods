@@ -30,6 +30,24 @@ export type Target = {
   description: string
   /** Where a command comes from (`builtin`, `plugin`, `user`, `mcp`); `agent` for an agent. */
   source: string
+  /** The plugin that added a command, when the engine knows. */
+  plugin?: string
+}
+
+/** A reasoning effort level, as `/effort` takes it. */
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/** One of this collection's mods, as the panel's Mods section knows it. */
+export type ModInfo = {
+  /** The plugin's name, as `/plugin install` takes it. */
+  plugin: string
+  /** Its command, without the slash: what opens its pane. */
+  command: string
+  /** A key of ICONS. */
+  icon: string
+  label: { 'pt-BR': string; en: string }
+  /** Whether its command takes `on` and `off`, its state in the `<plugin>.enabled` option. */
+  toggles: boolean
 }
 
 declare module 'claude-code' {
@@ -49,6 +67,10 @@ declare module 'claude-code' {
       isOff: boolean
       /** Where the menu shows: /pad place, else the `placement` option. */
       placement: Placement
+      /** The session's model as the engine names it (`claude-opus-5-5`): the panel's active chip. */
+      model: string
+      /** The effort of the last model request; null until the first one, or for a model without effort. */
+      effort: Effort | null
     }
   }
 }
