@@ -1,6 +1,6 @@
 {
   "name": "plain-view",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -9,6 +9,18 @@
       "title": "On",
       "description": "Hide successful tool rows and show the plan card above the prompt. Failures, permission dialogs and the agent's questions always show in full. /plain-view on and off change it too",
       "default": false
+    },
+    "agentText": {
+      "type": "string",
+      "title": "The agent's words",
+      "description": "What stays of the agent's messages in the transcript while the mod is on. final: only the turn's final answer, shown when the turn ends. none: no message. card: no message, and the end card carries the answer's first sentence. all: every message. Failures, permission dialogs and the agent's questions always show",
+      "options": [
+        "final",
+        "none",
+        "card",
+        "all"
+      ],
+      "default": "final"
     },
     "palette": {
       "type": "string",
@@ -36,7 +48,7 @@
       "type": "boolean",
       "title": "Ask for a task list",
       "description": "While the mod is on, one line in the system prompt asks the model to keep a task list (TodoWrite or TaskCreate) for work of more than two steps, so the card shows each step. Costs a few tokens per request. Off: the card reads the list the model keeps on its own, or a checklist in its answer",
-      "default": false
+      "default": true
     },
     "language": {
       "type": "string",

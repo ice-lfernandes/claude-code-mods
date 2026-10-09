@@ -31,7 +31,12 @@ export type Turn = {
   read: string[]
   /** A sample turn from /plain-view demo. */
   isDemo?: boolean
+  /** The answer's first sentence, for the end card under `agentText: card`. */
+  answer?: string
 }
+
+/** What stays of the agent's words in the transcript while the mod is on. */
+export type AgentText = 'final' | 'none' | 'card' | 'all'
 
 declare module 'claude-code' {
   interface PluginState {
@@ -41,6 +46,8 @@ declare module 'claude-code' {
       items: Item[]
       /** Moves while the agent works, so the bars' shine redraws. */
       tick: number
+      /** The final answers of this session's turns, normalized: the blocks `agentText: final` shows. */
+      answers: string[]
     }
   }
 }

@@ -96,6 +96,8 @@ export type DrawOptions = {
   /** The box the card draws into. */
   columns: number
   icons: IconStyle
+  /** `Resposta: ` before the answer's first sentence. */
+  answerLabel?: string
 }
 
 /** The plan card: a bordered box above the prompt, as the approved prototype draws it. */
@@ -208,6 +210,12 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
       {card.rows.map(row)}
       {card.after !== undefined && <Text dimColor>{`  ${card.after}`}</Text>}
       {card.files !== undefined && <Text dimColor>{`  ${card.files}`}</Text>}
+      {card.answer !== undefined && (
+        <Text>
+          <Text dimColor>{`  ${o.answerLabel ?? ''}`}</Text>
+          <Text>{card.answer}</Text>
+        </Text>
+      )}
     </Box>
   )
 }

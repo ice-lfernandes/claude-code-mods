@@ -47,6 +47,7 @@ type Words = {
   paletteUnknown: (name: string, names: string) => string
   paletteAlso: string
   use: string
+  answer: string
   using: (tool: string) => string
   usingSkill: (skill: string) => string
   /** The system prompt line the askForTasks option adds. */
@@ -105,6 +106,7 @@ export const WORDS: Record<Lang, Words> = {
     paletteUnknown: (name, names) => `Não conheço a paleta "${name}". As paletas: ${names}.`,
     paletteAlso: 'Também: /plain-view palette aurora, ou /config → plain-view → palette.',
     use: 'usar',
+    answer: 'Resposta: ',
     using: tool => `usando ${tool}`,
     usingSkill: skill => `usando a skill ${skill}`,
     askForTasks: ASK_FOR_TASKS,
@@ -118,7 +120,8 @@ export const WORDS: Record<Lang, Words> = {
       '- `palette` mostra as 8 paletas e troca a cor das barras',
       '- `help` esta ajuda',
       'Falha de tool, permissão e perguntas sempre aparecem inteiras.',
-      'Opções em /config → plain-view: palette, animation, language, icons.',
+      'Opções em /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
+      'agentText: final mostra só a resposta final do agente (padrão); none, nada; card, a resposta no cartão; all, tudo.',
       'Paleta padrão: claude. /plain-view palette mostra as 8.',
     ].join('\n'),
   },
@@ -164,6 +167,7 @@ export const WORDS: Record<Lang, Words> = {
     paletteUnknown: (name, names) => `No palette named "${name}". The palettes: ${names}.`,
     paletteAlso: 'Also: /plain-view palette aurora, or /config → plain-view → palette.',
     use: 'use',
+    answer: 'Answer: ',
     using: tool => `using ${tool}`,
     usingSkill: skill => `using the ${skill} skill`,
     askForTasks: ASK_FOR_TASKS,
@@ -177,7 +181,8 @@ export const WORDS: Record<Lang, Words> = {
       '- `palette` shows the 8 palettes and changes the bar colors',
       '- `help` this help',
       'Tool failures, permissions and questions always show in full.',
-      'Options in /config → plain-view: palette, animation, language, icons.',
+      'Options in /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
+      'agentText: final shows only the agent’s final answer (default); none, nothing; card, the answer in the card; all, everything.',
       'Default palette: claude. /plain-view palette shows all 8.',
     ].join('\n'),
   },

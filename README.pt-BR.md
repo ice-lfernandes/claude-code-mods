@@ -167,8 +167,16 @@ sempre aparecem inteiros. Acima do prompt, um cartão acompanha o pedido: o tít
 `~40%` no passo atual, `Próximo`, `Depois`). O % do passo atual é uma estimativa pelas chamadas
 de tool, por isso o `~`. No fim do turno o cartão fica verde, com o tempo que levou e os
 arquivos mudados e lidos, ou cinza no Esc; o próximo pedido começa um novo, e o `[-]` recolhe.
-Sem lista de tarefas, um checklist que o agente escreve na resposta vira a lista; a opção
-`askForTasks` pede ao modelo que mantenha uma.
+
+Duas opções mudam o que você vê, as duas em `/config`:
+
+- `agentText`, o que fica das mensagens do agente: `final` (padrão, só a resposta final, que
+  aparece quando o turno termina), `none`, `card` (a primeira frase da resposta no cartão do fim)
+  ou `all`. Falhas, diálogos de permissão e perguntas do agente sempre aparecem.
+- `askForTasks` (ligada por padrão): uma linha no system prompt pede ao modelo que mantenha uma
+  lista de tarefas em trabalho de mais de dois passos, para o cartão mostrar cada passo; custa
+  alguns tokens por pedido. Desligada, o cartão lê a lista que o agente mantém sozinho, ou um
+  checklist na resposta.
 
 ```
 /plain-view on | off          mostra ou esconde o cartão e as linhas de tool

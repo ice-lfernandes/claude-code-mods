@@ -165,9 +165,16 @@ in full. Above the prompt, a card follows the request: its title, `Step 2 of 4` 
 row per task of the agent's list with its own bar (`Done`, `~40%` for the current step, `Next`,
 `Up next`). The current step's percentage is an estimate from its tool calls, hence the `~`.
 When the turn ends the card turns green with the time it took and the files changed and read,
-or grey on Esc; the next request starts a fresh one, and `[-]` folds it. With no task list, a
-checklist the agent writes in its answer is the list; the `askForTasks` option asks the model to
-keep one.
+or grey on Esc; the next request starts a fresh one, and `[-]` folds it.
+
+Two options shape what you see, both in `/config`:
+
+- `agentText`, what stays of the agent's messages: `final` (default, only the final answer,
+  shown when the turn ends), `none`, `card` (the answer's first sentence in the end card) or
+  `all`. Failures, permission dialogs and the agent's questions always show.
+- `askForTasks` (on by default): one line in the system prompt asks the model to keep a task
+  list for work of more than two steps, so the card shows each step; a few tokens per request.
+  Off, the card reads the list the agent keeps on its own, or a checklist in its answer.
 
 ```
 /plain-view on | off          show or hide the card and the tool rows

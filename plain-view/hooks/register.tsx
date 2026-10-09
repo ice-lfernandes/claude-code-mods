@@ -11,6 +11,9 @@
 //   plan   from the agent's TaskCreate, TaskUpdate and TodoWrite calls, else from a checklist it
 //          writes in its answer (`1. [ ] Ler a API`). The `askForTasks` option asks the model, in
 //          the system prompt, to keep a task list with those tools.
+//   words  `agentText`: final (the default) hides the agent's messages but the turn's final
+//          answer, which shows once the turn ends; none hides them all; card hides them all and
+//          puts the answer's first sentence in the end card; all keeps every word.
 //   bars   a gradient of the `palette` option's colors, and a shine that runs while the agent
 //          works (`animation`); see palettes.ts and the design guide's "Exception: gradients".
 //   /plain-view on | off | demo | palette [name] | help
@@ -22,11 +25,11 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Item, Turn } from '../types'
+import type { AgentText, Item, Turn } from '../types'
 import { drawCard, rasterCells, barCells } from './card'
 import { PALETTES, paletteOf, stopsOf } from './palettes'
 import type { Palette } from './palettes'
-import { applyAnswer, applyTask, cardOf, countCall, demoOf, endTurn, NEVER_HIDDEN, startTurn, TASK_TOOLS, touch } from './plan'
+import { agentTextOf, ANSWERS_KEPT, applyAnswer, applyTask, cardOf, countCall, demoOf, endTurn, NEVER_HIDDEN, normalize, showsBlock, startTurn, TASK_TOOLS, touch } from './plan'
 import type { IconStyle, Lang, Verb } from './ui'
 import { langOf, linesOf, styleOf, verbRow } from './ui'
 import { COMMAND, MODE, WORDS } from './words'
@@ -34,6 +37,7 @@ import { COMMAND, MODE, WORDS } from './words'
 const turn = atom({ plugin: 'plain-view', key: 'turn' } as const, null as Turn | null)
 const items = atom({ plugin: 'plain-view', key: 'items' } as const, [] as Item[])
 const tick = atom({ plugin: 'plain-view', key: 'tick' } as const, 0)
+const answers = atom({ plugin: 'plain-view', key: 'answers' } as const, [] as string[])
 
 /** How often the shine moves while the agent works. */
 const TICK_MS = 100
@@ -46,7 +50,8 @@ let style: IconStyle = 'emoji'
 let isOn = false
 let palette: Palette = paletteOf(undefined)
 let animate = true
-let askForTasks = false
+let askForTasks = true
+let agentText: AgentText = 'final'
 let theme: unknown = 'dark'
 // The timers of this load; a reload starts them again from session.start.
 let ticker: Timer | null = null
@@ -139,7 +144,8 @@ export const register: Register = (on, options) => {
   isOn = options.enabled === true
   palette = paletteOf(options.palette)
   animate = options.animation !== false
-  askForTasks = options.askForTasks === true
+  askForTasks = options.askForTasks !== false
+  agentText = agentTextOf(options.agentText)
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -215,7 +221,9 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if (e.agentId) return result
     const now = await $.clock.now()
-    await update($, turn, v => (v && v.end === undefined && !v.isDemo ? endTurn(v, e.reason, now) : v))
+    await update($, turn, v => (v && v.end === undefined && !v.isDemo ? endTurn(v, e.reason, now, e.answer) : v))
+    const final = normalize(e.answer)
+    if (final) await update($, answers, list => [...list, final].slice(-ANSWERS_KEPT))
     stopTicking()
     return result
   })
@@ -226,7 +234,7 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey) return next(e)
     const t = await read($, turn)
     if (!isOn && !t?.isDemo) return next(e)
-    const card = cardOf(t, await read($, items), await $.clock.now(), lang)
+    const card = cardOf(t, await read($, items), await $.clock.now(), lang, agentText === 'card')
     if (!card) return next(e)
     const n = await read($, tick)
     const isWorking = t !== null && t.end === undefined
@@ -238,6 +246,7 @@ export const register: Register = (on, options) => {
       tick: animate && isWorking ? n : null,
       columns: e.props.bodyColumns || e.viewport?.columns || 80,
       icons: style,
+      answerLabel: WORDS[lang].answer,
     })
     const { Box } = $.ui.resolve(e)
     const theirs = await next(e)
@@ -249,6 +258,15 @@ export const register: Register = (on, options) => {
     ) : (
       mine
     )
+  })
+
+  // The agent's words, as `agentText` says. The final answer is known at turn.complete, so under
+  // `final` it shows once the turn ends (the read subscribes the block to the answers).
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    if (!isOn || agentText === 'all') return next(e)
+    if (showsBlock(agentText, e.props.text, agentText === 'final' ? await read($, answers) : [])) return next(e)
+    const { Box } = $.ui.resolve(e)
+    return <Box />
   })
 
   // The rows step aside; a failure, an interrupt and the never-hidden tools draw as the engine does.

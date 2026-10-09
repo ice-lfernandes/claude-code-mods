@@ -264,11 +264,74 @@ test('askForTasks: one line in the system prompt while the mod is on', { options
   expect(none.sections.map((x: any) => x.id)).toEqual(['intro'])
 })
 
-test('askForTasks is off by default', ON, async ($, on) => {
+test('askForTasks is on by default, and off when set so', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  const result: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: ['TodoWrite'], outputStyle: null, traits: [] } as never)
+  expect(result.sections.map((x: any) => x.id)).toEqual(['intro', 'plain-view:tasks'])
+})
+
+test('askForTasks off: the system prompt stays as it is', { options: { enabled: true, askForTasks: false } }, async ($, on) => {
   engine(on)
   await start($)
   const result: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: ['TodoWrite'], outputStyle: null, traits: [] } as never)
   expect(result.sections.map((x: any) => x.id)).toEqual(['intro'])
+})
+
+const FINAL = 'Pronto: o painel mostra o tempo agora e as próximas 24 h em localhost:5173. Abra no navegador.'
+const message = (text: string) => ({ text, isFirstOfReply: true })
+const turnOver = async ($: any, answer: string) =>
+  $.turn.complete({ answer, durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
+
+test('agentText final (the default): mid-turn messages step aside, the final answer shows once the turn ends', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  const ui = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'AssistantMessage', props: message(FINAL), viewport: { columns: 120, rows: 40 } } as never)
+  expect(JSON.stringify(await ui.drawn())).not.toContain('engine row')
+  expect(await row($, 'AssistantMessage', message('Plano em 4 passos:\n1. [ ] Ler'))).not.toContain('engine row')
+  await turnOver($, FINAL)
+  // The mounted block redraws when the answer lands.
+  expect(JSON.stringify(await ui.drawn())).toContain('engine row')
+  await ui.unmount()
+  expect(await row($, 'AssistantMessage', message('Plano em 4 passos:\n1. [ ] Ler'))).not.toContain('engine row')
+  // An earlier turn's answer still shows after the next request.
+  await ask($, 'outro pedido')
+  expect(await row($, 'AssistantMessage', message(FINAL))).toContain('engine row')
+})
+
+test('agentText none: no message shows', { options: { enabled: true, agentText: 'none' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  await turnOver($, FINAL)
+  expect(await row($, 'AssistantMessage', message(FINAL))).not.toContain('engine row')
+})
+
+test('agentText all: every message shows', { options: { enabled: true, agentText: 'all' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  expect(await row($, 'AssistantMessage', message('Plano em 4 passos:'))).toContain('engine row')
+})
+
+test('agentText card: no message, and the end card carries the answer\'s first sentence', { options: { enabled: true, agentText: 'card', language: 'pt-BR' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  for (const subject of TASKS) await call($, 'TaskCreate', { subject, description: subject })
+  for (const taskId of ['1', '2', '3', '4']) await call($, 'TaskUpdate', { taskId, status: 'completed' })
+  await turnOver($, FINAL)
+  expect(await row($, 'AssistantMessage', message(FINAL))).not.toContain('engine row')
+  const drawn = await card($)
+  expect(drawn).toContain('Resposta: Pronto: o painel mostra o tempo agora e as próximas 24 h em localhost:5173.')
+  expect(drawn).not.toContain('Abra no navegador')
+})
+
+test('with the mod off, the agent\'s words are never touched', { options: { agentText: 'none' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  expect(await row($, 'AssistantMessage', message('qualquer coisa'))).toContain('engine row')
 })
 
 test('/plain-view on and off write the option, and say so', async ($, on) => {

@@ -1,7 +1,7 @@
 // The plan card's logic, with no `$`: the agent's task list from its tool calls, the estimate of
 // the current step, what the turn touched, and the card as plain data that card.tsx draws.
 
-import type { End, Item, Turn } from '../types'
+import type { AgentText, End, Item, Turn } from '../types'
 import { phraseOf } from './phrases'
 import type { Lang } from './ui'
 import { clip, elapsed } from './ui'
@@ -160,11 +160,37 @@ export const touch = (turn: Turn, tool: string, input: Input, lang: Lang, ok: bo
   return next
 }
 
-/** The turn once it ended. */
-export const endTurn = (turn: Turn, reason: string, now: number): Turn => {
+/** The turn once it ended, with its answer's first sentence when it gave one. */
+export const endTurn = (turn: Turn, reason: string, now: number, answer = ''): Turn => {
   const end: End = reason === 'answer' ? 'answer' : reason === 'aborted' ? 'aborted' : 'error'
   const { doing: _, ...rest } = turn
-  return { ...rest, endedAt: now, end }
+  const first = firstSentence(answer)
+  return { ...rest, endedAt: now, end, ...(first ? { answer: first } : {}) }
+}
+
+/** The `agentText` option; `final` when it names none. */
+export const agentTextOf = (option: unknown): AgentText =>
+  option === 'none' || option === 'card' || option === 'all' ? option : 'final'
+
+/** Text with its markdown marks and runs of space gone, to compare a block with an answer. */
+export const normalize = (text: string) => text.replace(/[*_`#>]/g, '').replace(/\s+/g, ' ').trim()
+
+/** The first sentence of an answer, plain, up to 100 characters. */
+export const firstSentence = (answer: string) => {
+  const flat = normalize(answer)
+  const m = /^(.+?[.!?])(\s|$)/.exec(flat)
+  return clip(m ? m[1]! : flat, 100)
+}
+
+/** The answers kept to tell a final block apart: the last 50. */
+export const ANSWERS_KEPT = 50
+
+/** Whether an assistant block shows, for the option and the session's final answers. */
+export const showsBlock = (mode: AgentText, text: string, answers: readonly string[]) => {
+  if (mode === 'all') return true
+  if (mode !== 'final') return false
+  const block = normalize(text)
+  return block !== '' && answers.some(a => a.includes(block))
 }
 
 /**
@@ -200,6 +226,8 @@ export type Card =
       before?: string
       after?: string
       files?: string
+      /** The answer's first sentence, under `agentText: card`. */
+      answer?: string
     }
   | { kind: 'phrase'; title: string; time: string; doing: string }
 
@@ -211,7 +239,7 @@ export const windowAround = (total: number, at: number): { start: number; end: n
 }
 
 /** The card for a turn, or null when there is none to show (no turn, or a turn with no list that ended). */
-export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, lang: Lang): Card | null => {
+export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, lang: Lang, withAnswer = false): Card | null => {
   if (!turn) return null
   const w = WORDS[lang]
   const span = elapsed((turn.endedAt ?? now) - turn.startedAt)
@@ -262,6 +290,7 @@ export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, l
     ...(start > 0 ? { before: w.moreDone(start) } : {}),
     ...(end < total ? { after: w.moreAfter(total - end) } : {}),
     ...(isOver && touched ? { files: touched } : {}),
+    ...(withAnswer && state === 'done' && turn.answer ? { answer: turn.answer } : {}),
   }
 }
 

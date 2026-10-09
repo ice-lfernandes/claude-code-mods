@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Item, Turn } from '../types'
 import { barCells, base64, layoutOf, rasterCells } from '../hooks/card'
 import { mix, paletteOf, PALETTES, stopsOf, hex, titleColor } from '../hooks/palettes'
-import { applyAnswer, applyTask, cardOf, checklistOf, doingOf, countCall, currentOf, demoOf, endTurn, estimate, MAX_ESTIMATE, startTurn, titleOf, touch, windowAround } from '../hooks/plan'
+import { agentTextOf, applyAnswer, applyTask, cardOf, checklistOf, doingOf, firstSentence, showsBlock, countCall, currentOf, demoOf, endTurn, estimate, MAX_ESTIMATE, startTurn, titleOf, touch, windowAround } from '../hooks/plan'
 
 const NOW = Date.parse('2026-10-09T12:00:00Z')
 const TASKS = ['Escolher o estilo e o layout da página', 'Ver como a página pega o tempo ao vivo', 'Montar o painel do tempo', 'Publicar e compartilhar o link']
@@ -272,4 +272,28 @@ test('what a call is doing: the Bash description, a skill by name, any other too
   expect(doingOf('Artifact', {}, 'pt-BR')).toBe('usando Artifact')
   expect(doingOf('mcp__claude_ai_Gmail__search_threads', {}, 'en')).toBe('using search_threads')
   expect(doingOf('Read', { file_path: '/a/b.ts' }, 'pt-BR')).toBe('lendo b.ts')
+})
+
+test('agentText: final by default; which blocks show; the answer\'s first sentence', () => {
+  expect(agentTextOf(undefined)).toBe('final')
+  expect(agentTextOf('card')).toBe('card')
+  expect(agentTextOf('nope')).toBe('final')
+  const answers = ['Pronto: o painel está em localhost:5173. Abra no navegador.']
+  expect(showsBlock('final', '**Pronto**: o painel está em\nlocalhost:5173.', answers)).toBe(true)
+  expect(showsBlock('final', 'Plano em 4 passos:', answers)).toBe(false)
+  expect(showsBlock('final', '   ', answers)).toBe(false)
+  expect(showsBlock('none', answers[0]!, answers)).toBe(false)
+  expect(showsBlock('card', answers[0]!, answers)).toBe(false)
+  expect(showsBlock('all', 'qualquer coisa', [])).toBe(true)
+  expect(firstSentence('**Pronto**: o painel está em localhost:5173. Abra no navegador.')).toBe('Pronto: o painel está em localhost:5173.')
+  expect(firstSentence('sem ponto final')).toBe('sem ponto final')
+  expect(firstSentence('x'.repeat(150)).length).toBe(100)
+  const t = endTurn(fresh().turn, 'answer', NOW, 'Feito. O resto depois.')
+  expect(t.answer).toBe('Feito.')
+  expect(endTurn(fresh().turn, 'answer', NOW).answer).toBeUndefined()
+  const items = at(created(['A', 'B']), ['completed', 'completed'])
+  const withAnswer = cardOf(t, items, NOW, 'pt-BR', true)!
+  expect(withAnswer.kind === 'plan' && withAnswer.answer).toBe('Feito.')
+  const without = cardOf(t, items, NOW, 'pt-BR')!
+  expect(without.kind === 'plan' && without.answer).toBeUndefined()
 })

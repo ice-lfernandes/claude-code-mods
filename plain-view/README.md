@@ -11,8 +11,19 @@ turn ends.
   while it is on.
 - **Tool rows:** a call that worked draws nothing, its result neither, and a folded run of reads
   and searches neither. A failed or interrupted call draws in full, as Claude Code draws it.
-  The permission dialog, the agent's messages, its questions (`AskUserQuestion`), its plan
-  (`ExitPlanMode`) and its helpers (`Agent`) are never touched.
+  The permission dialog, the agent's questions (`AskUserQuestion`), its plan (`ExitPlanMode`)
+  and its helpers (`Agent`) are never touched.
+- **The agent's words** (`agentText`), while the mod is on:
+
+  | Value | What the transcript keeps |
+  | --- | --- |
+  | `final` (A, default) | Only the turn's final answer. The messages in between (a checklist, `Checking:`) step aside; the answer shows when the turn ends, since Claude Code says which text is final only then |
+  | `none` (B) | No message of the agent: your requests and the card |
+  | `card` (C) | No message; the end card carries the answer's first sentence (`Answer: …`) until the next request |
+  | `all` (D) | Every message, as Claude Code draws it |
+
+  A hidden message stays in the session: ctrl+o shows it, and `all` or `/plain-view off` draw
+  it again. Failures, permission dialogs and the agent's questions show in every value.
 - **The card**, above the prompt:
   - the request's first line, and the time since it was sent;
   - `Step 2 of 4` with a bar for the whole request and its percentage;
@@ -25,9 +36,12 @@ turn ends.
     `- [x] Build the page`) is the list;
   - before the agent writes a list: `Understand your request` and `Plan the steps`; with no
     list at all, the tool in flight.
-- **Ask for a list:** the agent does not always keep a task list. With the `askForTasks`
-  option, one line in the system prompt asks it to, for work of more than two steps. It costs a
-  few tokens per request, so it is off by default.
+- **Ask for a list** (`askForTasks`, on by default): the agent does not always keep a task list;
+  in a live test it wrote its plan as a checklist in its answer. While the mod is on, one line in
+  the system prompt asks it to keep one with `TodoWrite` or `TaskCreate` for work of more than two
+  steps, so the card shows each step. It costs a few tokens per request, and the model may not
+  always follow it. Turn it off in `/config`; the card then reads the list the agent keeps on its
+  own, or its checklist.
 - **The estimate:** the current step's percentage compares its tool calls with the average of
   the steps already done (4 calls before any), and stops at 95% until the task is marked done.
   It is a guess, hence the `~`. The request's bar counts done steps plus that estimate.
@@ -76,7 +90,8 @@ Set them in `/config`, or under `pluginConfigs` in `settings.json`.
 | `enabled` | `false` | Hide the tool rows that worked and show the card |
 | `palette` | `claude` | The bar colors: `claude`, `clean`, `sunset`, `aurora`, `ocean`, `neon`, `forest`, `calm` |
 | `animation` | `true` | The shine on the bars and the gradient. Off: still bars in theme colors |
-| `askForTasks` | `false` | One line in the system prompt asks the model to keep a task list for work of more than two steps |
+| `agentText` | `final` | What stays of the agent's messages: `final` (the final answer), `none`, `card` (the answer's first sentence in the end card), `all` |
+| `askForTasks` | `true` | One line in the system prompt asks the model to keep a task list for work of more than two steps. Off: no change to the prompt |
 | `language` | `auto` | `auto`, `pt-BR` or `en`. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise |
 | `icons` | `auto` | `emoji` draws the steps as `✅ 🟠 ⚪`, `symbol` as `✓ ● ○`. `auto` uses `symbol` in a JetBrains IDE's terminal and `emoji` elsewhere |
 
@@ -96,8 +111,9 @@ Or for one session: `claude --plugin-dir ./plain-view`
 
 It reads the agent's task list and the files it touches from the `tool.call` event, the
 request from `turn.start`, and the agent's answer at the end of each step from `turn.step`, for
-a checklist. That hook passes every response through unchanged. With `askForTasks` on, its
-`prompt.compose` hook adds one line to the system prompt. Its `tool.call` hook only observes: if it fails, the call goes on, and
+a checklist. That hook passes every response through unchanged. With `askForTasks` on (the
+default), its `prompt.compose` hook adds one line to the system prompt while the mod is on. Under
+`agentText` it hides the agent's messages from the drawing only; the session keeps them. Its `tool.call` hook only observes: if it fails, the call goes on, and
 nothing after the call can make it run twice. The only thing it writes is its own options
 (`enabled`, `palette`) through `$.config.set`, when you run `on`, `off` or `palette`. It keeps
 its values in the session's plugin state and nothing across sessions.
