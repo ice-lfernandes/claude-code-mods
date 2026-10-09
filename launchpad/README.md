@@ -25,10 +25,11 @@ session's model and effort in one click, this collection's mods, and the shortcu
   and of your home folder. A button whose command another session has (`/limits` comes with
   [limits-meter](../limits-meter/)) stays in your list and shows where it works.
 - **A row of /pad's own arguments** under the buttons: `configuration · list · add · remove ·
-  reset · place · off · help`. `configuration` opens the pane, `list` and `help` print as a dim line in
-  the conversation (Claude does not read it), `off` turns the menu off. `add`, `remove` and
-  `reset` wait in the prompt (`/pad add [nome] | [/comando ou @agente]`), so a stray click changes
-  nothing.
+  reset · place · off · help`. Nothing there leaves a command in the prompt for you to type:
+  `configuration` opens the pane, and so do `add` and `remove`, which are a press there; `place`
+  asks where the menu goes and `reset` asks before it resets, in Claude Code's own dialog; `list`
+  and `help` print as a dim line in the conversation (Claude does not read it); `off` turns the
+  menu off, and the row then offers `on`.
 - **Where it shows is your choice** (`/pad place`, or the `placement` option):
   - `header`, the default: the card under the header described above.
   - `prompt`: the buttons in a row right above the prompt box that stays there, under the bands
@@ -36,8 +37,8 @@ session's model and effort in one click, this collection's mods, and the shortcu
   - `pane`: a pane of its own, a tab like those of `/limits` and `/watch`, with the card's
     bordered tiles. It opens when a session starts and after `/clear`, and on `/pad`. Claude
     Code opens a pane only with the keyboard on it: `Esc` closes it and gives the prompt back.
-- **`◆ pad`, the control panel.** A bordered button at the end of Claude Code's hint line under
-  the prompt, in every placement (gone while the launchpad is off). It opens a pane with:
+- **`◆ pad`, the control panel.** A framed button at the right end of Claude Code's hint line
+  under the prompt, in every placement, and while the menu is off too. It opens a pane with:
   - **Controls:** the models (`haiku · sonnet · opus`, or the plain names the `/config` model row
     lists) and the effort levels (`low` to `max`) as buttons, the current ones marked `●`. A press
     runs `/model sonnet` or `/effort low`, as typing would. The model comes from the session; the
@@ -128,8 +129,9 @@ to `auto` yourself to get the new behaviour.
 
 ## Known limits
 
-- **Hover needs a terminal that reports mouse motion.** Over a tile or any bordered button, the
-  whole button fills with the accent color and its label turns dark. VS Code's terminal reports the pointer as it moves; a JetBrains
+- **Hover needs a terminal that reports mouse motion.** Over a tile or any framed button, the
+  whole button, frame included, fills with the accent color and its label turns dark. The frame
+  is drawn as text so that it fills too. VS Code's terminal reports the pointer as it moves; a JetBrains
   IDE's terminal reports clicks but not motion, so there the tiles do not light up. Clicks work in
   both.
 - **The border rows of a tile do not take a click.** Only a button takes a press, and a terminal
@@ -146,8 +148,8 @@ to `auto` yourself to get the new behaviour.
 - **Argument hints come from the `/` menu.** The pane gives a command its argument as a blank
   from the hint Claude Code shows in the `/` menu. The mod learns the hints as that menu lists the
   commands, and forgets them when it reloads.
-- **`◆ pad` adds two rows under the prompt.** A bordered button is three rows tall, so the hint
-  line grows by two.
+- **`◆ pad` adds two rows under the prompt.** A framed button is three rows tall: the hint sits
+  on its middle row, with a row above and one below.
 - **The effort shows after the first request.** Claude Code tells a mod the effort only as each
   request goes out.
 - **The menu is a row of the conversation.** It scrolls away with the conversation, and `/pad`

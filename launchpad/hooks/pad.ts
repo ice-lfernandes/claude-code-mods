@@ -53,8 +53,6 @@ type Words = {
   noSuch: (n: string) => string
   help: string
   badAdd: string
-  addTemplate: string
-  removeTemplate: string
   missing: (text: string) => string
   full: string
   already: (text: string) => string
@@ -63,7 +61,6 @@ type Words = {
   /** Where the menu shows: the answer to /pad place, and what /pad says when the menu is not a card. */
   placed: Record<Placement, string>
   badPlace: string
-  placeTemplate: string
   inBand: string
   /** The menu's own pane, when it shows as one. */
   menuPane: string
@@ -71,6 +68,15 @@ type Words = {
   settings: string
   /** What an agent button puts in the prompt, its `[blank]` for the task. */
   useAgent: (name: string, task?: string) => string
+  /** What the /pad row's `place` and `reset` ask in the engine's dialog. */
+  ask2: {
+    place: string
+    places: Record<Placement, string>
+    current: string
+    reset: string
+    resetYes: string
+    cancel: string
+  }
   /** The control panel: `◆ pad` on the hint line, or /pad panel. */
   panel: {
     entry: string
@@ -160,8 +166,6 @@ export const WORDS: Record<Lang, Words> = {
       `Só entram comandos, skills e agentes instalados, até ${MAX_SHOWN} atalhos.`,
     ].join('\n'),
     badAdd: 'Use: /pad add 📊 Nome | /comando  ou  /pad add Nome | @agente',
-    addTemplate: '/pad add [nome] | [/comando ou @agente]',
-    removeTemplate: '/pad remove [número]',
     missing: text => `${text} não está instalado nesta sessão. /pad configuration mostra o que está.`,
     full: `O menu já tem ${MAX_SHOWN} atalhos. Tire um com /pad remove ou no painel.`,
     already: text => `${text} já está no menu.`,
@@ -173,11 +177,18 @@ export const WORDS: Record<Lang, Words> = {
       pane: 'O menu agora abre num painel, uma aba como as de /limits e /watch.',
     },
     badPlace: 'Use: /pad place header | prompt | pane',
-    placeTemplate: '/pad place [header|prompt|pane]',
     inBand: 'O menu está na linha acima do prompt. /pad place header volta ao cartão.',
     menuPane: 'Atalhos',
     settings: '⋯ configurar',
     useAgent: (name, task) => `Use o agente ${name} para ${task || '[tarefa]'}`,
+    ask2: {
+      place: 'Onde o menu deve ficar?',
+      places: { header: 'Sob o cabeçalho', prompt: 'Acima do prompt', pane: 'Num painel' },
+      current: '(atual)',
+      reset: 'Voltar aos atalhos padrão? Os que você adicionou somem.',
+      resetYes: 'Voltar aos padrões',
+      cancel: 'Cancelar',
+    },
     panel: {
       entry: '◆ pad',
       title: 'Painel',
@@ -263,8 +274,6 @@ export const WORDS: Record<Lang, Words> = {
       `Only installed commands, skills and agents, up to ${MAX_SHOWN} shortcuts.`,
     ].join('\n'),
     badAdd: 'Use: /pad add 📊 Name | /command  or  /pad add Name | @agent',
-    addTemplate: '/pad add [name] | [/command or @agent]',
-    removeTemplate: '/pad remove [number]',
     missing: text => `${text} is not installed in this session. /pad configuration shows what is.`,
     full: `The menu already has ${MAX_SHOWN} shortcuts. Drop one with /pad remove or in the pane.`,
     already: text => `${text} is already in the menu.`,
@@ -276,11 +285,18 @@ export const WORDS: Record<Lang, Words> = {
       pane: 'The menu now opens in a pane, a tab like those of /limits and /watch.',
     },
     badPlace: 'Use: /pad place header | prompt | pane',
-    placeTemplate: '/pad place [header|prompt|pane]',
     inBand: 'The menu is in the row above the prompt. /pad place header brings the card back.',
     menuPane: 'Shortcuts',
     settings: '⋯ configure',
     useAgent: (name, task) => `Use the ${name} agent to ${task || '[task]'}`,
+    ask2: {
+      place: 'Where should the menu go?',
+      places: { header: 'Under the header', prompt: 'Above the prompt', pane: 'In a pane' },
+      current: '(current)',
+      reset: 'Back to the default shortcuts? The ones you added go.',
+      resetYes: 'Back to the defaults',
+      cancel: 'Cancel',
+    },
     panel: {
       entry: '◆ pad',
       title: 'Panel',

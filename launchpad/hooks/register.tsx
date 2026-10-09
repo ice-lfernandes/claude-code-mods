@@ -228,20 +228,25 @@ async function add($: EngineInterface, p: Pad): Promise<string | null> {
 }
 
 /**
- * Every bordered button under the pointer: the whole box in the accent, its label in the theme's
- * text for a filled background, so it reads on dark and light.
+ * Every framed button under the pointer: each of its cells, frame and label, drawn inverse in the
+ * accent, so the whole button fills orange with the label in the background's color. Inverse,
+ * not a background color: the terminal inverts the Button under the pointer, and an inverse label
+ * stays the same there, so the frame and the label never show two different colors.
  */
-const BOX_HOVER = { borderColor: 'claude', borderDimColor: false, backgroundColor: 'claude' } as const
-const LABEL_HOVER = { color: 'inverseText', bold: true } as const
+const FILL_HOVER = { color: 'claude', inverse: true, dimColor: false, bold: true } as const
 
-/** /pad's arguments in the row under the menu; `fill` is the text the prompt waits with. */
-const PAD_ACTIONS: { verb: string; fill?: (w: (typeof WORDS)[Lang]) => string }[] = [
+/**
+ * /pad's arguments in the row under the menu. None waits in the prompt for typing: `add` and
+ * `remove` open /pad configuration, where both are a press; `place` and `reset` ask in the
+ * engine's dialog; the rest run.
+ */
+const PAD_ACTIONS: { verb: string; via?: 'pane' | 'ask' }[] = [
   { verb: 'configuration' },
   { verb: 'list' },
-  { verb: 'add', fill: w => w.addTemplate },
-  { verb: 'remove', fill: w => w.removeTemplate },
-  { verb: 'reset', fill: () => '/pad reset' },
-  { verb: 'place', fill: w => w.placeTemplate },
+  { verb: 'add', via: 'pane' },
+  { verb: 'remove', via: 'pane' },
+  { verb: 'reset', via: 'ask' },
+  { verb: 'place', via: 'ask' },
   { verb: 'off' },
   { verb: 'help' },
 ]
@@ -268,12 +273,30 @@ async function showMenu($: EngineInterface) {
   else if (place === 'pane') await openMenuPane($)
 }
 
+/**
+ * The question a `place` or `reset` press asks, and the /pad arguments its answer runs; null when
+ * dismissed or answered with no choice of the list.
+ */
+async function askVerb($: EngineInterface, verb: string): Promise<string | null> {
+  const w = WORDS[lang]
+  if (verb === 'place') {
+    const now = await read($, placement)
+    const places = (['header', 'prompt', 'pane'] as const).map(p => ({ p, label: p === now ? `${w.ask2.places[p]} ${w.ask2.current}` : w.ask2.places[p] }))
+    const answer = await $.ui.ask(w.ask2.place, { options: places.map(x => x.label), header: 'launchpad' }).catch(() => null)
+    const hit = places.find(x => x.label === answer)
+    return hit ? `place ${hit.p}` : null
+  }
+  const answer = await $.ui.ask(w.ask2.reset, { options: [w.ask2.resetYes, w.ask2.cancel], header: 'launchpad' }).catch(() => null)
+  return answer === w.ask2.resetYes ? 'reset' : null
+}
+
 /** Runs one of /pad's arguments from the row: its answer, if any, as dim lines in the transcript. */
 async function pressVerb($: EngineInterface, a: (typeof PAD_ACTIONS)[number]) {
   const w = WORDS[lang]
   try {
-    if (a.fill) return await fill($, a.fill(w))
-    const { text } = await runPad($, a.verb)
+    const args = a.via === 'pane' ? 'configuration' : a.via === 'ask' ? await askVerb($, a.verb) : a.verb
+    if (!args) return
+    const { text } = await runPad($, args)
     // A log line is drawn as one row: a list or the help goes out a line at a time.
     for (const line of text?.split('\n') ?? []) if (line.trim()) $.ui.log(line)
   } catch {
@@ -286,14 +309,16 @@ async function pressVerb($: EngineInterface, a: (typeof PAD_ACTIONS)[number]) {
  * pane, the list, off, help) run; those that take an argument or undo the person's list (add,
  * remove, reset) wait in the prompt, so nothing is lost on a stray click.
  */
-function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | 'Text' | 'Button'>, more: number) {
+function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | 'Text' | 'Button'>, more: number, off = false) {
   const { Box, Text, Button } = ui
   const w = WORDS[lang]
+  // Off, the row offers `on`: the way back is a press, not something to type.
+  const actions = off ? PAD_ACTIONS.map(a => (a.verb === 'off' ? { verb: 'on' } : a)) : PAD_ACTIONS
   return (
     <Box flexDirection="row" flexWrap="wrap">
       {more > 0 && <Text dimColor>{`${w.more(more)} · `}</Text>}
       <Text dimColor>/pad </Text>
-      {PAD_ACTIONS.map((a, i) => (
+      {actions.map((a, i) => (
         <Box key={`padrow:${a.verb}`} flexDirection="row">
           {i > 0 && <Text dimColor> · </Text>}
           <Button key={`cmd:${a.verb}`} plain dimColor label={a.verb} onPress={() => pressVerb($, a)} />
@@ -308,7 +333,7 @@ function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | '
  * cells to its label (border and padding on both sides, one cell of gap).
  */
 function tiles($: EngineInterface, ui: Elements['terminal'], visible: Pad[], columns: number) {
-  const { Box, Button } = ui
+  const { Box } = ui
   const { width, rows } = layout(visible, style, Math.max(1, columns), 5)
   return (
     <Box flexDirection="column">
@@ -316,24 +341,7 @@ function tiles($: EngineInterface, ui: Elements['terminal'], visible: Pad[], col
         <Box key={`row:${r}`} flexDirection="row">
           {row.map(p => (
             <Box key={`cell:${p.id}`} width={width} paddingRight={1}>
-              {/* The border is the Box's: a Button there would show inverted under the pointer.
-                  The label fills the row inside it, so a press anywhere on that row counts.
-                  Over the tile, the whole tile turns the accent color. */}
-              <Box
-                key={`tile:${p.id}`}
-                flexGrow={1}
-                borderStyle="round"
-                borderDimColor
-                hover={BOX_HOVER}
-              >
-                <Button
-                  key={`pad:${p.id}`}
-                  plain
-                  label={tileLabel(buttonLabel(p, style), width - 3)}
-                  hover={LABEL_HOVER}
-                  onPress={() => press($, p)}
-                />
-              </Box>
+              {framed(ui, `pad:${p.id}`, buttonLabel(p, style), () => press($, p), { width: width - 3 })}
             </Box>
           ))}
         </Box>
@@ -360,11 +368,13 @@ function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[],
 }
 
 /**
- * A bordered button, the tiles' look: a dim border at rest, the whole box in the accent under
- * the pointer. `isOn` draws the current choice, in the accent and not pressable; `isWarned` gives
- * the border the warning color. `width` pads the label to that many cells inside the border.
+ * A framed button, the tiles' look: a dim frame at rest; under the pointer the whole button, frame
+ * and label, fills with the accent (FILL_HOVER). The frame is drawn as text, not as the Box's
+ * border, so it fills too. Only the label row takes a press: a Button is one row. `isOn` draws the
+ * current choice in the accent, not pressable; `isWarned` draws the frame in the warning color.
+ * `width` pads the label to that many cells inside the frame.
  */
-function boxButton(
+function framed(
   ui: Elements['terminal'],
   key: string,
   label: string,
@@ -372,19 +382,29 @@ function boxButton(
   opts: { isOn?: boolean; isWarned?: boolean; width?: number } = {},
 ) {
   const { Box, Button, Text } = ui
-  const text = opts.width ? tileLabel(label, opts.width) : ` ${label} `
-  if (opts.isOn) {
-    return (
-      <Box key={`box:${key}`} borderStyle="round" borderColor={opts.isWarned ? 'warning' : 'claude'}>
-        <Text color="claude" bold>
-          {text}
+  const inner = Math.max(cells(label) + 2, opts.width ?? 0)
+  const text = tileLabel(label, inner)
+  const edge = opts.isWarned ? { color: 'warning' } : opts.isOn ? { color: 'claude' } : { dimColor: true }
+  const hover = opts.isOn ? undefined : FILL_HOVER
+  return (
+    <Box key={`box:${key}`} flexDirection="column">
+      <Text {...edge} hover={hover}>{`╭${'─'.repeat(inner)}╮`}</Text>
+      <Box flexDirection="row">
+        <Text {...edge} hover={hover}>
+          │
+        </Text>
+        {opts.isOn ? (
+          <Text color="claude" bold>
+            {text}
+          </Text>
+        ) : (
+          <Button key={key} plain label={text} hover={FILL_HOVER} onPress={onPress} />
+        )}
+        <Text {...edge} hover={hover}>
+          │
         </Text>
       </Box>
-    )
-  }
-  return (
-    <Box key={`box:${key}`} borderStyle="round" {...(opts.isWarned ? { borderColor: 'warning' } : { borderDimColor: true })} hover={BOX_HOVER}>
-      <Button key={key} plain label={text} hover={LABEL_HOVER} onPress={onPress} />
+      <Text {...edge} hover={hover}>{`╰${'─'.repeat(inner)}╯`}</Text>
     </Box>
   )
 }
@@ -401,7 +421,7 @@ function control(
   onPress: () => unknown,
   opts: { isOn?: boolean; isWarned?: boolean; width?: number } = {},
 ) {
-  if (e.surface === 'terminal') return boxButton($.ui.resolve({ ...e, surface: 'terminal' } as never) as Elements['terminal'], key, label, onPress, opts)
+  if (e.surface === 'terminal') return framed($.ui.resolve({ ...e, surface: 'terminal' } as never) as Elements['terminal'], key, label, onPress, opts)
   const { Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
   if (opts.isOn) {
     return (
@@ -630,15 +650,15 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // `◆ pad` at the end of the engine's hint line, in every placement: it opens the control panel.
-  // The engine's line stays as it draws it.
+  // `◆ pad` on the engine's hint line, at its right end, in every placement and while the menu is
+  // off too (the panel's /pad row turns it back on). The engine's hint stays as it draws it, on the
+  // button's label row.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const theirs = await next(e)
-    if (await read($, isOff)) return theirs
     const { Box } = $.ui.resolve(e)
     return (
-      <Box flexDirection="row" alignItems="center" gap={3}>
-        {theirs}
+      <Box flexDirection="row" alignItems="center" justifyContent="space-between" flexGrow={1}>
+        <Box flexGrow={1}>{theirs}</Box>
         {control($, e, 'pad:panel', w.panel.entry, () => openPanel($))}
       </Box>
     )
@@ -658,7 +678,7 @@ export const register: Register = (on, options) => {
         <Text color="claude">✻</Text>
         {list.slice(0, MAX_SHOWN).map(p => (
           <Box key={`cell:${p.id}`}>
-            <Button key={`pad:${p.id}`} plain label={buttonLabel(p, icons)} hover={{ backgroundColor: 'claude', ...LABEL_HOVER }} onPress={() => press($, p)} />
+            <Button key={`pad:${p.id}`} plain label={buttonLabel(p, icons)} hover={FILL_HOVER} onPress={() => press($, p)} />
           </Box>
         ))}
         <Button key="band:settings" plain dimColor label={w.settings} onPress={() => pressVerb($, PAD_ACTIONS[0]!)} />
@@ -762,8 +782,8 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
-        <Box flexDirection="column">
-          {padRow($, { Box, Text, Button }, 0)}
+        <Box flexDirection="column" alignItems="flex-start">
+          {padRow($, { Box, Text, Button }, 0, await read($, isOff))}
           {control($, e, 'close', p.close, () => $.ui.close({ id: PANEL }))}
         </Box>
       </Box>
@@ -794,7 +814,7 @@ export const register: Register = (on, options) => {
         <Text color="claude" bold>{`✻ ${w.ask}`}</Text>
         {(await read($, isOff)) ? <Text dimColor>{w.isOff}</Text> : visible.length === 0 ? <Text dimColor>{w.empty}</Text> : body}
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
-          {padRow($, { Box, Text, Button }, more)}
+          {padRow($, { Box, Text, Button }, more, await read($, isOff))}
           <Button key="close" role="dismiss" label={w.pane.close} onPress={() => $.ui.close({ id: MENU_PANE })} />
         </Box>
       </Box>

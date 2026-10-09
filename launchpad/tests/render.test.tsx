@@ -18,7 +18,17 @@ const PROJECT = JSON.stringify({
 })
 const AGENT_FILE = '---\nname: revisor\ndescription: Revisa textos\n---\nVocê revisa.'
 
-type World = { fills: { text: string; decorations?: unknown }[]; commands: string[]; opened: string[]; closed: string[]; toasts: string[]; logs: string[] }
+type World = {
+  fills: { text: string; decorations?: unknown }[]
+  commands: string[]
+  opened: string[]
+  closed: string[]
+  toasts: string[]
+  logs: string[]
+  /** What the engine's dialog asked, and the answer it gives next (null: dismissed). */
+  asked: { question: string; options: string[] }[]
+  answer: string | null
+}
 
 const world = (
   on: On,
@@ -28,7 +38,7 @@ const world = (
   beneath?: string,
   engine: { model?: string; fiveHour?: number; rows?: object[] } = {},
 ): World => {
-  const w: World = { fills: [], commands: [], opened: [], closed: [], toasts: [], logs: [] }
+  const w: World = { fills: [], commands: [], opened: [], closed: [], toasts: [], logs: [], asked: [], answer: null }
   mock.store(on)
   mock.clock(on, { now: Date.parse('2026-10-08T12:00:00Z') })
   // The drawing beneath the plugin: empty, as when nothing else draws there, or the engine's hint
@@ -47,6 +57,12 @@ const world = (
   on('session.model', () => ({ value: engine.model ?? 'claude-opus-5-5' }) as never)
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200_000 }, rateLimits: engine.fiveHour == null ? [] : [{ kind: 'five_hour', percentUsed: engine.fiveHour }] } }) as never)
   on('config.list', () => ({ value: engine.rows ?? [] }) as never)
+  on('tool.call', (_$, e: any) => {
+    const q = e.questions[0]
+    w.asked.push({ question: String(q.question), options: q.options.map((o: { label: string }) => o.label) })
+    if (w.answer === null) return { deny: 'dismissed' } as never
+    return { result: { questions: e.questions, answers: { [q.question]: w.answer } } } as never
+  })
   on('turn.step', async function* () {
     return { turnId: 't1', index: 0, answer: '', toolUses: [], stopReason: 'end_turn' }
   } as never)
@@ -94,9 +110,11 @@ test('the terminal card frames bordered tiles in columns that fit', async ($, on
   const ui = await row($)
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('"borderColor":"claude"')
-  expect(drawn).toContain('"key":"tile:compact"')
-  expect(drawn).toContain('"hover":{"borderColor":"claude","borderDimColor":false,"backgroundColor":"claude"}')
-  expect(drawn).toContain('"hover":{"color":"inverseText","bold":true}')
+  expect(drawn).toContain('"key":"box:pad:compact"')
+  // The frame is text, so it fills with the label under the pointer: every cell inverse in the accent.
+  expect(drawn).toContain('╭───────────────────────╮')
+  expect(drawn).toContain('"hover":{"color":"claude","inverse":true,"dimColor":false,"bold":true}')
+  expect(drawn).not.toContain('borderDimColor') // only the card's own frame is a Box border
   expect(drawn).toContain('"label":" 🗜️ Compactar conversa "') // 23 cells: 26 less the gap and the two borders
   expect(drawn).toContain('"key":"row:0"')
   expect(drawn).not.toContain('"key":"row:1"') // 3 tiles of 26 cells fit in 98
@@ -310,11 +328,12 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(w.logs.some(l => l.includes('\n'))).toBe(false)
     expect(w.logs).toContain('/pad configuration     abre o painel para escolher e ordenar os atalhos')
     expect(w.commands).toEqual([]) // run here, not as a command
+    // Nothing waits in the prompt to be typed: add and remove open /pad configuration.
+    w.opened.length = 0
     await ui.press({ key: 'cmd:add' })
     await ui.press({ key: 'cmd:remove' })
-    await ui.press({ key: 'cmd:reset' })
-    expect(w.fills.map(f => f.text)).toEqual(['/pad add [nome] | [/comando ou @agente]', '/pad remove [número]', '/pad reset'])
-    expect(w.fills[0]!.decorations).toEqual([{ start: 9, end: 15, bold: true, underline: true }])
+    expect(w.opened).toEqual(['launchpad', 'launchpad'])
+    expect(w.fills).toEqual([])
 
     await ui.press({ key: 'cmd:off' })
     expect(JSON.stringify(await ui.drawn())).not.toContain('cmd:off') // off: the card goes
@@ -444,7 +463,7 @@ test('/pad place prompt: the menu in a row right above the prompt, kept across s
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('"key":"pad:compact"')
   expect(drawn).toContain('⋯ configurar')
-  expect(drawn).toContain('"hover":{"backgroundColor":"claude","color":"inverseText","bold":true}')
+  expect(drawn).toContain('"hover":{"color":"claude","inverse":true,"dimColor":false,"bold":true}')
   expect(drawn).toContain('"key":"cell:compact"') // each button its own hover scope
   await ui.press({ key: 'pad:compact' })
   expect(w.commands).toEqual(['compact'])
@@ -486,7 +505,7 @@ test('no row above the prompt unless the menu is placed there, nor over a survey
 // Prototype notes/prototypes/launchpad-0.5.0.html, approved 2026-10-09: one test per state and interaction.
 
 for (const place of ['header', 'prompt', 'pane'] as const) {
-  test(`start: a bordered ◆ pad after the engine's hint opens the panel, under place ${place}`, async ($, on) => {
+  test(`start: a framed ◆ pad at the right end of the engine's hint line opens the panel, under place ${place}`, async ($, on) => {
     const w = world(on, files, undefined, COMMANDS, 'auto mode on')
     await start($)
     await pad($, `place ${place}`)
@@ -494,8 +513,9 @@ for (const place of ['header', 'prompt', 'pane'] as const) {
     const drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('auto mode on')
     expect(drawn).toContain('"label":" ◆ pad "')
-    expect(drawn).toContain('"borderStyle":"round"')
-    expect(drawn).toContain('"hover":{"borderColor":"claude","borderDimColor":false,"backgroundColor":"claude"}')
+    expect(drawn).toContain('╭───────╮')
+    expect(drawn).toContain('"justifyContent":"space-between"')
+    expect(drawn).toContain('"alignItems":"center"')
     expect(drawn.indexOf('auto mode on')).toBeLessThan(drawn.indexOf('◆ pad'))
     expect(w.opened).not.toContain('launchpad-panel')
     await ui.press({ key: 'pad:panel' })
@@ -504,15 +524,24 @@ for (const place of ['header', 'prompt', 'pane'] as const) {
   })
 }
 
-test('start: no ◆ pad while the launchpad is off; the engine\'s hint stays', async ($, on) => {
+test('start: ◆ pad stays while the menu is off, and the panel\'s /pad row offers on', async ($, on) => {
   world(on, files, undefined, COMMANDS, 'auto mode on')
   await start($)
   await pad($, 'off')
   const ui = await hint($)
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('auto mode on')
-  expect(drawn).not.toContain('◆ pad')
+  expect(drawn).toContain('◆ pad')
   await ui.unmount()
+  const p = await panel($)
+  let rows = JSON.stringify(await p.drawn())
+  expect(rows).toContain('"key":"cmd:on"')
+  expect(rows).not.toContain('"key":"cmd:off"')
+  await p.press({ key: 'cmd:on' })
+  rows = JSON.stringify(await p.drawn())
+  expect(rows).toContain('"key":"cmd:off"')
+  expect((await pad($, '')).text).toBe('Menu de atalhos do launchpad.')
+  await p.unmount()
 })
 
 test('start: ◆ pad on the desktop is the surface\'s own button', async ($, on) => {
@@ -521,7 +550,7 @@ test('start: ◆ pad on the desktop is the surface\'s own button', async ($, on)
   const ui = await hint($, 'desktop')
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('"label":"◆ pad"')
-  expect(drawn).not.toContain('borderStyle')
+  expect(drawn).not.toContain('borderDimColor') // only the card's own frame is a Box border
   await ui.unmount()
 })
 
@@ -558,8 +587,10 @@ test('panel: the bordered chips and the close button keep the tiles\' look and h
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('"label":" ○ sonnet "')
   expect(drawn).toContain('"key":"box:model:sonnet"')
-  expect(drawn).toContain('"hover":{"color":"inverseText","bold":true}')
+  expect(drawn).toContain('"hover":{"color":"claude","inverse":true,"dimColor":false,"bold":true}')
   expect(drawn).toContain('"label":" Fechar "')
+  expect(drawn).toContain('╭────────╮') // the close button is as wide as its label
+  expect(drawn).toContain('"alignItems":"flex-start"')
   await ui.unmount()
 })
 
@@ -609,9 +640,10 @@ test('5h at 74%: opus and max get a warning border and a warning line, and still
   const ui = await panel($)
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('! 5h em 74%: opus e max gastam a janela mais rápido')
-  expect(drawn).toMatch(/"key":"box:model:opus"[^}]*"borderColor":"warning"/)
-  expect(drawn).toMatch(/"key":"box:effort:max"[^}]*"borderColor":"warning"/)
-  expect(drawn).not.toMatch(/"key":"box:model:haiku"[^}]*"borderColor":"warning"/)
+  const frameOf = (key: string) => /"color":"(\w+)"/.exec(drawn.slice(drawn.indexOf(`"key":"box:${key}"`)))?.[1]
+  expect(frameOf('model:opus')).toBe('warning')
+  expect(frameOf('effort:max')).toBe('warning')
+  expect(frameOf('model:haiku')).not.toBe('warning')
   await ui.press({ key: 'model:opus' })
   expect(w.commands).toEqual(['model opus']) // no confirmation
   await ui.unmount()
@@ -622,7 +654,7 @@ test('below 70% there is no warning', async ($, on) => {
   await start($)
   const drawn = JSON.stringify(await (await panel($)).drawn())
   expect(drawn).not.toContain('5h em')
-  expect(drawn).not.toContain('"borderColor":"warning"')
+  expect(drawn).not.toContain('"color":"warning"')
 })
 
 test('the model chips come from the /config model row when it lists them', async ($, on) => {
@@ -700,8 +732,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(drawn).toContain('O que você quer fazer?')
     expect(drawn).toContain('"key":"cmd:place"')
     // The header card's look: bordered tiles on the terminal, native buttons elsewhere.
-    if (surface === 'terminal') expect(drawn).toContain('"key":"tile:compact"')
-    else expect(drawn).not.toContain('tile:')
+    if (surface === 'terminal') expect(drawn).toContain('"key":"box:pad:compact"')
+    else expect(drawn).not.toContain('box:')
     await ui.press({ key: 'pad:compact' })
     expect(w.commands).toEqual(['compact'])
     await ui.press({ key: 'close' })
@@ -715,3 +747,47 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect((await pad($, 'place nowhere')).text).toBe('Use: /pad place header | prompt | pane')
   })
 }
+
+test('place from the /pad row: the engine\'s dialog with the three places, the current marked; no typing', async ($, on) => {
+  const w = world(on)
+  await start($)
+  const ui = await row($)
+  w.answer = 'Acima do prompt'
+  await ui.press({ key: 'cmd:place' })
+  expect(w.asked).toEqual([{ question: 'Onde o menu deve ficar?', options: ['Sob o cabeçalho (atual)', 'Acima do prompt', 'Num painel'] }])
+  expect(w.logs).toContain('O menu agora fica numa linha logo acima do prompt, sempre à mão.')
+  expect(w.fills).toEqual([])
+  expect((await pad($, '')).text).toBe('O menu está na linha acima do prompt. /pad place header volta ao cartão.')
+  await ui.unmount()
+})
+
+test('place dismissed, or answered with free text: nothing changes', async ($, on) => {
+  const w = world(on)
+  await start($)
+  const ui = await row($)
+  await ui.press({ key: 'cmd:place' }) // dismissed
+  w.answer = 'no topo'
+  await ui.press({ key: 'cmd:place' })
+  expect(w.asked).toHaveLength(2)
+  expect(w.logs).toEqual([])
+  expect(w.toasts).toEqual([])
+  expect((await pad($, '')).text).toBe('Menu de atalhos do launchpad.')
+  await ui.unmount()
+})
+
+test('reset from the /pad row asks first; only "Voltar aos padrões" resets', async ($, on) => {
+  const w = world(on, files)
+  await start($)
+  await pad($, 'remove 1')
+  const ui = await row($)
+  w.answer = 'Cancelar'
+  await ui.press({ key: 'cmd:reset' })
+  expect(w.asked[0]!.options).toEqual(['Voltar aos padrões', 'Cancelar'])
+  expect((await pad($, 'list')).text).not.toContain('Compactar conversa')
+  w.answer = 'Voltar aos padrões'
+  await ui.press({ key: 'cmd:reset' })
+  expect(w.logs).toContain('Atalhos de volta aos padrões.')
+  expect((await pad($, 'list')).text).toContain('Compactar conversa')
+  expect(w.fills).toEqual([])
+  await ui.unmount()
+})
