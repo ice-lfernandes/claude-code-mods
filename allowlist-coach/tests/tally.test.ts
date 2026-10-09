@@ -31,6 +31,18 @@ describe('rules', () => {
     }
   })
 
+  test('wildcards that reach past one familiar command are risky', async () => {
+    for (const rule of ['Bash(node *)', 'Bash(node *.mjs)', 'Bash(python3 *)', 'Bash(python3 -m *)', 'Bash(bash *)', 'Bash(node --inspect :*)', 'Bash(ls *.txt)', 'Bash(git * main)', 'Read(//**)', 'Read(~/**)', 'Read(~/.ssh/*)', 'Read(../**)', 'Edit(**/*)', 'Glob(**/*.ts)']) {
+      expect(isRisky(rule)).toBe(true)
+    }
+    for (const rule of ['Bash(npm run test:*)', 'Bash(git log *)', 'Bash(bun test:*)', 'Bash(node scripts/build.js)', 'Read(src/**)', 'Edit(docs/*.md)', 'Read(~/notes.md)']) {
+      expect(isRisky(rule)).toBe(false)
+    }
+    expect(riskOf('Bash(node *.mjs)')).toEqual({ kind: 'command', what: 'node *' })
+    expect(riskOf('Bash(ls *.txt)')).toEqual({ kind: 'wildcard' })
+    expect(riskOf('Read(~/**)')).toEqual({ kind: 'wildcard' })
+  })
+
   test('examples are one short line', async () => {
     expect(exampleOf('Bash', { command: 'echo a\necho b' })).toBe('echo a')
     expect(exampleOf('Edit', { file_path: '/x/y.ts' })).toBe('/x/y.ts')

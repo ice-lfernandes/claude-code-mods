@@ -15,9 +15,9 @@
 // It writes the project's .claude/settings.local.json, or its .claude/settings.json when the
 // person picks that file, and only after the person picks one in a dialog. It takes a rule
 // out of allow only after the person picks "Remove". Reset clears counts only after the person
-// picks "Clear" or "Reset". It never offers a rule that is a whole tool, a bare wildcard, or a
-// command that deletes, escalates or reaches the network (tally.riskOf), and never one the
-// person refused or put under ask or deny.
+// picks "Clear" or "Reset". It never offers or adds a rule that is a whole tool, a broad
+// wildcard, or a command that deletes, escalates or reaches the network (tally.riskOf), and
+// never one the person refused or put under ask or deny.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
@@ -117,10 +117,17 @@ const allow = async ($: EngineInterface, key: string): Promise<string> => {
   const w = WORDS[lang]
   const entry = (await read($, entries))[key]
   if (!entry) return w.noRule(key)
+  // The command takes any number, and the list re-sorts as calls are counted: check it again here.
+  const s = status(entry, await read($, configured))
+  if (s === 'risky' || s === 'refused' || s === 'pinned') {
+    const risk = s === 'risky' ? riskOfEntry(entry) : null
+    return w.notOffered(key, risk ? `${w.status[s]} (${w.risk(risk)})` : w.status[s])
+  }
   const what = entry.rules.join(' and ')
   let answer: string
   try {
-    answer = await $.ui.ask(`${w.askAdd(what, entry.approved)}\n${w.preview(entry.rules)}`, { header: 'allowlist', options: [w.addLocal, w.addShared, w.notNow, w.never] })
+    // Not now first, so a stray Enter writes nothing.
+    answer = await $.ui.ask(`${w.askAdd(what, entry.approved)}\n${w.preview(entry.rules)}`, { header: 'allowlist', options: [w.notNow, w.addLocal, w.addShared, w.never] })
   } catch {
     return w.nothingChanged
   }

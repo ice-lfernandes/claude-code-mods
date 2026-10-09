@@ -8,7 +8,7 @@ const RULE = 'Bash(./mvnw test:*)'
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const SHARED = '/repo/.claude/settings.json'
 const ADD = 'Add to settings.local.json (just you)'
-const OPTIONS = [ADD, 'Add to settings.json (the whole team)', 'Not now', 'Never offer it']
+const OPTIONS = ['Not now', ADD, 'Add to settings.json (the whole team)', 'Never offer it']
 const SUGGESTIONS = [{ type: 'addRules', behavior: 'allow', destination: 'localSettings', rules: [{ toolName: 'Bash', ruleContent: './mvnw test:*' }] }]
 
 type World = {
@@ -139,9 +139,8 @@ test('reset asks first, with Cancel first, and only Clear clears', async ($, on)
   expect((await run($, '')).text).toContain('no permission dialogs')
 })
 
-test('a refusal stops the offer and Not now writes nothing', async ($, on) => {
+test('a refusal stops the offer, and allow then refuses the rule', async ($, on) => {
   const world = fresh()
-  world.answer = 'Not now'
   let n = 0
   engine($, on, world, () => n++ !== 2)
   await start($)
@@ -151,6 +150,20 @@ test('a refusal stops the offer and Not now writes nothing', async ($, on) => {
   expect(world.toasts).toHaveLength(0)
   expect(world.notices[world.notices.length - 1]).toContain('refused 1')
   const answer = await run($, `allow ${RULE}`)
+  expect(answer.text).toContain('is refused; the coach does not add it')
+  expect(world.asked).toHaveLength(0)
+  expect(FILE in world.files).toBe(false)
+})
+
+test('Not now, the first answer, writes nothing', async ($, on) => {
+  const world = fresh()
+  world.answer = 'Not now'
+  engine($, on, world, () => true)
+  await start($)
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
+
+  const answer = await run($, `allow ${RULE}`)
+  expect(world.asked[0]!.options[0]).toBe('Not now')
   expect(answer.text).toContain('nothing changed')
   expect(FILE in world.files).toBe(false)
 })
@@ -307,6 +320,25 @@ test('reset <n> sets one rule back to zero, after asking', async ($, on) => {
   expect((await run($, '')).text).toContain('Bash(npm run lint)')
 })
 
+test('allow by number refuses a risky, refused or pinned rule, and asks nothing', async ($, on) => {
+  const world = fresh()
+  world.files[FILE] = JSON.stringify({ permissions: { ask: ['Bash(npm run deploy)'] } })
+  engine($, on, world, command => command !== 'npm run lint')
+  await start($)
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: 'node *.mjs' } as never)
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: 'npm run lint' } as never)
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: 'npm run deploy' } as never)
+
+  expect((await run($, 'allow Bash(node *.mjs)')).text).toBe(
+    'allowlist-coach: Bash(node *.mjs) is risky (runs node *); the coach does not add it. Add it to permissions.allow by hand if you mean it.',
+  )
+  expect((await run($, 'allow Bash(npm run lint)')).text).toContain('is refused; the coach does not add it')
+  expect((await run($, 'allow Bash(npm run deploy)')).text).toContain('is pinned; the coach does not add it')
+  for (let n = 1; n <= 3; n++) expect((await run($, `allow ${n}`)).text).toContain('the coach does not add it')
+  expect(world.asked).toHaveLength(0)
+  expect(JSON.parse(world.files[FILE]!).permissions.allow).toBeUndefined()
+})
+
 test('the threshold option sets how many approvals an offer takes', { options: { threshold: 3 } }, async ($, on) => {
   const world = fresh()
   engine($, on, world, () => true)
@@ -334,7 +366,7 @@ test('Portuguese from LANG: the dialog line, the questions and the pane', async 
   expect(shown).toContain('liberar')
   expect(shown).toContain('Fechar')
   await pane.press({ key: 'allow-1' })
-  expect(world.asked[0]!.options).toEqual(['Adicionar ao settings.local.json (só você)', 'Adicionar ao settings.json (o time todo)', 'Agora não', 'Nunca oferecer'])
+  expect(world.asked[0]!.options).toEqual(['Agora não', 'Adicionar ao settings.local.json (só você)', 'Adicionar ao settings.json (o time todo)', 'Nunca oferecer'])
   expect(JSON.parse(world.files[FILE]!).permissions.allow).toEqual([RULE])
   await pane.unmount()
 })
