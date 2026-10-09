@@ -13,6 +13,8 @@ type Words = {
   /** The two steps the card shows before the agent writes a task list. */
   first: [string, string]
   untitled: string
+  /** The title of a turn a notification started (a background agent finished) with no turn before. */
+  agentDone: string
   step: (n: number, of: number) => string
   steps: (done: number, of: number) => string
   allDone: string
@@ -51,8 +53,10 @@ type Words = {
   answer: string
   using: (tool: string) => string
   usingSkill: (skill: string) => string
-  /** The system prompt line the askForTasks option adds. */
+  /** The system prompt line the askForTasks option adds when the session has a task tool. */
   askForTasks: string
+  /** The line it adds when the session has none: a checklist in the reply, which the card reads. */
+  askForChecklist: string
   failed: string
   inUse: string
   help: string
@@ -61,6 +65,8 @@ type Words = {
 // The model reads English best; the same line in both languages.
 const ASK_FOR_TASKS =
   'When a request takes more than two steps, keep its plan as a task list with the TodoWrite or TaskCreate tool, and mark each task in progress and completed as you go. The person follows your progress from that list, not from the tool calls.'
+const ASK_FOR_CHECKLIST =
+  'When a request takes more than two steps, write its plan as a Markdown checklist (`- [ ] step`) in your reply before you start, and write the checklist again with `[x]` on the finished steps as you go. The person follows your progress from that list.'
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -69,6 +75,7 @@ export const WORDS: Record<Lang, Words> = {
     description: 'Transcript sem ruído: o plano do agente num cartão acima do prompt',
     first: ['Entender o pedido', 'Planejar os passos'],
     untitled: 'Pedido sem texto',
+    agentDone: 'Um agente terminou',
     step: (n, of) => `Passo ${n} de ${of}`,
     steps: (done, of) => `${done} de ${of} passos`,
     allDone: '✓ Tudo pronto',
@@ -107,6 +114,7 @@ export const WORDS: Record<Lang, Words> = {
     using: tool => `usando ${tool}`,
     usingSkill: skill => `usando a skill ${skill}`,
     askForTasks: ASK_FOR_TASKS,
+    askForChecklist: ASK_FOR_CHECKLIST,
     failed: 'Algo falhou no plain-view. O transcript segue como estava.',
     inUse: 'em uso',
     help: [
@@ -126,6 +134,7 @@ export const WORDS: Record<Lang, Words> = {
     description: 'A quiet transcript: the agent’s plan in a card above the prompt',
     first: ['Understand your request', 'Plan the steps'],
     untitled: 'Request with no text',
+    agentDone: 'An agent finished',
     step: (n, of) => `Step ${n} of ${of}`,
     steps: (done, of) => `${done} of ${of} steps`,
     allDone: '✓ All done',
@@ -164,6 +173,7 @@ export const WORDS: Record<Lang, Words> = {
     using: tool => `using ${tool}`,
     usingSkill: skill => `using the ${skill} skill`,
     askForTasks: ASK_FOR_TASKS,
+    askForChecklist: ASK_FOR_CHECKLIST,
     failed: 'Something failed in plain-view. The transcript stays as it was.',
     inUse: 'in use',
     help: [

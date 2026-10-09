@@ -262,8 +262,15 @@ test('askForTasks: one line in the system prompt while the mod is on', { options
   const result: any = await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Bash', 'TodoWrite'], outputStyle: null, traits: [] } as never)
   expect(result.sections.map((x: any) => x.id)).toEqual(['intro', 'plain-view:tasks'])
   expect(result.sections[1].text).toContain('TodoWrite or TaskCreate')
-  const none: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: ['Bash'], outputStyle: null, traits: [] } as never)
-  expect(none.sections.map((x: any) => x.id)).toEqual(['intro'])
+})
+
+test('askForTasks with no task tool: the line asks for a checklist in the reply', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  const result: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: ['Bash'], outputStyle: null, traits: [] } as never)
+  expect(result.sections.map((x: any) => x.id)).toEqual(['intro', 'plain-view:tasks'])
+  expect(result.sections[1].text).toContain('Markdown checklist (`- [ ] step`)')
+  expect(result.sections[1].text).not.toContain('TodoWrite')
 })
 
 test('askForTasks is on by default, and off when set so', ON, async ($, on) => {

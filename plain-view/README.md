@@ -39,7 +39,8 @@ turn ends.
 - **Ask for a list** (`askForTasks`, on by default): the agent does not always keep a task list;
   in a live test it wrote its plan as a checklist in its answer. While the mod is on, one line in
   the system prompt asks it to keep one with `TodoWrite` or `TaskCreate` for work of more than two
-  steps, so the card shows each step. It costs a few tokens per request, and the model may not
+  steps, or, when the session has neither tool, to write a Markdown checklist (`- [ ] step`) in
+  its reply and write it again as steps finish, so the card shows each step. It costs a few tokens per request, and the model may not
   always follow it. Turn it off in `/config`; the card then reads the list the agent keeps on its
   own, or its checklist.
 - **The estimate:** the current step's percentage compares its tool calls with the average of
@@ -91,7 +92,7 @@ Set them in `/config`, or under `pluginConfigs` in `settings.json`.
 | `palette` | `claude` | The bar colors: `claude`, `clean`, `sunset`, `aurora`, `ocean`, `neon`, `forest`, `calm` |
 | `animation` | `true` | The shine on the bars and the gradient. Off: still bars in theme colors |
 | `agentText` | `final` | What stays of the agent's messages: `final` (the final answer), `none`, `card` (the answer's first sentence in the end card), `all` |
-| `askForTasks` | `true` | One line in the system prompt asks the model to keep a task list for work of more than two steps. Off: no change to the prompt |
+| `askForTasks` | `true` | One line in the system prompt asks the model to keep a task list for work of more than two steps (`TodoWrite` or `TaskCreate`), or a checklist in its reply when the session has neither tool. Off: no change to the prompt |
 | `language` | `auto` | `auto`, `pt-BR` or `en`. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise |
 | `icons` | `auto` | `emoji` draws the steps as `✅ 🟠 ⚪`, `symbol` as `✓ ● ○`. `auto` uses `symbol` in a JetBrains IDE's terminal and `emoji` elsewhere |
 

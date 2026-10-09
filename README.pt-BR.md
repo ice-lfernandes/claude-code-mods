@@ -174,7 +174,8 @@ Duas opções mudam o que você vê, as duas em `/config`:
   de chamar uma tool saem, a resposta final fica), `none`, `card` (a primeira frase da resposta no cartão do fim)
   ou `all`. Falhas, diálogos de permissão e perguntas do agente sempre aparecem.
 - `askForTasks` (ligada por padrão): uma linha no system prompt pede ao modelo que mantenha uma
-  lista de tarefas em trabalho de mais de dois passos, para o cartão mostrar cada passo; custa
+  lista de tarefas em trabalho de mais de dois passos, ou um checklist na resposta quando a sessão
+  não tem tool de tarefas, para o cartão mostrar cada passo; custa
   alguns tokens por pedido. Desligada, o cartão lê a lista que o agente mantém sozinho, ou um
   checklist na resposta.
 

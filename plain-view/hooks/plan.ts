@@ -31,12 +31,21 @@ type Input = Readonly<Record<string, unknown>>
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 const isStatus = (s: unknown): s is Item['status'] => s === 'pending' || s === 'in_progress' || s === 'completed'
 
-/** The request's first line, for the card's title. */
-export const titleOf = (text: string) => text.split('\n').map(l => l.trim()).find(l => l !== '') ?? ''
+/** A harness notification's first line, such as `<task-notification>`: an XML-like tag. */
+const NOTICE = /^<[a-zA-Z][\w-]*[\s>]/
+
+const firstLine = (text: string) => text.split('\n').map(l => l.trim()).find(l => l !== '') ?? ''
+
+/** Whether a turn's text is a harness notification (a background agent finished), not a request. */
+const isNotice = (text: string) => NOTICE.test(firstLine(text))
+
+/** The request's first line, for the card's title; none when the turn starts from a notification. */
+export const titleOf = (text: string) => (isNotice(text) ? '' : firstLine(text))
 
 /** A new turn: a fresh card, and the task list kept only while some task is still open. */
 export const startTurn = (prev: Turn | null, items: Item[], text: string, now: number, lang: Lang): { turn: Turn; items: Item[] } => {
-  const title = titleOf(text) || prev?.title || WORDS[lang].untitled
+  // A notification keeps the last request's title, or says an agent finished.
+  const title = titleOf(text) || prev?.title || (isNotice(text) ? WORDS[lang].agentDone : WORDS[lang].untitled)
   // A demo's sample list never carries into a real request.
   const open = !prev?.isDemo && items.some(i => i.status !== 'completed')
   return {

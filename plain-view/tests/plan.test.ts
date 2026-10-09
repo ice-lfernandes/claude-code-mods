@@ -21,6 +21,19 @@ test('a turn takes the first line of the request as its title, and a continuatio
   expect(startTurn(null, [], '', NOW, 'en').turn.title).toBe('Request with no text')
 })
 
+test('a turn a notification starts keeps the last title, or says an agent finished', () => {
+  const notice = '<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>'
+  expect(titleOf(notice)).toBe('')
+  expect(titleOf('\n  <system-reminder foo="1">x')).toBe('')
+  const first = fresh().turn
+  expect(startTurn(first, [], notice, NOW, 'pt-BR').turn.title).toBe(first.title)
+  expect(startTurn(null, [], notice, NOW, 'pt-BR').turn.title).toBe('Um agente terminou')
+  expect(startTurn(null, [], notice, NOW, 'en').turn.title).toBe('An agent finished')
+  // A request that only mentions a tag, or starts with `<` and no tag, is still a title.
+  expect(startTurn(first, [], 'Troque o <div> por <section>', NOW, 'pt-BR').turn.title).toBe('Troque o <div> por <section>')
+  expect(titleOf('<3 obrigado')).toBe('<3 obrigado')
+})
+
 test('the task list outlives a turn only while a task is open', () => {
   const open = at(created(), ['completed', 'in_progress'])
   expect(startTurn(null, open, 'continue', NOW, 'en').items).toHaveLength(4)

@@ -173,7 +173,8 @@ Two options shape what you see, both in `/config`:
   a tool call step aside, the final answer stays), `none`, `card` (the answer's first sentence in the end card) or
   `all`. Failures, permission dialogs and the agent's questions always show.
 - `askForTasks` (on by default): one line in the system prompt asks the model to keep a task
-  list for work of more than two steps, so the card shows each step; a few tokens per request.
+  list for work of more than two steps, or a checklist in its reply when the session has no task
+  tool, so the card shows each step; a few tokens per request.
   Off, the card reads the list the agent keeps on its own, or a checklist in its answer.
 
 ```

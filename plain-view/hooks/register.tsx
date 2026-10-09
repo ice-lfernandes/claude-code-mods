@@ -10,7 +10,8 @@
 //          grey on Esc; the next request starts a fresh one. The engine's `[-]` folds it.
 //   plan   from the agent's TaskCreate, TaskUpdate and TodoWrite calls, else from a checklist it
 //          writes in its answer (`1. [ ] Ler a API`). The `askForTasks` option asks the model, in
-//          the system prompt, to keep a task list with those tools.
+//          the system prompt, to keep a task list with those tools, or a checklist in its reply
+//          when the session has none.
 //   words  `agentText`: final (the default) hides the text of each step that went on to call
 //          tools, so the final answer stays; none hides every message; card hides them all and
 //          puts the answer's first sentence in the end card; all keeps every word.
@@ -198,11 +199,13 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  // With askForTasks, one line in the system prompt asks for a task list.
+  // With askForTasks, one line in the system prompt asks for a task list, or for a checklist in
+  // the reply when the session has no task tool.
   on('prompt.compose', async ($, e, next) => {
     const result = await next(e)
-    if (!isOn || !askForTasks || !e.tools.some(t => t === 'TodoWrite' || t === 'TaskCreate')) return result
-    return { sections: [...result.sections, { id: 'plain-view:tasks', text: WORDS.en.askForTasks, scope: 'session' as const }] }
+    if (!isOn || !askForTasks) return result
+    const text = e.tools.some(t => t === 'TodoWrite' || t === 'TaskCreate') ? WORDS.en.askForTasks : WORDS.en.askForChecklist
+    return { sections: [...result.sections, { id: 'plain-view:tasks', text, scope: 'session' as const }] }
   })
 
   on('tool.call', async ($, e, next) => {

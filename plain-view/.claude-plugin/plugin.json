@@ -1,6 +1,6 @@
 {
   "name": "plain-view",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -47,7 +47,7 @@
     "askForTasks": {
       "type": "boolean",
       "title": "Ask for a task list",
-      "description": "While the mod is on, one line in the system prompt asks the model to keep a task list (TodoWrite or TaskCreate) for work of more than two steps, so the card shows each step. Costs a few tokens per request. Off: the card reads the list the model keeps on its own, or a checklist in its answer",
+      "description": "While the mod is on, one line in the system prompt asks the model to keep a task list (TodoWrite or TaskCreate) for work of more than two steps, or, when the session has neither tool, to write a checklist in its reply, so the card shows each step. Costs a few tokens per request. Off: the card reads the list the model keeps on its own, or a checklist in its answer",
       "default": true
     },
     "language": {
