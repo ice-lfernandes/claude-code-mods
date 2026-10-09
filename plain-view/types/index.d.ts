@@ -8,6 +8,8 @@ export type Item = {
   status: 'pending' | 'in_progress' | 'completed'
   /** Tool calls made while this task was the current one: what the step's estimate reads. */
   calls: number
+  /** Read from a checklist in the agent's answer, not from a task tool. */
+  fromText?: boolean
 }
 
 /** How a turn ended: the model answered, the person interrupted, or an error stopped it. */

@@ -47,10 +47,18 @@ type Words = {
   paletteUnknown: (name: string, names: string) => string
   paletteAlso: string
   use: string
+  using: (tool: string) => string
+  usingSkill: (skill: string) => string
+  /** The system prompt line the askForTasks option adds. */
+  askForTasks: string
   failed: string
   inUse: string
   help: string
 }
+
+// The model reads English best; the same line in both languages.
+const ASK_FOR_TASKS =
+  'When a request takes more than two steps, keep its plan as a task list with the TodoWrite or TaskCreate tool, and mark each task in progress and completed as you go. The person follows your progress from that list, not from the tool calls.'
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -97,6 +105,9 @@ export const WORDS: Record<Lang, Words> = {
     paletteUnknown: (name, names) => `Não conheço a paleta "${name}". As paletas: ${names}.`,
     paletteAlso: 'Também: /plain-view palette aurora, ou /config → plain-view → palette.',
     use: 'usar',
+    using: tool => `usando ${tool}`,
+    usingSkill: skill => `usando a skill ${skill}`,
+    askForTasks: ASK_FOR_TASKS,
     failed: 'Algo falhou no plain-view. O transcript segue como estava.',
     inUse: 'em uso',
     help: [
@@ -153,6 +164,9 @@ export const WORDS: Record<Lang, Words> = {
     paletteUnknown: (name, names) => `No palette named "${name}". The palettes: ${names}.`,
     paletteAlso: 'Also: /plain-view palette aurora, or /config → plain-view → palette.',
     use: 'use',
+    using: tool => `using ${tool}`,
+    usingSkill: skill => `using the ${skill} skill`,
+    askForTasks: ASK_FOR_TASKS,
     failed: 'Something failed in plain-view. The transcript stays as it was.',
     inUse: 'in use',
     help: [

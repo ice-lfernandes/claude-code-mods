@@ -7,7 +7,8 @@ turn ends.
 ![plain-view: the card while the agent works, when the turn ends, and the palettes](../screenshots/plain-view.svg)
 
 - **Off until you turn it on:** `/plain-view on`, the `enabled` option in `/config`, or the
-  switch in launchpad's panel (`◆ pad`). The prompt's footer says `plain view` while it is on.
+  switch in launchpad's panel (`◆ pad`). The hint line under the prompt ends in `plain view`
+  while it is on.
 - **Tool rows:** a call that worked draws nothing, its result neither, and a folded run of reads
   and searches neither. A failed or interrupted call draws in full, as Claude Code draws it.
   The permission dialog, the agent's messages, its questions (`AskUserQuestion`), its plan
@@ -16,11 +17,17 @@ turn ends.
   - the request's first line, and the time since it was sent;
   - `Step 2 of 4` with a bar for the whole request and its percentage;
   - one row per task of the agent's list (`TaskCreate`/`TaskUpdate` or `TodoWrite`) with its
-    own bar: `Done`, `~40%` on the current step and what it is doing (`reading weather.ts`),
+    own bar: `Done`, `~40%` on the current step and what it is doing (`reading weather.ts`, a
+    shell command's own description, `using the artifact-design skill`),
     `Next`, `Up next`. A list longer than 6 shows the 5 tasks around the current one, with a
     count of the rest;
+  - with no task tool, the last checklist the agent writes in its answer (`1. [ ] Read the API`,
+    `- [x] Build the page`) is the list;
   - before the agent writes a list: `Understand your request` and `Plan the steps`; with no
     list at all, the tool in flight.
+- **Ask for a list:** the agent does not always keep a task list. With the `askForTasks`
+  option, one line in the system prompt asks it to, for work of more than two steps. It costs a
+  few tokens per request, so it is off by default.
 - **The estimate:** the current step's percentage compares its tool calls with the average of
   the steps already done (4 calls before any), and stops at 95% until the task is marked done.
   It is a guess, hence the `~`. The request's bar counts done steps plus that estimate.
@@ -69,6 +76,7 @@ Set them in `/config`, or under `pluginConfigs` in `settings.json`.
 | `enabled` | `false` | Hide the tool rows that worked and show the card |
 | `palette` | `claude` | The bar colors: `claude`, `clean`, `sunset`, `aurora`, `ocean`, `neon`, `forest`, `calm` |
 | `animation` | `true` | The shine on the bars and the gradient. Off: still bars in theme colors |
+| `askForTasks` | `false` | One line in the system prompt asks the model to keep a task list for work of more than two steps |
 | `language` | `auto` | `auto`, `pt-BR` or `en`. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise |
 | `icons` | `auto` | `emoji` draws the steps as `✅ 🟠 ⚪`, `symbol` as `✓ ● ○`. `auto` uses `symbol` in a JetBrains IDE's terminal and `emoji` elsewhere |
 
@@ -86,8 +94,10 @@ Or for one session: `claude --plugin-dir ./plain-view`
 | --- | --- | --- | --- | --- | --- |
 | plain-view | No | No | No | No | No |
 
-It reads the agent's task list and the files it touches from the `tool.call` event, and the
-request from `turn.start`. Its `tool.call` hook only observes: if it fails, the call goes on, and
+It reads the agent's task list and the files it touches from the `tool.call` event, the
+request from `turn.start`, and the agent's answer at the end of each step from `turn.step`, for
+a checklist. That hook passes every response through unchanged. With `askForTasks` on, its
+`prompt.compose` hook adds one line to the system prompt. Its `tool.call` hook only observes: if it fails, the call goes on, and
 nothing after the call can make it run twice. The only thing it writes is its own options
 (`enabled`, `palette`) through `$.config.set`, when you run `on`, `off` or `palette`. It keeps
 its values in the session's plugin state and nothing across sessions.

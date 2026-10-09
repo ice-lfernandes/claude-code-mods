@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Item, Turn } from '../types'
 import { barCells, base64, layoutOf, rasterCells } from '../hooks/card'
 import { mix, paletteOf, PALETTES, stopsOf, hex, titleColor } from '../hooks/palettes'
-import { applyTask, cardOf, countCall, currentOf, demoOf, endTurn, estimate, MAX_ESTIMATE, startTurn, titleOf, touch, windowAround } from '../hooks/plan'
+import { applyAnswer, applyTask, cardOf, checklistOf, doingOf, countCall, currentOf, demoOf, endTurn, estimate, MAX_ESTIMATE, startTurn, titleOf, touch, windowAround } from '../hooks/plan'
 
 const NOW = Date.parse('2026-10-09T12:00:00Z')
 const TASKS = ['Escolher o estilo e o layout da página', 'Ver como a página pega o tempo ao vivo', 'Montar o painel do tempo', 'Publicar e compartilhar o link']
@@ -238,4 +238,38 @@ test('the layout shrinks the rows at 80 columns and grows them wide', () => {
   expect(layoutOf(76)).toEqual({ label: 14, item: 10, text: 30, bar: 56 })
   expect(layoutOf(136)).toEqual({ label: 14, item: 18, text: 46, bar: 116 })
   expect(layoutOf(40).item).toBe(6)
+})
+
+test('a checklist in the answer: done, in progress, pending; under two items is no list', () => {
+  const list = checklistOf('Plano:\n1. [x] Ler a API\n2. [~] **Montar** o painel\n- [ ] Testar\n* [>] Publicar\ntexto solto')!
+  expect(list.map(i => [i.subject, i.status])).toEqual([
+    ['Ler a API', 'completed'],
+    ['Montar o painel', 'in_progress'],
+    ['Testar', 'pending'],
+    ['Publicar', 'in_progress'],
+  ])
+  expect(list.every(i => i.fromText)).toBe(true)
+  expect(checklistOf('1. [ ] Só um')).toBeNull()
+  expect(checklistOf('nada aqui')).toBeNull()
+})
+
+test('the last checklist of an answer wins, keeps the calls counted, and never overrides a task tool', () => {
+  const first = applyAnswer([], '1. [ ] A\n2. [ ] B')
+  const counted = countCall(first)
+  const next = applyAnswer(counted, 'antes\n1. [ ] A\n2. [ ] B\n\ndepois\n\n1. [x] A feita\n2. [ ] B')
+  expect(next.map(i => [i.subject, i.status, i.calls])).toEqual([['A feita', 'completed', 1], ['B', 'pending', 0]])
+  expect(applyAnswer(next, 'sem lista')).toBe(next)
+  const tools = created(['X', 'Y'])
+  expect(applyAnswer(tools, '1. [ ] A\n2. [ ] B')).toBe(tools)
+  expect(applyTask(next, 'TaskCreate', { subject: 'X' }, { task: { id: '9' } }).map(i => i.subject)).toEqual(['X'])
+})
+
+test('what a call is doing: the Bash description, a skill by name, any other tool as using', () => {
+  expect(doingOf('Bash', { command: 'python3 x.py', description: 'Extrair a série horária' }, 'pt-BR')).toBe('Extrair a série horária')
+  expect(doingOf('Bash', { command: 'npm test' }, 'pt-BR')).toBe('rodando npm test')
+  expect(doingOf('Skill', { skill: 'artifact-design' }, 'pt-BR')).toBe('usando a skill artifact-design')
+  expect(doingOf('Skill', { skill: 'artifact-design' }, 'en')).toBe('using the artifact-design skill')
+  expect(doingOf('Artifact', {}, 'pt-BR')).toBe('usando Artifact')
+  expect(doingOf('mcp__claude_ai_Gmail__search_threads', {}, 'en')).toBe('using search_threads')
+  expect(doingOf('Read', { file_path: '/a/b.ts' }, 'pt-BR')).toBe('lendo b.ts')
 })

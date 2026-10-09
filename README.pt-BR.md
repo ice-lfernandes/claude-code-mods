@@ -167,6 +167,8 @@ sempre aparecem inteiros. Acima do prompt, um cartão acompanha o pedido: o tít
 `~40%` no passo atual, `Próximo`, `Depois`). O % do passo atual é uma estimativa pelas chamadas
 de tool, por isso o `~`. No fim do turno o cartão fica verde, com o tempo que levou e os
 arquivos mudados e lidos, ou cinza no Esc; o próximo pedido começa um novo, e o `[-]` recolhe.
+Sem lista de tarefas, um checklist que o agente escreve na resposta vira a lista; a opção
+`askForTasks` pede ao modelo que mantenha uma.
 
 ```
 /plain-view on | off          mostra ou esconde o cartão e as linhas de tool

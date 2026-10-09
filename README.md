@@ -165,7 +165,9 @@ in full. Above the prompt, a card follows the request: its title, `Step 2 of 4` 
 row per task of the agent's list with its own bar (`Done`, `~40%` for the current step, `Next`,
 `Up next`). The current step's percentage is an estimate from its tool calls, hence the `~`.
 When the turn ends the card turns green with the time it took and the files changed and read,
-or grey on Esc; the next request starts a fresh one, and `[-]` folds it.
+or grey on Esc; the next request starts a fresh one, and `[-]` folds it. With no task list, a
+checklist the agent writes in its answer is the list; the `askForTasks` option asks the model to
+keep one.
 
 ```
 /plain-view on | off          show or hide the card and the tool rows

@@ -16,9 +16,9 @@ export type Palette = {
 }
 
 const DARK_OFF = 0x5c5c68
-const DARK_TRACK = 0x34343f
+const DARK_TRACK = 0x5a5a6a
 const LIGHT_OFF = 0xa0a0aa
-const LIGHT_TRACK = 0xd8d8de
+const LIGHT_TRACK = 0xbdbdc6
 
 const set = (g1: number, g2: number, g3: number, k1: number, k2: number, isDark: boolean): Stops => ({
   g1, g2, g3, k1, k2,

@@ -8,6 +8,9 @@
 //          and `Planejar os passos`; with no list at all, the tool in flight. When the turn ends
 //          the card turns green (`✓ Tudo pronto`, `levou 1m 47s`, the files changed and read), or
 //          grey on Esc; the next request starts a fresh one. The engine's `[-]` folds it.
+//   plan   from the agent's TaskCreate, TaskUpdate and TodoWrite calls, else from a checklist it
+//          writes in its answer (`1. [ ] Ler a API`). The `askForTasks` option asks the model, in
+//          the system prompt, to keep a task list with those tools.
 //   bars   a gradient of the `palette` option's colors, and a shine that runs while the agent
 //          works (`animation`); see palettes.ts and the design guide's "Exception: gradients".
 //   /plain-view on | off | demo | palette [name] | help
@@ -23,7 +26,7 @@ import type { Item, Turn } from '../types'
 import { drawCard, rasterCells, barCells } from './card'
 import { PALETTES, paletteOf, stopsOf } from './palettes'
 import type { Palette } from './palettes'
-import { applyTask, cardOf, countCall, demoOf, endTurn, NEVER_HIDDEN, startTurn, TASK_TOOLS, touch } from './plan'
+import { applyAnswer, applyTask, cardOf, countCall, demoOf, endTurn, NEVER_HIDDEN, startTurn, TASK_TOOLS, touch } from './plan'
 import type { IconStyle, Lang, Verb } from './ui'
 import { langOf, linesOf, styleOf, verbRow } from './ui'
 import { COMMAND, MODE, WORDS } from './words'
@@ -43,6 +46,7 @@ let style: IconStyle = 'emoji'
 let isOn = false
 let palette: Palette = paletteOf(undefined)
 let animate = true
+let askForTasks = false
 let theme: unknown = 'dark'
 // The timers of this load; a reload starts them again from session.start.
 let ticker: Timer | null = null
@@ -135,6 +139,7 @@ export const register: Register = (on, options) => {
   isOn = options.enabled === true
   palette = paletteOf(options.palette)
   animate = options.animation !== false
+  askForTasks = options.askForTasks === true
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -169,6 +174,20 @@ export const register: Register = (on, options) => {
     await update($, turn, () => fresh.turn)
     if (isOn) startTicking($)
     return result
+  })
+
+  // The agent's answer at the end of each step: a checklist in it becomes the plan.
+  on('turn.step', async function* ($, e, next) {
+    const result = yield* next(e)
+    if (!e.agentId && result.answer) await update($, items, list => applyAnswer(list, result.answer)).catch(() => undefined)
+    return result
+  })
+
+  // With askForTasks, one line in the system prompt asks for a task list.
+  on('prompt.compose', async ($, e, next) => {
+    const result = await next(e)
+    if (!isOn || !askForTasks || !e.tools.some(t => t === 'TodoWrite' || t === 'TaskCreate')) return result
+    return { sections: [...result.sections, { id: 'plain-view:tasks', text: WORDS.en.askForTasks, scope: 'session' as const }] }
   })
 
   on('tool.call', async ($, e, next) => {
@@ -251,8 +270,10 @@ export const register: Register = (on, options) => {
     return <Box />
   })
 
-  on('ui.render', { component: 'SessionMode' }, ($, e, next) =>
-    isOn ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, MODE] } }) : next(e),
+  // The hint line under the prompt says the mode is on (the footer's mode labels do not show
+  // while none of the engine's modes is on).
+  on('ui.render', { component: 'PromptHint' }, ($, e, next) =>
+    isOn ? next({ ...e, props: { ...e.props, tail: e.props.tail ? `${e.props.tail} · ${MODE}` : MODE } }) : next(e),
   )
 
   // The command's own rows: the palettes with a sample and a button, and the help's verbs.

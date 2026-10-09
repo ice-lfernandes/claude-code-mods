@@ -50,8 +50,43 @@ export const currentOf = (items: readonly Item[]) => {
   return busy >= 0 ? busy : items.findIndex(i => i.status === 'pending')
 }
 
+/** A new list that keeps the tool calls the old one counted, matched by subject, else by place. */
+const keepCalls = (old: readonly Item[], next: Item[]): Item[] =>
+  next.map((it, i) => {
+    const kept = old.find(o => o.subject === it.subject) ?? old[i]
+    return kept ? { ...it, calls: kept.calls } : it
+  })
+
+const CHECK = /^\s*(?:\d+[.)]|[-*+])\s+\[([ xX~>\-])\]\s+(.+?)\s*$/
+
+/**
+ * A checklist the agent wrote in its answer (`1. [ ] Ler a API`, `- [x] Montar o painel`), as a
+ * task list: `[x]` done, `[~]` `[>]` `[-]` in progress, `[ ]` pending. Null under two items.
+ */
+export const checklistOf = (text: string): Item[] | null => {
+  const items: Item[] = []
+  for (const line of text.split('\n')) {
+    const m = CHECK.exec(line)
+    if (!m) continue
+    const subject = m[2]!.replace(/[*_`]/g, '').trim()
+    if (!subject) continue
+    const mark = m[1]!.toLowerCase()
+    items.push({ subject, status: mark === 'x' ? 'completed' : mark === ' ' ? 'pending' : 'in_progress', calls: 0, fromText: true })
+  }
+  return items.length >= 2 ? items : null
+}
+
+/** The list after an answer of the agent: its last checklist, unless a task tool keeps the list. */
+export const applyAnswer = (items: Item[], answer: string): Item[] => {
+  if (items.some(i => !i.fromText)) return items
+  const list = checklistOf(answer.split(/\n\s*\n(?=\s*(?:\d+[.)]|[-*+])\s+\[)/).pop() ?? '')
+  return list ? keepCalls(items, list) : items
+}
+
 /** The task list after a task tool's call: TaskCreate adds (with the id its result gave), TaskUpdate changes, TodoWrite replaces. */
-export const applyTask = (items: Item[], tool: string, input: Input, result?: unknown): Item[] => {
+export const applyTask = (from: Item[], tool: string, input: Input, result?: unknown): Item[] => {
+  // A task tool takes over from a checklist read in the text.
+  const items = from.some(i => i.fromText) ? [] : from
   if (tool === 'TaskCreate') {
     const task = (result as { task?: { id?: unknown } } | undefined)?.task
     const subject = str(input.subject)
@@ -65,7 +100,7 @@ export const applyTask = (items: Item[], tool: string, input: Input, result?: un
   if (tool === 'TaskUpdate') {
     const id = str(input.taskId)
     const at = items.findIndex(i => i.id === id)
-    if (at < 0) return items
+    if (at < 0) return from
     if (input.status === 'deleted') return items.filter((_, i) => i !== at)
     const was = items[at]!
     const next: Item = { ...was }
@@ -86,7 +121,7 @@ export const applyTask = (items: Item[], tool: string, input: Input, result?: un
         return item
       })
   }
-  return items
+  return from
 }
 
 /** One more tool call for the task being worked on. */
@@ -95,13 +130,27 @@ export const countCall = (items: Item[]): Item[] => {
   return at < 0 ? items : items.map((it, i) => (i === at ? { ...it, calls: it.calls + 1 } : it))
 }
 
+/**
+ * What a call is doing, for the card: phraseOf's words, but a Bash call by its own description
+ * (the model's words, in its language), a skill by name, and any other tool as `usando X`.
+ */
+export const doingOf = (tool: string, input: Input, lang: Lang): string => {
+  const w = WORDS[lang]
+  if (tool === 'Bash' && str(input.description)) return clip(str(input.description), 50)
+  if (tool === 'Skill' && str(input.skill)) return w.usingSkill(clip(str(input.skill), 30))
+  if (KNOWN.includes(tool)) return phraseOf(tool, input, lang)
+  return w.using(clip(tool.startsWith('mcp__') ? (tool.split('__').pop() ?? tool) : tool, 30))
+}
+
+const KNOWN = ['Bash', 'Read', 'Write', 'Edit', 'MultiEdit', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'Agent']
+
 /** The turn after a tool call on the main loop: what it is doing, and the file it changed or read. */
 export const touch = (turn: Turn, tool: string, input: Input, lang: Lang, ok: boolean | null): Turn => {
   const file = str(input.file_path) || str(input.notebook_path)
   const next: Turn = { ...turn }
   if (ok === null) {
     next.calls = turn.calls + 1
-    next.doing = phraseOf(tool, input, lang)
+    next.doing = doingOf(tool, input, lang)
     return next
   }
   if (ok && file) {

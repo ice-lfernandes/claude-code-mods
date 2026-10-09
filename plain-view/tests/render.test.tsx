@@ -12,11 +12,11 @@ const show = (tree: unknown) => {
   return `${JSON.stringify(tree)}\n${texts.join('')}`
 }
 
-type World = { sets: { key: string; value: unknown }[]; logs: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
+type World = { answer: string; sets: { key: string; value: unknown }[]; logs: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
 
 /** The engine beneath the mod: options, turns and tools answered as a session would. */
 function engine(on: any, theme = 'dark'): World {
-  const world: World = { sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }) }
+  const world: World = { answer: '', sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }) }
   let id = 0
   on('env.get', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: undefined }) as never)
@@ -25,6 +25,10 @@ function engine(on: any, theme = 'dark'): World {
   on('config.set', ($: any, e: any) => (world.sets.push({ key: e.key, value: e.value }), { value: e.value }) as never)
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }) as never)
   on('turn.complete', () => ({ text: 'done' }) as never)
+  on('turn.step', async function* ($: any, e: any) {
+    return { turnId: e.turnId, index: e.index, answer: world.answer, toolUses: [], stopReason: 'end_turn' }
+  } as never)
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' }] }) as never)
   on('ui.toast', ($: any, e: any) => (world.toasts.push(e.text), { value: undefined }) as never)
   on('ui.log', ($: any, e: any) => (world.logs.push(e.text), { value: undefined }) as never)
   on('tool.call', ($: any, e: any) => {
@@ -35,7 +39,7 @@ function engine(on: any, theme = 'dark'): World {
   // What the engine draws for any component: a box this file can tell apart.
   on('ui.render', ($: any, e: any) => {
     const { Box, Text } = $.ui.resolve(e)
-    if (e.component === 'SessionMode') return Text({ children: `modes: ${e.props.modes.join(' & ')}` }) as never
+    if (e.component === 'PromptHint') return Text({ children: `hint: ${e.props.hint}${e.props.tail ? ` | tail: ${e.props.tail}` : ''}` }) as never
     return Box({ key: 'engine', children: Text({ children: 'engine row' }) }) as never
   })
   return world
@@ -197,6 +201,11 @@ test('tool falhou: the failed call counts in the turn and the card goes on', ON,
   const drawn = await card($)
   expect(drawn).toContain('Passo 2 de 4')
   expect(drawn).toContain('rodando npm test')
+  await call($, 'Bash', { command: 'python3 x.py', description: 'Extrair a série horária' })
+  await call($, 'Skill', { skill: 'artifact-design' })
+  expect(await card($)).toContain('usando a skill artifact-design')
+  await call($, 'Artifact', { file_path: 'x' })
+  expect(await card($)).toContain('usando Artifact')
 })
 
 test('desligado (padrão): nothing changes', async ($, on) => {
@@ -206,16 +215,60 @@ test('desligado (padrão): nothing changes', async ($, on) => {
   await call($, 'Read', { file_path: '/repo/a.ts' })
   expect(await card($)).not.toContain('a.ts')
   expect(await row($, 'ToolUse', toolUse('Read'))).toContain('engine row')
-  const mode = await row($, 'SessionMode', { modes: [] })
-  expect(mode).not.toContain('plain view')
+  expect(await row($, 'PromptHint', { isDraft: false, isWorking: false, hint: '? for shortcuts' })).not.toContain('plain view')
 })
 
-test('the footer names the mode while it is on', ON, async ($, on) => {
+test('the hint line names the mode while it is on, after any tail', ON, async ($, on) => {
   engine(on)
   await start($)
-  const ui = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'SessionMode', props: { modes: ['focus'] }, viewport: { columns: 120, rows: 40 } } as never)
-  expect(JSON.stringify(await ui.drawn())).toContain('modes: focus & plain view')
-  await ui.unmount()
+  expect(await row($, 'PromptHint', { isDraft: false, isWorking: true, hint: 'esc to interrupt' })).toContain('tail: plain view')
+  expect(await row($, 'PromptHint', { isDraft: false, isWorking: true, hint: 'x', tail: 'other' })).toContain('tail: other · plain view')
+})
+
+const step = async ($: any, w: World, answer: string) => {
+  w.answer = answer
+  const stream = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 3 } as never)
+  for await (const _ of stream) {
+    // drain
+  }
+}
+
+test('a checklist in the agent\'s answer becomes the plan when it keeps no task list', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await ask($)
+  await step($, w, 'Plano em 4 passos:\n\n1. [ ] Carregar diretrizes\n2. [ ] Definir fonte de dados\n3. [ ] Escrever HTML\n4. [ ] Validar e publicar')
+  let drawn = await card($)
+  expect(drawn).toContain('Passo 1 de 4')
+  expect(drawn).toContain('Carregar diretrizes')
+  await step($, w, 'Feito o primeiro.\n\n1. [x] Diretrizes carregadas\n2. [ ] Definir fonte de dados\n3. [ ] Escrever HTML\n4. [ ] Validar e publicar')
+  drawn = await card($)
+  expect(drawn).toContain('Passo 2 de 4')
+  expect(drawn).toContain('Diretrizes carregadas')
+  // A task tool takes over from the text, and the text no longer moves the list.
+  await call($, 'TaskCreate', { subject: 'Ler a API', description: '' })
+  await call($, 'TaskCreate', { subject: 'Montar o painel', description: '' })
+  await step($, w, '1. [x] Outra coisa\n2. [x] Mais outra')
+  drawn = await card($)
+  expect(drawn).toContain('Ler a API')
+  expect(drawn).not.toContain('Outra coisa')
+})
+
+test('askForTasks: one line in the system prompt while the mod is on', { options: { enabled: true, askForTasks: true } }, async ($, on) => {
+  engine(on)
+  await start($)
+  const result: any = await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Bash', 'TodoWrite'], outputStyle: null, traits: [] } as never)
+  expect(result.sections.map((x: any) => x.id)).toEqual(['intro', 'plain-view:tasks'])
+  expect(result.sections[1].text).toContain('TodoWrite or TaskCreate')
+  const none: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: ['Bash'], outputStyle: null, traits: [] } as never)
+  expect(none.sections.map((x: any) => x.id)).toEqual(['intro'])
+})
+
+test('askForTasks is off by default', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  const result: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: ['TodoWrite'], outputStyle: null, traits: [] } as never)
+  expect(result.sections.map((x: any) => x.id)).toEqual(['intro'])
 })
 
 test('/plain-view on and off write the option, and say so', async ($, on) => {
