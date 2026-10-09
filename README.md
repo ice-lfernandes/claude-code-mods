@@ -12,7 +12,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
 | [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish |
 | [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
-| [launchpad](launchpad/) | `/pad` | A menu of one-click actions under the header, below the prompt or in a pane: each button runs an installed command, skill or agent. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
+| [launchpad](launchpad/) | `/pad` | A menu of one-click actions under the header, above the prompt or in a pane: each button runs an installed command, skill or agent. `◆ pad` opens a control panel: model and effort in one click, this collection's mods, the shortcuts. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
 
 ## Using the mods
 
@@ -128,20 +128,24 @@ Or for one session, from a clone: `claude --plugin-dir ./test-hud`.
 ### launchpad
 
 The menu shows on its own when a session starts and after `/clear`, until the first prompt.
-Commands:
+`◆ pad`, at the end of the hint line under the prompt, opens the control panel: the session's
+model and effort as buttons (a press runs `/model` or `/effort`; `opus` and `max` turn yellow
+when the 5-hour window passes 70%), a button for each mod of this collection installed, and the
+shortcuts. Commands:
 
 ```
 /pad                                        show the menu again
-/pad configuration                          pane to order, remove and add buttons, up to 8
+/pad panel                                  open the control panel, as ◆ pad does
+/pad configuration                          pane to order, remove and add buttons, up to 8, and the mods to install
 /pad list                                   every button with what it runs
 /pad add 🔎 Revisão | /code-review          add a button for an installed command, skill or @agent
 /pad remove 3                               drop button 3
 /pad reset                                  back to the defaults
-/pad place header | prompt | pane           where the menu shows: under the header, below the prompt, or in a pane
+/pad place header | prompt | pane           where the menu shows: under the header, right above the prompt, or in a pane
 /pad off | on                               turn the menu off or back on
 ```
 
-![launchpad: the welcome menu under the header, and an agent request waiting in the prompt](screenshots/launchpad.svg)
+![launchpad: the welcome menu under the header, the row above the prompt, ◆ pad and the control panel](screenshots/launchpad.svg)
 
 #### Install
 
@@ -251,15 +255,17 @@ the prompt instead of running it.
 
 ### Shared bands
 
-Several mods can draw on the same line: `AbovePrompt` (limits-meter) and `PromptHint`
-(launchpad). Each `ui.render` hook there calls `next(e)` and stacks its own row with what came
-back, never in its place, so every mod's row shows:
+Several mods can draw on the same line: `AbovePrompt` (limits-meter, and launchpad under
+`/pad place prompt`) and `PromptHint` (launchpad's `◆ pad`). Each `ui.render` hook there calls
+`next(e)` and stacks its own row with what came back, never in its place, so every mod's row
+shows:
 
-- `AbovePrompt`: the mod's row first, the rows of the mods beneath it after.
-- `PromptHint`: the engine's hint first, the mod's row after.
+- `AbovePrompt`: the mod's row first, the rows of the mods beneath it after. The one exception
+  is launchpad, whose row goes last so it sits against the prompt box.
+- `PromptHint`: the engine's hint first, the mod's row or button after.
 - A mod with nothing to show, or switched off, returns `next(e)` as it is.
 
-The order between mods follows the order Claude Code loads them; a mod cannot set it.
+Otherwise the order between mods follows the order Claude Code loads them; a mod cannot set it.
 
 After a change to what a mod draws, regenerate the images:
 

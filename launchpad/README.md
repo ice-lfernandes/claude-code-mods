@@ -1,10 +1,11 @@
 # launchpad
 
-A menu of one-click actions under the Claude Code header, below the prompt or in a pane of its
-own, so nobody has to know a `/command` before they can get something done. Each button runs a command, a skill or an agent
-that this session has installed.
+A menu of one-click actions under the Claude Code header, right above the prompt or in a pane of
+its own, so nobody has to know a `/command` before they can get something done. Each button runs a
+command, a skill or an agent that this session has installed. `◆ pad` opens a control panel: the
+session's model and effort in one click, this collection's mods, and the shortcuts.
 
-![launchpad: the welcome menu under the header, and an agent request waiting in the prompt with its blank marked](../screenshots/launchpad.svg)
+![launchpad: the welcome menu, the row above the prompt, ◆ pad and the control panel](../screenshots/launchpad.svg)
 
 - **Shows when a session starts** with an empty conversation, and after `/clear`: a framed card
   under the header, each button an icon and an action in a bordered tile, in columns that fit the
@@ -30,11 +31,25 @@ that this session has installed.
   nothing.
 - **Where it shows is your choice** (`/pad place`, or the `placement` option):
   - `header`, the default: the card under the header described above.
-  - `prompt`: the buttons in a row below the prompt that stays there, under Claude Code's own
-    hint line (`? for shortcuts`), with `⋯ configure` to open the pane.
+  - `prompt`: the buttons in a row right above the prompt box that stays there, under the bands
+    of other mods (limits-meter's), with `⋯ configure` to open the pane.
   - `pane`: a pane of its own, a tab like those of `/limits` and `/watch`, with the card's
     bordered tiles. It opens when a session starts and after `/clear`, and on `/pad`. Claude
     Code opens a pane only with the keyboard on it: `Esc` closes it and gives the prompt back.
+- **`◆ pad`, the control panel.** A bordered button at the end of Claude Code's hint line under
+  the prompt, in every placement (gone while the launchpad is off). It opens a pane with:
+  - **Controls:** the models (`haiku · sonnet · opus`, or the plain names the `/config` model row
+    lists) and the effort levels (`low` to `max`) as buttons, the current ones marked `●`. A press
+    runs `/model sonnet` or `/effort low`, as typing would. The model comes from the session; the
+    effort from the last request, so before the first one none is marked. With the 5-hour window
+    at 70% or more, `opus` and `max` get a yellow border and a line says so; a press still
+    switches at once.
+  - **Mods:** a button for each mod of this collection installed (limits-meter, allowlist-coach,
+    agent-watch) that opens its pane. test-hud is left out: it is a tool for developers. A mod whose command takes `on` and `off` also
+    gets its switch, its state read from its `enabled` option.
+  - **Shortcuts:** the menu's tiles, less `Trocar modelo`, which the controls replace.
+  `/pad configuration` lists the mods missing, each with a button that puts its
+  `/plugin install` command in the prompt for you to send.
 - **Up to 8 buttons** that work here. The defaults: compact the chat, see context, see limits,
   resume a chat, edit memory, switch model, explore the code, help.
 
@@ -42,13 +57,14 @@ that this session has installed.
 
 ```
 /pad                                  show the menu again
-/pad configuration                    pane to order, remove and add buttons
+/pad panel                            open the control panel, as ◆ pad does
+/pad configuration                    pane to order, remove and add buttons, and the mods to install
 /pad list                             every button, numbered, with what it runs
 /pad add 🔎 Revisão | /code-review    a button that runs a command or skill
 /pad add Revisor | @revisor           a button that calls an agent
 /pad remove 3                         drop button 3
 /pad reset                            back to the default buttons
-/pad place header | prompt | pane     where the menu shows: under the header, below the prompt, or in a pane
+/pad place header | prompt | pane     where the menu shows: under the header, right above the prompt, or in a pane
 /pad off                              turn the menu off: no card at the start, after /clear or on /pad
 /pad on                               turn it back on
 ```
@@ -112,8 +128,8 @@ to `auto` yourself to get the new behaviour.
 
 ## Known limits
 
-- **Hover needs a terminal that reports mouse motion.** Over a tile, the border and label turn the
-  accent color and the tile tints. VS Code's terminal reports the pointer as it moves; a JetBrains
+- **Hover needs a terminal that reports mouse motion.** Over a tile or any bordered button, the
+  whole button fills with the accent color and its label turns dark. VS Code's terminal reports the pointer as it moves; a JetBrains
   IDE's terminal reports clicks but not motion, so there the tiles do not light up. Clicks work in
   both.
 - **The border rows of a tile do not take a click.** Only a button takes a press, and a terminal
@@ -130,6 +146,10 @@ to `auto` yourself to get the new behaviour.
 - **Argument hints come from the `/` menu.** The pane gives a command its argument as a blank
   from the hint Claude Code shows in the `/` menu. The mod learns the hints as that menu lists the
   commands, and forgets them when it reloads.
+- **`◆ pad` adds two rows under the prompt.** A bordered button is three rows tall, so the hint
+  line grows by two.
+- **The effort shows after the first request.** Claude Code tells a mod the effort only as each
+  request goes out.
 - **The menu is a row of the conversation.** It scrolls away with the conversation, and `/pad`
   draws a new one. Claude reads `/pad`'s one-line output (`Menu de atalhos do launchpad.`), not
   the buttons.
@@ -148,6 +168,8 @@ Or for one session: `claude --plugin-dir ./launchpad`
 | --- | --- | --- | --- | --- | --- |
 | launchpad | No | No | Reads `.claude/launchpad.json`, and the agent files in `.claude/agents/` of the session's folder and of `$HOME` | No | No |
 
-A pressed button does what typing would do: it runs a slash command or fills the prompt box.
+The panel also reads the `/config` rows (the model row's options, a mod's `enabled`), the
+session's model and its rate-limit windows. A pressed button does what typing would do: it runs a
+slash command (`/model`, `/effort`, a mod's command) or fills the prompt box.
 Those go through Claude Code and every other mod's hooks as usual, so permission dialogs and other
 guards still apply. The mod keeps your list of buttons in its plugin store, on this machine.

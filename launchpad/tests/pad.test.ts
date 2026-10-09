@@ -1,7 +1,18 @@
 import { expect, test } from 'claude-code/testing'
 
-import type { Target } from '../types'
+import type { ModInfo, Target } from '../types'
 import {
+  activeModel,
+  effortOf,
+  fiveHourOf,
+  installText,
+  isWarned,
+  modelsOf,
+  modLabel,
+  MODS,
+  modsOf,
+  panelShortcuts,
+  toggleOf,
   agentName,
   agentOf,
   agentTask,
@@ -253,4 +264,73 @@ test('a hint of optional arguments only: no blanks, and a saved button runs bare
 
 test('placement: the three places, header otherwise', async () => {
   expect(['header', 'prompt', 'pane', 'tab', undefined].map(placementOf)).toEqual(['header', 'prompt', 'pane', 'header', 'header'])
+})
+
+// The control panel (prototype notes/prototypes/launchpad-0.5.0.html, approved 2026-10-09).
+
+const fromPlugin = (name: string, plugin?: string): Target => ({ kind: 'command', name, description: '', source: 'plugin', ...(plugin ? { plugin } : {}) })
+
+test('mods: found by command and plugin; a command without a plugin name counts, another plugin\'s does not', async () => {
+  const { installed, missing } = modsOf([fromPlugin('limits', 'limits-meter'), fromPlugin('watch'), fromPlugin('allowlist', 'someone-else')])
+  expect(installed.map(m => m.plugin)).toEqual(['limits-meter', 'agent-watch'])
+  expect(missing.map(m => m.plugin)).toEqual(['allowlist-coach'])
+  expect(modsOf([]).installed).toEqual([])
+  expect(MODS.map(m => m.plugin)).not.toContain('launchpad')
+  expect(MODS.map(m => m.plugin)).not.toContain('test-hud') // for developers; leaves the collection after plan v2
+  expect(modsOf([fromPlugin('test-hud', 'test-hud')]).installed).toEqual([])
+})
+
+test('mods: the install command for the prompt', async () => {
+  expect(installText('agent-watch')).toBe('/plugin install agent-watch --marketplace ice-lfernandes/claude-code-mods')
+})
+
+test('mods: a label in each language and icon style', async () => {
+  expect(modLabel(MODS[0]!, 'pt-BR', 'emoji')).toBe('⏱️ limites')
+  expect(modLabel(MODS[2]!, 'en', 'symbol')).toBe('◈ agents')
+})
+
+const CLEAN: ModInfo = { plugin: 'clean-view', command: 'clean', icon: 'spark', label: { 'pt-BR': 'clean-view', en: 'clean-view' }, toggles: true }
+
+test('on and off: the state of a mod that toggles, from its enabled row', async () => {
+  expect(toggleOf(CLEAN, [{ key: 'clean-view.enabled', value: true }])).toBe(true)
+  expect(toggleOf(CLEAN, [{ key: 'clean-view.enabled', value: false }])).toBe(false)
+  expect(toggleOf(CLEAN, [])).toBeNull()
+  expect(toggleOf(MODS[0]!, [{ key: 'limits-meter.enabled', value: true }])).toBeNull() // does not toggle
+})
+
+test('model chips: the plain aliases of the /config row, else haiku, sonnet, opus', async () => {
+  expect(modelsOf(undefined)).toEqual(['haiku', 'sonnet', 'opus'])
+  expect(modelsOf([])).toEqual(['haiku', 'sonnet', 'opus'])
+  expect(modelsOf(['default', 'Sonnet', 'opus', 'sonnet[1m]', 'opus', 'fable'])).toEqual(['sonnet', 'opus', 'fable'])
+  expect(modelsOf(['a', 'b', 'c', 'd', 'e', 'f'])).toHaveLength(5)
+})
+
+test('active chip: the one the model id holds', async () => {
+  expect(activeModel('claude-opus-5-5', ['haiku', 'sonnet', 'opus'])).toBe('opus')
+  expect(activeModel('sonnet', ['haiku', 'sonnet', 'opus'])).toBe('sonnet')
+  expect(activeModel('some-other-model', ['haiku', 'sonnet', 'opus'])).toBeNull()
+  expect(activeModel('', ['haiku'])).toBeNull()
+})
+
+test('effort: a level, else none', async () => {
+  expect(effortOf('high')).toBe('high')
+  expect(effortOf('xhigh')).toBe('xhigh')
+  expect(effortOf(8000)).toBeNull()
+  expect(effortOf(undefined)).toBeNull()
+  expect(effortOf('extreme')).toBeNull()
+})
+
+test('5-hour warning: opus and max from 70%', async () => {
+  expect(fiveHourOf([{ kind: 'seven_day', percentUsed: 90 }, { kind: 'five_hour', percentUsed: 74 }])).toBe(74)
+  expect(fiveHourOf([])).toBeNull()
+  expect(isWarned('opus', 74)).toBe(true)
+  expect(isWarned('max', 70)).toBe(true)
+  expect(isWarned('opus', 69.9)).toBe(false)
+  expect(isWarned('sonnet', 99)).toBe(false)
+  expect(isWarned('opus', null)).toBe(false)
+})
+
+test('panel shortcuts: the menu less /model', async () => {
+  const list = defaults('pt-BR')
+  expect(panelShortcuts(list).map(p => p.id)).toEqual(['compact', 'context', 'limits', 'resume', 'memory', 'explore', 'help'])
 })

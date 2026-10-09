@@ -12,7 +12,7 @@ Requer Claude Code 2.1.287 ou mais recente.
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Conta os diálogos de permissão por regra; depois de 5 aprovações sem nenhuma recusa, oferece adicionar a regra a `permissions.allow`, perguntando antes de gravar |
 | [agent-watch](agent-watch/) | `/watch` | Subagentes num relance: tokens por agente, um toast quando um trava e um resumo com o agente mais pesado quando terminam |
 | [test-hud](test-hud/) | `/test-hud` | Execuções de teste num relance: aprovados sobre o total na status line, um sparkline das falhas entre execuções, os testes que falham e um toast quando a suíte fica verde |
-| [launchpad](launchpad/) | `/pad` | Um menu de ações de um clique sob o cabeçalho, abaixo do prompt ou num painel: cada botão roda um comando, skill ou agente instalado. Escolha e ordene até 8 em `/pad configuration`, ou distribua os de um time no repositório |
+| [launchpad](launchpad/) | `/pad` | Um menu de ações de um clique sob o cabeçalho, acima do prompt ou num painel: cada botão roda um comando, skill ou agente instalado. `◆ pad` abre um painel de controle: modelo e esforço em um clique, os mods desta coleção, os atalhos. Escolha e ordene até 8 em `/pad configuration`, ou distribua os de um time no repositório |
 
 ## Usando os mods
 
@@ -129,20 +129,24 @@ Ou para uma sessão, a partir de um clone: `claude --plugin-dir ./test-hud`.
 ### launchpad
 
 O menu aparece sozinho quando uma sessão começa e depois de `/clear`, até o primeiro prompt.
-Comandos:
+`◆ pad`, no fim da linha de dica abaixo do prompt, abre o painel de controle: o modelo e o
+esforço da sessão como botões (um clique roda `/model` ou `/effort`; `opus` e `max` ficam
+amarelos quando a janela de 5h passa de 70%), um botão para cada mod desta coleção instalado e
+os atalhos. Comandos:
 
 ```
 /pad                                        mostra o menu de novo
-/pad configuration                          painel para ordenar, remover e adicionar botões, até 8
+/pad panel                                  abre o painel de controle, como o ◆ pad
+/pad configuration                          painel para ordenar, remover e adicionar botões, até 8, e os mods para instalar
 /pad list                                   cada botão com o que ele roda
 /pad add 🔎 Revisão | /code-review          adiciona um botão para um comando, skill ou @agente instalado
 /pad remove 3                               remove o botão 3
 /pad reset                                  volta aos botões padrão
-/pad place header | prompt | pane           onde o menu aparece: sob o cabeçalho, abaixo do prompt ou num painel
+/pad place header | prompt | pane           onde o menu aparece: sob o cabeçalho, logo acima do prompt ou num painel
 /pad off | on                               desliga o menu ou liga de novo
 ```
 
-![launchpad: o menu de boas-vindas sob o cabeçalho e um pedido a um agente esperando no prompt](screenshots/launchpad.svg)
+![launchpad: o menu de boas-vindas sob o cabeçalho, a linha acima do prompt, o ◆ pad e o painel de controle](screenshots/launchpad.svg)
 
 #### Instalação
 
@@ -255,15 +259,18 @@ vez de rodá-lo.
 
 ### Faixas compartilhadas
 
-Vários mods podem desenhar na mesma linha: `AbovePrompt` (limits-meter) e `PromptHint`
-(launchpad). Cada hook `ui.render` ali chama `next(e)` e empilha a própria linha com o que voltou,
-nunca no lugar dele, para que a linha de cada mod apareça:
+Vários mods podem desenhar na mesma linha: `AbovePrompt` (limits-meter, e o launchpad com
+`/pad place prompt`) e `PromptHint` (o `◆ pad` do launchpad). Cada hook `ui.render` ali chama
+`next(e)` e empilha a própria linha com o que voltou, nunca no lugar dele, para que a linha de
+cada mod apareça:
 
-- `AbovePrompt`: a linha do mod primeiro, depois as linhas dos mods abaixo dele.
-- `PromptHint`: a dica do engine primeiro, depois a linha do mod.
+- `AbovePrompt`: a linha do mod primeiro, depois as linhas dos mods abaixo dele. A exceção é o
+  launchpad, cuja linha vai por último para ficar colada na caixa do prompt.
+- `PromptHint`: a dica do engine primeiro, depois a linha ou o botão do mod.
 - Um mod sem nada para mostrar, ou desligado, devolve `next(e)` como veio.
 
-A ordem entre os mods segue a ordem em que o Claude Code os carrega; um mod não consegue defini-la.
+Fora isso, a ordem entre os mods segue a ordem em que o Claude Code os carrega; um mod não
+consegue defini-la.
 
 Depois de uma mudança no que um mod desenha, gere as imagens de novo:
 
