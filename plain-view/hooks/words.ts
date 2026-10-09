@@ -1,6 +1,7 @@
 // What plain-view says, in Portuguese and English. The language comes from the `language`
 // option, else the system's LANG (ui.tsx's langOf).
 
+import type { SettingKey } from './settings'
 import type { Lang } from './ui'
 
 export const COMMAND = 'plain-view'
@@ -72,6 +73,33 @@ type Words = {
   failed: string
   inUse: string
   help: string
+  /** The settings pane, /plain-view or /plain-view config. */
+  pane: PaneWords
+}
+
+type PaneWords = {
+  /** The pane's tab label. */
+  title: string
+  heading: string
+  hint: string
+  tabs: [string, string, string]
+  labels: Record<SettingKey, string>
+  yes: string
+  no: string
+  /** What each value does, by option and value (`true` / `false` for the yes-or-no ones). */
+  values: Record<Exclude<SettingKey, 'palette'>, Record<string, string>>
+  preview: string
+  saved: (label: string, value: string) => string
+  denied: (why: string) => string
+  locked: string
+  lockedWhy: string
+  defaults: string
+  close: string
+  ask: string
+  askYes: string
+  askNo: string
+  reset: string
+  resetNone: string
 }
 
 // The model reads English best; the same line in both languages.
@@ -136,16 +164,51 @@ export const WORDS: Record<Lang, Words> = {
     inUse: 'em uso',
     help: [
       '**plain-view** · transcript sem ruído',
+      '- `/plain-view` ou `config` abre o painel de configuração',
       '- `on` esconde as linhas de tool; o plano aparece num cartão acima do prompt',
       '- `off` volta o transcript de sempre',
       '- `demo` mostra o cartão com um plano de exemplo',
       '- `palette` mostra as 8 paletas e troca a cor das barras',
       '- `help` esta ajuda',
       'Falha de tool, permissão e perguntas sempre aparecem inteiras.',
-      'Opções em /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
+      'Opções no painel ou em /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
       'agentText: final esconde o que o agente escreve antes de chamar tools e deixa a resposta final (padrão); none, nada; card, a resposta no cartão; all, tudo.',
       'Paleta padrão: claude. /plain-view palette mostra as 8.',
     ].join('\n'),
+    pane: {
+      title: 'plain-view',
+      heading: '✻ plain-view · configuração',
+      hint: 'Vale para todas as sessões. Fica salvo em /config → plain-view.',
+      tabs: ['Transcript', 'Cartão', 'Geral'],
+      labels: { enabled: 'Ligado', agentText: 'Fala do agente', askForTasks: 'Pedir lista de tarefas', palette: 'Cores das barras', animation: 'Animação', language: 'Idioma', icons: 'Ícones' },
+      yes: 'sim',
+      no: 'não',
+      values: {
+        enabled: { true: 'Esconde as linhas de tools; o plano fica no cartão acima do prompt.', false: 'Transcript de sempre. As outras opções valem quando ligar.' },
+        agentText: {
+          final: 'Esconde o que o agente escreve antes de chamar tools. A resposta final fica. (padrão)',
+          none: 'Esconde toda a fala do agente. Fica só o cartão.',
+          card: 'Esconde a fala. A primeira frase da resposta vai para o cartão.',
+          all: 'Mostra toda a fala do agente.',
+        },
+        askForTasks: { true: 'Uma linha no system prompt pede uma lista de tarefas. Custa poucos tokens por pedido.', false: 'O cartão lê só a lista que o modelo fizer por conta própria.' },
+        animation: { true: 'Um brilho corre nas barras enquanto o agente trabalha.', false: 'Barras paradas, nas cores do tema.' },
+        language: { auto: 'Segue o LANG do sistema.', 'pt-BR': 'Português do Brasil.', en: 'Inglês.' },
+        icons: { auto: 'symbol no terminal do JetBrains, emoji nos outros.', emoji: 'Passos como ✅ 🟠 ⚪.', symbol: 'Passos como ✓ ● ○, para terminais que desenham emoji torto.' },
+      },
+      preview: 'Prévia',
+      saved: (label, value) => `✓ Salvo · ${label}: ${value}`,
+      denied: why => `Não salvou: ${why}`,
+      locked: '🔒 definido pela organização',
+      lockedWhy: 'Vem das configurações gerenciadas. Não muda aqui nem no /config.',
+      defaults: 'padrões',
+      close: 'fechar',
+      ask: 'Voltar as opções do plain-view ao padrão?',
+      askYes: 'voltar',
+      askNo: 'agora não',
+      reset: '✓ Opções no padrão',
+      resetNone: 'As opções já estão no padrão.',
+    },
   },
   en: {
     description: 'A quiet transcript: the agent’s plan in a card above the prompt',
@@ -200,15 +263,50 @@ export const WORDS: Record<Lang, Words> = {
     inUse: 'in use',
     help: [
       '**plain-view** · a quiet transcript',
+      '- `/plain-view` or `config` opens the settings pane',
       '- `on` hides tool rows; the plan shows in a card above the prompt',
       '- `off` back to the usual transcript',
       '- `demo` shows the card with a sample plan',
       '- `palette` shows the 8 palettes and changes the bar colors',
       '- `help` this help',
       'Tool failures, permissions and questions always show in full.',
-      'Options in /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
+      'Options in the pane or in /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
       'agentText: final hides what the agent writes before calling tools and keeps the final answer (default); none, nothing; card, the answer in the card; all, everything.',
       'Default palette: claude. /plain-view palette shows all 8.',
     ].join('\n'),
+    pane: {
+      title: 'plain-view',
+      heading: '✻ plain-view · settings',
+      hint: 'Applies to every session. Saved in /config → plain-view.',
+      tabs: ['Transcript', 'Card', 'General'],
+      labels: { enabled: 'On', agentText: "The agent's words", askForTasks: 'Ask for a task list', palette: 'Bar colors', animation: 'Animation', language: 'Language', icons: 'Icons' },
+      yes: 'yes',
+      no: 'no',
+      values: {
+        enabled: { true: 'Hides tool rows; the plan shows in a card above the prompt.', false: 'The usual transcript. The other options apply once it is on.' },
+        agentText: {
+          final: 'Hides what the agent writes before calling tools. The final answer stays. (default)',
+          none: "Hides all the agent's words. Only the card stays.",
+          card: "Hides the words. The answer's first sentence goes to the card.",
+          all: "Shows all the agent's words.",
+        },
+        askForTasks: { true: 'One line in the system prompt asks for a task list. Costs a few tokens per request.', false: 'The card reads only the list the model keeps on its own.' },
+        animation: { true: 'A shine runs along the bars while the agent works.', false: "Still bars, in the theme's colors." },
+        language: { auto: "Follows the system's LANG.", 'pt-BR': 'Brazilian Portuguese.', en: 'English.' },
+        icons: { auto: 'symbol in a JetBrains terminal, emoji elsewhere.', emoji: 'Steps as ✅ 🟠 ⚪.', symbol: 'Steps as ✓ ● ○, for terminals that draw emoji at odd widths.' },
+      },
+      preview: 'Preview',
+      saved: (label, value) => `✓ Saved · ${label}: ${value}`,
+      denied: why => `Not saved: ${why}`,
+      locked: '🔒 set by your organization',
+      lockedWhy: 'Comes from managed settings. It does not change here or in /config.',
+      defaults: 'defaults',
+      close: 'close',
+      ask: "Put plain-view's options back to their defaults?",
+      askYes: 'reset',
+      askNo: 'not now',
+      reset: '✓ Options back to defaults',
+      resetNone: 'The options are already at their defaults.',
+    },
   },
 }

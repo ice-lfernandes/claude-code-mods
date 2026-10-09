@@ -183,6 +183,7 @@ Two options shape what you see, both in `/config`:
   Off, the card reads the list the agent keeps on its own, or a checklist in its answer.
 
 ```
+/plain-view                   the settings pane: every option in three tabs, one click each
 /plain-view on | off          show or hide the card and the tool rows
 /plain-view demo              a sample plan in the card for 12 seconds
 /plain-view palette           the 8 bar palettes with a sample, and a button to switch
@@ -233,7 +234,7 @@ it makes.
 | agent-watch | No | No | No | No | No |
 | test-hud | No | No | Reads Bash's saved copy of an output too long to show whole | No | No |
 | launchpad | No | No | Reads `.claude/launchpad.json` and the agent files in `.claude/agents/`, in the project and in your home folder | No | No |
-| plain-view | No | No | No (writes its own options through `/config` when you run `on`, `off` or `palette`) | No | No |
+| plain-view | No | No | No (writes its own options through `/config` when you run `on`, `off` or `palette`, or press one in its settings pane) | No | No |
 
 ## Developing
 

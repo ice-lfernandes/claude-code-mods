@@ -22,7 +22,12 @@
 //          puts the answer's first sentence in the end card; all keeps every word.
 //   bars   a gradient of the `palette` option's colors, and a shine that runs while the agent
 //          works (`animation`); see palettes.ts and the design guide's "Exception: gradients".
-//   /plain-view on | off | demo | palette [name] | help
+//   pane   /plain-view alone, or /plain-view config: a pane (a tab like /limits and /watch) with
+//          the seven options in three tabs, Transcript, Card and General. Each value is a button
+//          that saves it as /config would ($.config.set); the engine reloads the mod with it, and
+//          the pane opens again if the reload closed it. A locked option (managed settings) shows
+//          its value and why it does not change; `defaults` asks first, then resets them all.
+//   /plain-view config | on | off | demo | palette [name] | help
 //
 // The task list comes from the agent's TaskCreate, TaskUpdate and TodoWrite calls, the agents from
 // agent.spawn, their turn.complete and $.agent.list(). Reads nothing from disk, runs no process,
@@ -32,7 +37,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Agent, AgentText, Item, Turn } from '../types'
+import type { Agent, AgentText, Flash, Item, Turn } from '../types'
 import { drawCard, rasterCells, barCells } from './card'
 import { PALETTES, paletteOf, stopsOf } from './palettes'
 import type { Palette } from './palettes'
@@ -58,6 +63,8 @@ import {
   TASK_TOOLS,
   touch,
 } from './plan'
+import type { Setting, SettingKey, SettingValue } from './settings'
+import { awayFromDefaults, SETTINGS, settingsOf, tabOf, TABS } from './settings'
 import type { IconStyle, Lang, Verb } from './ui'
 import { langOf, linesOf, styleOf, verbRow } from './ui'
 import { COMMAND, MODE, WATCH, WORDS } from './words'
@@ -67,6 +74,15 @@ const items = atom({ plugin: 'plain-view', key: 'items' } as const, [] as Item[]
 const tick = atom({ plugin: 'plain-view', key: 'tick' } as const, 0)
 const mids = atom({ plugin: 'plain-view', key: 'mids' } as const, [] as string[])
 const agents = atom({ plugin: 'plain-view', key: 'agents' } as const, [] as Agent[])
+const tab = atom({ plugin: 'plain-view', key: 'tab' } as const, 0)
+const flash = atom({ plugin: 'plain-view', key: 'flash' } as const, null as Flash | null)
+const reopenAt = atom({ plugin: 'plain-view', key: 'reopenAt' } as const, 0)
+const resetting = atom({ plugin: 'plain-view', key: 'resetting' } as const, false)
+
+/** The settings pane. */
+const PANE = 'plain-view-settings'
+/** How soon after a change from the pane a reload opens the pane again. */
+const REOPEN_MS = 10_000
 
 /** How often the shine moves while the agent works. */
 const TICK_MS = 100
@@ -88,6 +104,8 @@ let demoTimer: Timer | null = null
 // When the ticker last asked $.agent.list(), and whether agent-watch's /watch is there to offer.
 let listedAt = 0
 let hasWatch = false
+// The options this load got: what the pane shows for a row /config does not list.
+let loaded: Readonly<Record<string, unknown>> = {}
 
 const quietly = (p: Promise<unknown>) => void p.catch(() => undefined)
 
@@ -139,6 +157,66 @@ const setOption = async ($: EngineInterface, key: string, value: unknown): Promi
   return result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
 }
 
+/** The seven options as /config holds them now. */
+const settingsNow = async ($: EngineInterface) => settingsOf(await $.config.list().catch(() => []), loaded)
+
+const openPane = ($: EngineInterface) =>
+  $.ui.open({ id: PANE, title: WORDS[lang].pane.title, focus: true, closeOnEscape: true }).catch(() => null)
+
+/**
+ * A value pressed in the pane. The reload a change causes may cut this hook short, so the
+ * `Salvo` line and the time to open the pane again are written first; a refusal, which reloads
+ * nothing, replaces the line.
+ */
+const choose = async ($: EngineInterface, key: SettingKey, value: SettingValue) => {
+  await update($, flash, (): Flash => ({ kind: 'saved', key, value }))
+  const now = await $.clock.now()
+  await update($, reopenAt, () => now)
+  const deny = await setOption($, key, value).catch((err: unknown) => String(err instanceof Error ? err.message : err))
+  if (deny) {
+    await update($, reopenAt, () => 0)
+    await update($, flash, (): Flash => ({ kind: 'denied', why: deny }))
+  }
+}
+
+/**
+ * Puts every option that is not locked back to its default, one $.config.set each. Each change
+ * reloads the mod; `resetting` lets the next load's session.start go on with what is left.
+ */
+const resetOptions = async ($: EngineInterface) => {
+  const wasResetting = await read($, resetting)
+  const left = awayFromDefaults(await settingsNow($))
+  if (left.length === 0) {
+    await update($, resetting, () => false)
+    await update($, flash, (): Flash => ({ kind: wasResetting ? 'reset' : 'resetNone' }))
+    return
+  }
+  await update($, resetting, () => true)
+  await update($, flash, (): Flash => ({ kind: 'reset' }))
+  for (const key of left) {
+    const now = await $.clock.now()
+    await update($, reopenAt, () => now)
+    const deny = await setOption($, key, SETTINGS[key].initial).catch((err: unknown) => String(err instanceof Error ? err.message : err))
+    if (deny) {
+      await update($, resetting, () => false)
+      await update($, flash, (): Flash => ({ kind: 'denied', why: deny }))
+      return
+    }
+  }
+  await update($, resetting, () => false)
+}
+
+/** `defaults`: asks first, since it may change all seven at once. */
+const askReset = async ($: EngineInterface) => {
+  const p = WORDS[lang].pane
+  if (awayFromDefaults(await settingsNow($)).length === 0) {
+    await update($, flash, (): Flash => ({ kind: 'resetNone' }))
+    return
+  }
+  const answer = await $.ui.ask(p.ask, { options: [p.askYes, p.askNo], header: 'plain-view' }).catch(() => null)
+  if (answer === p.askYes) await resetOptions($)
+}
+
 const runDemo = async ($: EngineInterface): Promise<string> => {
   const w = WORDS[lang]
   const now = await $.clock.now()
@@ -181,6 +259,14 @@ const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: st
     }
     case 'demo':
       return { text: await runDemo($) }
+    case '':
+    case 'config':
+    case 'configuration':
+    case 'settings': {
+      await update($, flash, () => null)
+      const opened = await openPane($)
+      return opened?.isPlaced ? {} : { text: w.help }
+    }
     case 'palette': {
       if (!name) return { text: paletteText() }
       const p = PALETTES.find(x => x.id === name)
@@ -193,7 +279,9 @@ const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: st
   }
 }
 
-const VERBS: readonly Verb[] = [{ verb: 'on' }, { verb: 'off' }, { verb: 'demo' }, { verb: 'palette' }]
+const VERBS: readonly Verb[] = [{ verb: 'config' }, { verb: 'on' }, { verb: 'off' }, { verb: 'demo' }, { verb: 'palette' }]
+/** The pane's own footer: the verbs that do something the tabs do not. */
+const PANE_VERBS: readonly Verb[] = [{ verb: 'on' }, { verb: 'off' }, { verb: 'demo' }, { verb: 'help' }]
 
 const pressVerb = async ($: EngineInterface, v: Verb) => {
   const { text } = await runCommand($, v.verb)
@@ -211,6 +299,7 @@ export const register: Register = (on, options) => {
   animate = options.animation !== false
   askForTasks = options.askForTasks !== false
   agentText = agentTextOf(options.agentText)
+  loaded = options
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -219,7 +308,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[on|off|demo|palette [name]|help]',
+      argumentHint: '[config|on|off|demo|palette [name]|help]',
       immediate: true,
     })
     const rows = await $.config.list().catch(() => [])
@@ -239,6 +328,14 @@ export const register: Register = (on, options) => {
       if (listed) await update($, agents, list => reconcileAgents(list, listed, now))
       if (isOn && runningOf(await read($, agents)).length > 0) startTicking($, true)
     }
+    // A reload a change from the pane caused: open the pane again (a no-op when it stayed open),
+    // and go on with a reset that the reload cut short.
+    const pressedAt = await read($, reopenAt)
+    if (pressedAt > 0) {
+      await update($, reopenAt, () => 0)
+      if ((await $.clock.now()) - pressedAt < REOPEN_MS) quietly(openPane($))
+    }
+    if (await read($, resetting)) quietly(resetOptions($))
     return result
   })
 
@@ -441,7 +538,7 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    if (verb === 'help' || verb === '') {
+    if (verb === 'help' || (verb === '' && e.props.text)) {
       const theirs = await next(e)
       return (
         <Box flexDirection="column">
@@ -451,5 +548,109 @@ export const register: Register = (on, options) => {
       )
     }
     return next(e)
+  })
+
+  // The settings pane: three tabs, a button per value, what each does, and a preview of the card.
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const all = $.ui.resolve(e)
+    const { Box, Text, Button } = all
+    const Raster = e.surface === 'terminal' ? (all as Elements['terminal']).Raster : undefined
+    const w = WORDS[lang]
+    const p = w.pane
+    const s = await settingsNow($)
+    const shown = tabOf(await read($, tab))
+    const said = await read($, flash)
+    const columns = Math.max(30, (e.props.bodyColumns || e.viewport?.columns || 80) - 2)
+    const isDark = !/light/i.test(String(theme ?? ''))
+    const nameOf = (v: SettingValue) => (v === true ? p.yes : v === false ? p.no : String(v))
+    const whatOf = (key: SettingKey, v: SettingValue) =>
+      key === 'palette' ? (PALETTES.find(x => x.id === v)?.hint[lang] ?? '') : (p.values[key][String(v)] ?? '')
+
+    const option = (key: SettingKey, cur: Setting) => (
+      <Box key={`opt:${key}`} flexDirection="column">
+        <Text bold>{p.labels[key]}</Text>
+        {SETTINGS[key].values.map(v => {
+          const isCur = v === cur.value
+          const label = `${isCur ? '●' : '○'} ${nameOf(v)}`
+          const pal = key === 'palette' ? PALETTES.find(x => x.id === v) : undefined
+          return (
+            <Box key={`val:${key}:${String(v)}`} flexDirection="row">
+              <Box width={12}>
+                {isCur || cur.isLocked ? (
+                  <Text bold={isCur} color={cur.isLocked ? 'inactive' : 'claude'}>{label}</Text>
+                ) : (
+                  <Button key={`set:${key}:${String(v)}`} plain label={label} onPress={() => quietly(choose($, key, v))} />
+                )}
+              </Box>
+              {pal && Raster ? <Raster key={`swatch:${pal.id}`} columns={6} rows={1} cells={rasterCells(barCells(6, 1, 'work', isDark ? pal.dark : pal.light, null))} /> : null}
+              {pal && Raster ? <Text> </Text> : null}
+              <Text dimColor={!cur.isLocked} color={cur.isLocked ? 'inactive' : undefined}>{whatOf(key, v)}</Text>
+            </Box>
+          )
+        })}
+        {cur.isLocked && <Text color="inactive">{p.locked}</Text>}
+        {cur.isLocked && <Text dimColor>{p.lockedWhy}</Text>}
+      </Box>
+    )
+
+    // The card tab's preview: the demo's second step, in the palette and animation the pane shows.
+    const now = await $.clock.now()
+    const preview = () => {
+      const demo = demoOf(1, now - 12_000, lang)
+      const sample = cardOf(demo.turn, demo.items, now, lang)
+      if (!sample) return null
+      const stops = s.animation.value === true ? stopsOf(paletteOf(s.palette.value), theme) : null
+      return (
+        <Box key="preview" flexDirection="column">
+          <Text bold>{p.preview}</Text>
+          {drawCard({ Box, Text, Raster }, sample, { stops, tick: null, columns, icons: style })}
+        </Box>
+      )
+    }
+
+    const line =
+      said === null ? null : said.kind === 'saved' ? (
+        <Text color="success">{p.saved(p.labels[said.key as SettingKey] ?? said.key, nameOf(said.value))}</Text>
+      ) : said.kind === 'denied' ? (
+        <Text color="warning">{p.denied(said.why)}</Text>
+      ) : said.kind === 'reset' ? (
+        <Text color="success">{p.reset}</Text>
+      ) : (
+        <Text dimColor>{p.resetNone}</Text>
+      )
+
+    return (
+      <Box flexDirection="column" paddingX={1} gap={1}>
+        <Box flexDirection="column">
+          <Text color="claude" bold>{p.heading}</Text>
+          <Text dimColor>{p.hint}</Text>
+          {line}
+        </Box>
+
+        <Box flexDirection="row" flexWrap="wrap">
+          {p.tabs.map((name, i) => (
+            <Box key={`tabs:${i}`} flexDirection="row">
+              {i > 0 && <Text dimColor> · </Text>}
+              {i === shown ? (
+                <Text color="claude" bold>{`▸ ${name}`}</Text>
+              ) : (
+                <Button key={`tab:${i}`} plain label={name} onPress={() => quietly(update($, tab, () => i).then(() => update($, flash, () => null)))} />
+              )}
+            </Box>
+          ))}
+        </Box>
+
+        {TABS[shown]!.map(key => option(key, s[key]))}
+        {shown === 1 && preview()}
+
+        <Box flexDirection="column" alignItems="flex-start">
+          {verbRow({ Box, Text, Button }, COMMAND, PANE_VERBS, v => quietly(pressVerb($, v)))}
+          <Box flexDirection="row" gap={1}>
+            <Button key="reset" label={p.defaults} onPress={() => quietly(askReset($))} />
+            <Button key="close" role="dismiss" label={p.close} onPress={() => quietly($.ui.close({ id: PANE }))} />
+          </Box>
+        </Box>
+      </Box>
+    )
   })
 }

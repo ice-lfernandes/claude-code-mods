@@ -261,4 +261,6 @@ open(f'{out}/plain-view.svg', 'w').write(svg([
     ('when the turn ends', 'raw', done),
     ('no task list, the turn over, a background agent still running', 'raw', waiting),
     ('/plain-view palette', 'raw', trim(tree(d['TREE'][0]))),
+    ('/plain-view: the settings pane, Transcript tab', 'pane:plain-view', wrapped(d['PANE'][0], cw - 4)),
+    ('the Card tab: palettes with a sample, and a preview', 'pane:plain-view', wrapped(d['PANE'][1], cw - 4)),
 ], 60, 'plain-view'))

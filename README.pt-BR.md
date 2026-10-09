@@ -185,6 +185,7 @@ Duas opções mudam o que você vê, as duas em `/config`:
   checklist na resposta.
 
 ```
+/plain-view                   o painel de configuração: as opções em três abas, um clique cada
 /plain-view on | off          mostra ou esconde o cartão e as linhas de tool
 /plain-view demo              um plano de exemplo no cartão por 12 segundos
 /plain-view palette           as 8 paletas das barras com amostra, e um botão para trocar
@@ -236,7 +237,7 @@ se conecta e cada chamada que faz.
 | agent-watch | Não | Não | Não | Não | Não |
 | test-hud | Não | Não | Lê a cópia salva pelo Bash de uma saída longa demais para mostrar inteira | Não | Não |
 | launchpad | Não | Não | Lê `.claude/launchpad.json` e os arquivos de agente em `.claude/agents/`, no projeto e na sua pasta home | Não | Não |
-| plain-view | Não | Não | Não (grava as próprias opções pelo `/config` quando você roda `on`, `off` ou `palette`) | Não | Não |
+| plain-view | Não | Não | Não (grava as próprias opções pelo `/config` quando você roda `on`, `off` ou `palette`, ou clica numa delas no painel de configuração) | Não | Não |
 
 ## Desenvolvimento
 

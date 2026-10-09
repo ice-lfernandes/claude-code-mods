@@ -24,18 +24,38 @@ type World = {
   listed: { id: string; description: string; type: string; status: string }[]
   commands: { name: string; description: string; source: string; plugin?: string }[]
   ran: string[]
+  /** The plugin's /config rows, a refusal for $.config.set, the dialog's answer, and the panes opened and closed. */
+  rows: { key: string; value: unknown; isLocked?: boolean }[]
+  deny: string | null
+  choice: string | null
+  asked: string[]
+  opened: string[]
+  closed: string[]
+  isPlaced: boolean
 }
 
 /** The engine beneath the mod: options, turns and tools answered as a session would. */
 function engine(on: any, theme = 'dark'): World {
-  const world: World = { answer: '', toolUses: [], refused: [], sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }), listed: [], commands: [], ran: [] }
+  const world: World = {
+    answer: '', toolUses: [], refused: [], sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }), listed: [], commands: [], ran: [],
+    rows: [], deny: null, choice: null, asked: [], opened: [], closed: [], isPlaced: true,
+  }
   let id = 0
   let agent = 0
   on('env.get', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: undefined }) as never)
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd }) as never)
-  on('config.list', () => ({ value: [{ key: 'theme', value: theme }] }) as never)
-  on('config.set', ($: any, e: any) => (world.sets.push({ key: e.key, value: e.value }), { value: e.value }) as never)
+  on('config.list', () => ({ value: [{ key: 'theme', value: theme }, ...world.rows] }) as never)
+  on('config.set', ($: any, e: any) => {
+    if (world.deny) return { deny: world.deny } as never
+    world.sets.push({ key: e.key, value: e.value })
+    const row = world.rows.find(r => r.key === e.key)
+    if (row) row.value = e.value
+    else world.rows.push({ key: e.key, value: e.value })
+    return { value: e.value } as never
+  })
+  on('ui.open', ($: any, e: any) => (world.opened.push(e.id), { value: { isPlaced: world.isPlaced } }) as never)
+  on('ui.close', ($: any, e: any) => (world.closed.push(e.id), { value: undefined }) as never)
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }) as never)
   on('turn.complete', () => ({ text: 'done' }) as never)
   on('turn.step', async function* ($: any, e: any) {
@@ -49,6 +69,12 @@ function engine(on: any, theme = 'dark'): World {
   on('command.list', () => ({ value: world.commands }) as never)
   on('command.run', ($: any, e: any) => (world.ran.push(e.command), { text: '' }) as never)
   on('tool.call', ($: any, e: any) => {
+    if (e.tool === 'AskUserQuestion') {
+      const question = String(e.questions[0].question)
+      world.asked.push(question)
+      if (world.choice === null) return { deny: 'dismissed' } as never
+      return { result: { questions: e.questions, answers: { [question]: world.choice } } } as never
+    }
     if (e.tool === 'TaskCreate') return { result: { task: { id: String(++id), subject: e.subject } }, text: 'ok' } as never
     if (e.tool === 'TaskUpdate' && world.refused.includes(e.taskId)) return { result: { success: false, taskId: e.taskId, updatedFields: [], error: 'blocked' }, text: 'blocked' } as never
     if (e.tool === 'Bash' && e.command === 'npm test') return { result: { stdout: '', stderr: 'FAIL' }, text: 'FAIL', isError: true } as never
@@ -782,4 +808,202 @@ test('80 columns: the waiting card and a long agent label fit', { options: { ena
   // The agents row (its spaces before `/watch` included) and `/watch` within the card's 76 inner columns.
   const row = drawn.split('\n')[1]!.split('◇ ')[1]!.replace('engine row', '')
   expect(row.length + 2 + '/watch'.length).toBeLessThanOrEqual(76)
+})
+
+// The settings pane (prototype plain-view-0.1.6, variant B).
+
+const PANE = 'plain-view-settings'
+const pane = ($: any, surface = 'terminal', columns = 100) =>
+  $.ui.mount({ plugin: 'plain-view', surface, component: 'Pane', requestId: PANE, props: { title: 'plain-view', isFocused: true, bodyColumns: columns, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} }, viewport: { columns: columns + 2, rows: 60 } } as never)
+const PT = { options: { language: 'pt-BR', icons: 'symbol' } }
+
+test('/plain-view and /plain-view config open the pane; the help stays at help', PT, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  expect(await run($, '')).toEqual({})
+  expect(await run($, 'config')).toEqual({})
+  expect(w.opened).toEqual([PANE, PANE])
+  expect((await run($, 'help')).text).toContain('`/plain-view` ou `config` abre o painel')
+})
+
+test('a pane that does not seat: the help instead', PT, async ($, on) => {
+  const w = engine(on)
+  w.isPlaced = false
+  await start($)
+  expect((await run($, '')).text).toContain('**plain-view** · transcript sem ruído')
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`aba Transcript: each value with what it does, the current one marked, on ${surface}`, PT, async ($, on) => {
+    engine(on)
+    await start($, surface)
+    const ui = await pane($, surface)
+    const drawn = show(await ui.drawn())
+    expect(drawn).toContain('✻ plain-view · configuração')
+    expect(drawn).toContain('Fica salvo em /config → plain-view.')
+    expect(drawn).toContain('▸ Transcript')
+    expect(drawn).toContain('"key":"tab:1"')
+    expect(drawn).toContain('"key":"tab:2"')
+    expect(drawn).toContain('● não')
+    expect(drawn).toContain('"key":"set:enabled:true"')
+    expect(drawn).toContain('● final')
+    expect(drawn).toContain('A resposta final fica. (padrão)')
+    for (const v of ['none', 'card', 'all']) expect(drawn).toContain(`"key":"set:agentText:${v}"`)
+    expect(drawn).not.toContain('"key":"set:agentText:final"')
+    expect(drawn).toContain('Pedir lista de tarefas')
+    expect(drawn).toContain('"key":"reset"')
+    expect(drawn).toContain('"key":"close"')
+    for (const verb of ['on', 'off', 'demo', 'help']) expect(drawn).toContain(`"key":"verb:${verb}"`)
+    await ui.unmount()
+  })
+
+  test(`aba Cartão: the eight palettes with a sample, and a preview of the card, on ${surface}`, PT, async ($, on) => {
+    engine(on)
+    await start($, surface)
+    const ui = await pane($, surface)
+    await ui.press({ key: 'tab:1' })
+    const drawn = show(await ui.drawn())
+    expect(drawn).toContain('▸ Cartão')
+    expect(drawn).toContain('● claude')
+    expect(drawn).toContain('"key":"set:palette:aurora"')
+    expect(drawn).toContain('verde-água → azul → violeta')
+    expect(drawn).toContain('Animação')
+    expect(drawn).toContain('Prévia')
+    expect(drawn).toContain('Passo 2 de 4')
+    if (surface === 'terminal') expect(drawn).toContain('"key":"swatch:neon"')
+    else expect(drawn).not.toContain('swatch:')
+    await ui.unmount()
+  })
+}
+
+test('aba Geral: language and icons', { options: { language: 'en', icons: 'symbol' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  const ui = await pane($)
+  await ui.press({ key: 'tab:2' })
+  const drawn = show(await ui.drawn())
+  expect(drawn).toContain('✻ plain-view · settings')
+  expect(drawn).toContain('▸ General')
+  expect(drawn).toContain('● en')
+  expect(drawn).toContain('● symbol')
+  expect(drawn).toContain("Follows the system's LANG.")
+  expect(drawn).toContain('"key":"set:language:auto"')
+  expect(drawn).toContain('"key":"set:icons:emoji"')
+  expect(drawn).not.toContain('Bar colors')
+  await ui.unmount()
+})
+
+test('a press saves the value as /config would, and says so', PT, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  const ui = await pane($)
+  await ui.press({ key: 'set:agentText:card' })
+  expect(w.sets).toEqual([{ key: 'plain-view.agentText', value: 'card' }])
+  const drawn = show(await ui.drawn())
+  expect(drawn).toContain('✓ Salvo · Fala do agente: card')
+  expect(drawn).toContain('● card')
+  expect(drawn).toContain('"key":"set:agentText:final"')
+  await ui.press({ key: 'set:enabled:true' })
+  expect(w.sets[1]).toEqual({ key: 'plain-view.enabled', value: true })
+  expect(show(await ui.drawn())).toContain('✓ Salvo · Ligado: sim')
+  await ui.unmount()
+})
+
+test('recusado: another hook refuses, the value stays and the pane says why', PT, async ($, on) => {
+  const w = engine(on)
+  w.deny = 'policy says no'
+  await start($)
+  const ui = await pane($)
+  await ui.press({ key: 'set:agentText:none' })
+  const drawn = show(await ui.drawn())
+  expect(drawn).toContain('Não salvou: policy says no')
+  expect(drawn).toContain('● final')
+  expect(w.sets).toEqual([])
+  await ui.unmount()
+})
+
+test('opção travada: the values show, no button, and why', PT, async ($, on) => {
+  const w = engine(on)
+  w.rows.push({ key: 'plain-view.palette', value: 'ocean', isLocked: true })
+  await start($)
+  const ui = await pane($)
+  await ui.press({ key: 'tab:1' })
+  const drawn = show(await ui.drawn())
+  expect(drawn).toContain('● ocean')
+  expect(drawn).not.toContain('set:palette:')
+  expect(drawn).toContain('🔒 definido pela organização')
+  expect(drawn).toContain('"key":"set:animation:false"')
+  await ui.unmount()
+})
+
+test('padrões: asks first, then puts what changed back, the locked one left', { options: { language: 'pt-BR' } }, async ($, on) => {
+  const w = engine(on)
+  w.rows.push({ key: 'plain-view.enabled', value: true }, { key: 'plain-view.agentText', value: 'none' }, { key: 'plain-view.palette', value: 'ocean', isLocked: true })
+  await start($)
+  const ui = await pane($)
+  w.choice = 'agora não'
+  await ui.press({ key: 'reset' })
+  expect(w.asked).toEqual(['Voltar as opções do plain-view ao padrão?'])
+  expect(w.sets).toEqual([])
+  w.choice = 'voltar'
+  await ui.press({ key: 'reset' })
+  expect(w.sets).toEqual([
+    { key: 'plain-view.enabled', value: false },
+    { key: 'plain-view.agentText', value: 'final' },
+    { key: 'plain-view.language', value: 'auto' },
+  ])
+  expect(show(await ui.drawn())).toContain('✓ Opções no padrão')
+  // Nothing left away from the defaults: no question, a dim line.
+  await ui.press({ key: 'reset' })
+  expect(w.asked).toHaveLength(2)
+  expect(show(await ui.drawn())).toContain('As opções já estão no padrão.')
+  await ui.unmount()
+})
+
+test('the reload a press causes opens the pane again; a later load does not', PT, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  const ui = await pane($)
+  await ui.press({ key: 'set:agentText:none' })
+  await ui.unmount()
+  await start($)
+  expect(w.opened).toEqual([PANE])
+  await w.clock.advance(60_000)
+  await start($)
+  expect(w.opened).toEqual([PANE])
+})
+
+test('a reopen waits no longer than ten seconds', PT, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  const ui = await pane($)
+  await ui.press({ key: 'set:agentText:none' })
+  await ui.unmount()
+  await w.clock.advance(11_000)
+  await start($)
+  expect(w.opened).toEqual([])
+})
+
+test('fechar closes the pane; a tab change clears the saved line', PT, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  const ui = await pane($)
+  await ui.press({ key: 'set:agentText:all' })
+  await ui.press({ key: 'tab:2' })
+  expect(show(await ui.drawn())).not.toContain('✓ Salvo')
+  await ui.press({ key: 'close' })
+  expect(w.closed).toEqual([PANE])
+  await ui.unmount()
+})
+
+test('80 columns: the pane draws every tab', PT, async ($, on) => {
+  engine(on)
+  await start($)
+  const ui = await pane($, 'terminal', 78)
+  for (const t of ['tab:1', 'tab:2']) {
+    expect(show(await ui.drawn())).toContain('✻ plain-view')
+    await ui.press({ key: t })
+  }
+  expect(show(await ui.drawn())).toContain('Ícones')
+  await ui.unmount()
 })
