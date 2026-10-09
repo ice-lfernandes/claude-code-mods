@@ -1,5 +1,7 @@
 # Claude Code mods
 
+**English** | [Português (Brasil)](README.pt-BR.md)
+
 Mods for everyday Claude Code UX. A mod is a Claude Code plugin made of function hooks: it can
 draw a band above the prompt, a pane, a status line entry or a toast. Requires Claude Code
 2.1.287 or later.
@@ -177,6 +179,7 @@ it makes.
 | allowlist-coach | No | No | Reads and writes `.claude/settings.local.json`, or `.claude/settings.json` when you pick it, after you confirm | No | No |
 | agent-watch | No | No | No | No | No |
 | test-hud | No | No | Reads Bash's saved copy of an output too long to show whole | No | No |
+| launchpad | No | No | Reads `.claude/launchpad.json` and the agent files in `.claude/agents/`, in the project and in your home folder | No | No |
 
 ## Developing
 
@@ -189,6 +192,8 @@ claude plugin validate ./agent-watch
 claude plugin test ./agent-watch
 claude plugin validate ./test-hud
 claude plugin test ./test-hud
+claude plugin validate ./launchpad
+claude plugin test ./launchpad
 ```
 
 Every mod ships tests, including a render test on the `terminal` and `desktop` surfaces.
