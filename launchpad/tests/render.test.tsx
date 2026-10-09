@@ -503,7 +503,7 @@ test('no row above the prompt unless the menu is placed there, nor over a survey
 // Prototype notes/prototypes/launchpad-0.5.0.html, approved 2026-10-09: one test per state and interaction.
 
 for (const place of ['header', 'prompt', 'pane'] as const) {
-  test(`start: a bordered ◆ pad at the right end of the engine's hint line opens the panel, under place ${place}`, async ($, on) => {
+  test(`start: a bordered ◆ pad under the engine's hint line, at its left, opens the panel, under place ${place}`, async ($, on) => {
     const w = world(on, files, undefined, COMMANDS, 'auto mode on')
     await start($)
     await pad($, `place ${place}`)
@@ -513,8 +513,7 @@ for (const place of ['header', 'prompt', 'pane'] as const) {
     expect(drawn).toContain('"label":" ◆ pad "')
     expect(drawn).toContain('"borderStyle":"round"')
     expect(drawn).toContain('"hover":{"borderColor":"claude","borderDimColor":false,"backgroundColor":"claude"}')
-    expect(drawn).toContain('"justifyContent":"space-between"')
-    expect(drawn).toContain('"paddingTop":1') // the hint on the button's label row
+    expect(drawn).toContain('"flexDirection":"column","alignItems":"flex-start"') // under the hint, at its left
     expect(drawn.indexOf('auto mode on')).toBeLessThan(drawn.indexOf('◆ pad'))
     expect(w.opened).not.toContain('launchpad-panel')
     await ui.press({ key: 'pad:panel' })

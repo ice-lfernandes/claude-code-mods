@@ -38,8 +38,8 @@ session's model and effort in one click, this collection's mods, and the shortcu
   - `pane`: a pane of its own, a tab like those of `/limits` and `/watch`, with the card's
     bordered tiles. It opens when a session starts and after `/clear`, and on `/pad`. Claude
     Code opens a pane only with the keyboard on it: `Esc` closes it and gives the prompt back.
-- **`◆ pad`, the control panel.** A bordered button at the right end of Claude Code's hint line
-  under the prompt, in every placement, and while the menu is off too. It opens a pane with:
+- **`◆ pad`, the control panel.** A bordered button under Claude Code's hint line, below the
+  prompt, in every placement, and while the menu is off too. It opens a pane with:
   - **Controls:** the models (`haiku · sonnet · opus`, or the plain names the `/config` model row
     lists) and the effort levels (`low` to `max`) as buttons, the current ones marked `●`. A press
     runs `/model sonnet` or `/effort low`, as typing would. The model comes from the session; the
@@ -150,8 +150,8 @@ to `auto` yourself to get the new behaviour.
 - **Argument hints come from the `/` menu.** The pane gives a command its argument as a blank
   from the hint Claude Code shows in the `/` menu. The mod learns the hints as that menu lists the
   commands, and forgets them when it reloads.
-- **`◆ pad` adds two rows under the prompt.** A bordered button is three rows tall: the hint
-  sits on its middle row, with a row above and one below.
+- **`◆ pad` adds three rows under the prompt.** A bordered button is three rows tall, under the
+  hint line.
 - **The effort shows after the first request.** Claude Code tells a mod the effort only as each
   request goes out.
 - **The menu is a row of the conversation.** It scrolls away with the conversation, and `/pad`

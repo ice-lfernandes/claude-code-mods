@@ -129,7 +129,7 @@ Ou para uma sessão, a partir de um clone: `claude --plugin-dir ./test-hud`.
 ### launchpad
 
 O menu aparece sozinho quando uma sessão começa e depois de `/clear`, até o primeiro prompt.
-`◆ pad`, no fim da linha de dica abaixo do prompt, abre o painel de controle: o modelo e o
+`◆ pad`, sob a linha de dica abaixo do prompt, abre o painel de controle: o modelo e o
 esforço da sessão como botões (um clique roda `/model` ou `/effort`; `opus` e `max` ficam
 amarelos quando a janela de 5h passa de 70%), um botão para cada mod desta coleção instalado e
 os atalhos. Comandos:

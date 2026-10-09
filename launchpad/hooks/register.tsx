@@ -656,18 +656,14 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // `◆ pad` on the engine's hint line, at its right end, in every placement and while the menu is
-  // off too (the panel's /pad row turns it back on). The engine's hint stays as it draws it, on the
-  // button's label row.
+  // `◆ pad` under the engine's hint line, at its left, in every placement and while the menu is off
+  // too (the panel's /pad row turns it back on). The engine's hint stays as it draws it, above.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const theirs = await next(e)
     const { Box } = $.ui.resolve(e)
     return (
-      <Box flexDirection="row" alignItems="flex-start" justifyContent="space-between" flexGrow={1}>
-        {/* One row down: the hint on the button's label row, whatever height the engine's line has. */}
-        <Box flexGrow={1} paddingTop={1}>
-          {theirs}
-        </Box>
+      <Box flexDirection="column" alignItems="flex-start">
+        {theirs}
         {control($, e, 'pad:panel', w.panel.entry, () => openPanel($))}
       </Box>
     )
