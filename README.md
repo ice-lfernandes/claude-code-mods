@@ -326,6 +326,18 @@ After a change to what a mod draws, regenerate the images:
 ./scripts/screenshots/run.sh
 ```
 
+## Custom mods, skills and agents
+
+Need a mod, skill or agent built for your own workflow or team? I take on custom work: hooks,
+panes, status lines, slash commands, skills and subagents for Claude Code.
+
+- Email: [lucas.rj.fernandes@gmail.com](mailto:lucas.rj.fernandes@gmail.com)
+- LinkedIn: [linkedin.com/in/lucasdfernandes](https://www.linkedin.com/in/lucasdfernandes)
+
+## YouTube
+
+My channel, **Java + AI**: [youtube.com/@JavaPlusAI](https://www.youtube.com/@JavaPlusAI)
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
