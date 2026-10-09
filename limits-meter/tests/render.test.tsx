@@ -521,22 +521,82 @@ test('effort: a request with none keeps the known one; the turn end brings it', 
   expect(drawn).toContain('\"high\"')
 })
 
-test('effort: a tool call on main brings it; one in a subagent does not', async ($, on) => {
+test('effort: a turn end never overwrites a request, so max does not flip to its downgrade', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await step($, SONNET, 'high')
+  await climb($, world.clock, 70)
+  world.toasts.length = 0
+  await step($, SONNET, 'max')
+  await $.classic.Stop({ stop_hook_active: false, effort: { level: 'high' } } as never) // downgraded
+  await step($, SONNET, 'max')
+  await $.classic.Stop({ stop_hook_active: false, effort: { level: 'high' } } as never)
+  expect(world.toasts).toEqual(['5h at 82%: at this pace the window runs out in ~18 min · /limits'])
+  expect(JSON.stringify(await (await band($)).drawn())).toContain('\"max\"')
+})
+
+test('effort: a turn end on a subagent is not the main thread', async ($, on) => {
   engine(on)
   await start($)
   await $.session.measure(MEASURE as never)
-  await $.classic.PostToolUse({ tool_name: 'Read', tool_input: {}, tool_response: {}, tool_use_id: 'u1', agent_id: 'a1', effort: { level: 'low' } } as never)
+  await $.classic.Stop({ stop_hook_active: false, agent_id: 'a1', effort: { level: 'low' } } as never)
   expect(JSON.stringify(await (await band($)).drawn())).not.toContain('low')
-  await $.classic.PostToolUse({ tool_name: 'Read', tool_input: {}, tool_response: {}, tool_use_id: 'u2', effort: { level: 'medium' } } as never)
-  expect(JSON.stringify(await (await band($)).drawn())).toContain('medium')
 })
 
-test('effort: the /config row gives the first reading', async ($, on) => {
+test('effort: turn ends alone (no request carries one) still warn on max', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.classic.Stop({ stop_hook_active: false, effort: { level: 'high' } } as never)
+  await climb($, world.clock, 70)
+  world.toasts.length = 0
+  await $.classic.Stop({ stop_hook_active: false, effort: { level: 'max' } } as never)
+  expect(world.toasts).toEqual(['5h at 82%: at this pace the window runs out in ~18 min · /limits'])
+})
+
+test('effort: a switch to a model clears it, so haiku shows no stale gauge', async ($, on) => {
   engine(on)
-  on('config.list', () => ({ value: [{ key: 'effortLevel', label: 'Effort', kind: 'choice', value: 'xhigh' }] }) as never)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await step($, SONNET, 'high')
+  await switchTo($, SONNET, 'claude-haiku-4-5')
+  const drawn = JSON.stringify(await (await band($)).drawn())
+  expect(drawn).toContain('haiku 4.5')
+  expect(drawn).not.toContain('high')
+  expect(drawn).not.toContain('▰')
+})
+
+test('effort: the /config row gives the first reading; a row with no level is skipped', async ($, on) => {
+  engine(on)
+  on('config.list', () => ({
+    value: [
+      { key: 'showEffortIndicator', label: 'Show effort', kind: 'boolean', value: true },
+      { key: 'effortLevel', label: 'Effort', kind: 'choice', value: 'xhigh' },
+    ],
+  }) as never)
   await start($)
   await $.session.measure(MEASURE as never)
   expect(JSON.stringify(await (await band($)).drawn())).toContain('xhigh')
+})
+
+test('effort: a first request that differs from /config is no switch', async ($, on) => {
+  const world = engine(on)
+  on('config.list', () => ({ value: [{ key: 'effortLevel', label: 'Effort', kind: 'choice', value: 'high' }] }) as never)
+  await start($)
+  await $.session.measure(fiveAt(90) as never)
+  world.toasts.length = 0
+  await step($, SONNET, 'max')
+  expect(world.toasts).toEqual([])
+  expect(JSON.stringify(await (await band($)).drawn())).toContain('\"max\"')
+})
+
+test('/limits pane: effort with no model still has its section', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await $.classic.Stop({ stop_hook_active: false, effort: { level: 'medium' } } as never)
+  const shown = JSON.stringify(await (await pane($)).drawn())
+  expect(shown).toContain('Model')
+  expect(shown).toContain('▰▰▱▱▱ ')
 })
 
 test('effort max from the turn end warns once, as from a request', async ($, on) => {

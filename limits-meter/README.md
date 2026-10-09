@@ -8,11 +8,12 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
   five-step gauge, `opus 5.5 ▰▰▰▱▱ high` (low to max, `max` in the warning color),
   the 5-hour and weekly plan windows with their reset times, the context window's fill, and
   the last turn's cache hit rate. With `format: compact` it is one line of numbers:
-  `sonnet 5.5 ▰▰▰▱▱ high · ctx 8% · 5h 34% · wk 31%`. The effort comes from each request, the
-  turn's end and tool calls on the main thread, and `/config` at the start. Colors follow the theme: warning
-  at 70%, error at 90% (the `warnAt` and `dangerAt` options). Below 90 columns each bar
-  shrinks to one cell. `details` opens the pane, `hide` hides
-  the band, and from 85% context `compact` puts `/compact [focus]` in the prompt, with the
+  `sonnet 5.5 ▰▰▰▱▱ high · ctx 8% · 5h 34% · wk 31%`. The effort comes from each request, else
+  the turn's end on the main thread, else `/config` at the start; a weaker source never
+  overwrites a stronger one, so the band does not flip between `max` and its downgrade.
+  Colors follow the theme: warning at 70%, error at 90% (the `warnAt` and `dangerAt` options).
+  Below 90 columns each bar shrinks to one cell. `details` opens the pane, `hide` hides the
+  band, and from 85% context `compact` puts `/compact [focus]` in the prompt, with the
   blank marked: nothing runs until you send it.
 - **`/limits`** opens a pane with the same figures at full width, context in tokens
   (`116k of 200k`), and the last main-thread turns that fit, under column heads: input,
@@ -29,8 +30,8 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
   context at 85% with a hint to `/compact` (re-armed once it drops below 50%). And once per
   costly switch, a model up `haiku < sonnet < opus < fable` or effort turning to `max`, with
   the 5-hour window at the threshold or more (70% by default):
-  - `5h at 82%: at this pace the window runs out in ~18 min · /limits`, from the window's rise
-    over the last 3 turns;
+  - `5h at 82%: at this pace the window runs out in ~18 min · /limits`, from the window's
+    readings since the first of the last 3 turns started;
   - `5h at 85%: resets in 12m, before it runs out · /limits` when the window resets first;
   - `5h at 82%: opus uses the window faster · /limits` with fewer than 3 turns, no number.
 

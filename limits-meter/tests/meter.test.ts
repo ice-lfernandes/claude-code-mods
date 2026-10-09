@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { addSamples, alerts, bar, contextSpark, gauge, heaviest, isCostlier, label, mini, minutesLeft, needsCompact, pace, pct, rankOf, resetIn, summary, switchWarning, tone, toSnapshot, toTurn } from '../hooks/meter'
+import { addSamples, alerts, bar, contextSpark, effortLevel, gauge, heaviest, isCostlier, label, mini, minutesLeft, needsCompact, pace, pct, rankOf, resetIn, summary, switchWarning, tone, toSnapshot, toTurn } from '../hooks/meter'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 
@@ -147,16 +147,19 @@ describe('costly switch (0.4.0)', () => {
   const MIN = 60_000
   const reset = NOW + 60 * MIN
   const five = (percent: number, resetsAt: number | null = reset) => ({ kind: 'five_hour', percent, resetsAt })
-  // A turn of the 5-hour window `resetsAt`, ended `minutes` from NOW with the window at `percent`.
-  const t = (percent: number, minutes: number, resetsAt: number | null = reset) => ({
-    input: 1, output: 1, cacheHit: null, model: 'claude-sonnet-5-5', durationMs: 1, fivePercent: percent, fiveResetsAt: resetsAt, endedAt: NOW + minutes * MIN,
-  })
+  // A main-thread turn that took a second and ended `minutes` from NOW.
+  const t = (minutes: number) => ({ input: 1, output: 1, cacheHit: null, model: 'claude-sonnet-5-5', durationMs: 1000, endedAt: NOW + minutes * MIN })
+  // A reading of the 5-hour window, `minutes` from NOW.
+  const p = (percent: number, minutes: number) => [NOW + minutes * MIN, percent] as [number, number]
+  const THREE = [t(-12), t(-6), t(0)]
   const sonnet = { model: 'claude-sonnet-5-5', effort: 'high' }
+  const opus = { ...sonnet, model: 'claude-opus-5-5' }
 
   test('effort gauge: five steps, low to max; none for an unknown level', async () => {
     expect(['low', 'medium', 'high', 'xhigh', 'max'].map(gauge)).toEqual(['▰▱▱▱▱', '▰▰▱▱▱', '▰▰▰▱▱', '▰▰▰▰▱', '▰▰▰▰▰'])
     expect(gauge(3)).toBe('')
     expect(gauge(null)).toBe('')
+    expect([effortLevel('High'), effortLevel('turbo'), effortLevel(true)]).toEqual(['high', null, null])
   })
 
   test('model order: haiku < sonnet < opus < fable; an unknown model never climbs', async () => {
@@ -170,47 +173,49 @@ describe('costly switch (0.4.0)', () => {
     expect(isCostlier(null, 'claude-opus-5-5')).toBe(false)
   })
 
-  test('minutesLeft: the pace of the last 3 turns of the same window', async () => {
-    // 70% to 82% over 12 minutes: 1% a minute, 18 minutes to 100%.
-    expect(minutesLeft(five(82), [t(40, -30), t(70, -12), t(76, -6), t(82, 0)])).toBe(18) // the oldest turn is left out
-    expect(minutesLeft(five(82), [t(70, -12), t(76, -6), t(82, 0)])).toBe(18)
-    expect(minutesLeft(five(82), [t(76, -6), t(82, 0)])).toBeNull() // fewer than 3 turns
-    expect(minutesLeft(five(82), [t(82, -12), t(82, -6), t(82, 0)])).toBeNull() // no rise
-    expect(minutesLeft(five(82), [t(70, -12, NOW), t(76, -6), t(82, 0)])).toBeNull() // a turn of the window before
+  test('minutesLeft: the readings since the first of the last 3 turns started', async () => {
+    // 70% to 82% over 12 minutes: 1% a minute, 18 minutes to 100%. The older reading is left out.
+    expect(minutesLeft(five(82), [p(40, -30), p(70, -12), p(76, -6), p(82, 0)], [t(-30), ...THREE])).toBe(18)
+    // A reading that lands after its turn ended still counts: 12 points over 11 minutes.
+    expect(minutesLeft(five(82), [p(70, -11), p(76, -5), p(82, 0)], THREE)).toBe(17)
+    expect(minutesLeft(five(82), [p(70, -12), p(82, 0)], [t(-6), t(0)])).toBeNull() // fewer than 3 turns
+    expect(minutesLeft(five(82), [p(82, -12), p(82, 0)], THREE)).toBeNull() // no rise
+    expect(minutesLeft(five(82), [p(82, 0)], THREE)).toBeNull() // one reading
+    expect(minutesLeft(five(82), [], THREE)).toBeNull()
   })
 
   test('with pace: the minutes left', async () => {
-    const turns = [t(62, -40), t(72, -20), t(82, 0)]
-    expect(switchWarning(sonnet, { ...sonnet, model: 'claude-opus-5-5' }, five(82), 70, turns, NOW)).toBe('5h at 82%: at this pace the window runs out in ~36 min · /limits')
-    expect(switchWarning(sonnet, { ...sonnet, model: 'claude-opus-5-5' }, five(82, NOW + 400 * MIN), 70, [t(72, -200, NOW + 400 * MIN), t(77, -100, NOW + 400 * MIN), t(82, 0, NOW + 400 * MIN)], NOW)).toBe(
+    expect(switchWarning(sonnet, opus, five(82), 70, [p(62, -40), p(72, -20), p(82, 0)], [t(-40), t(-20), t(0)], NOW)).toBe(
+      '5h at 82%: at this pace the window runs out in ~36 min · /limits',
+    )
+    expect(switchWarning(sonnet, opus, five(82, NOW + 400 * MIN), 70, [p(72, -200), p(77, -100), p(82, 0)], [t(-200), t(-100), t(0)], NOW)).toBe(
       '5h at 82%: at this pace the window runs out in ~6h00 · /limits',
     )
   })
 
   test('no pace: no number', async () => {
-    expect(switchWarning(sonnet, { ...sonnet, model: 'claude-opus-5-5' }, five(82), 70, [], NOW)).toBe('5h at 82%: opus uses the window faster · /limits')
-    expect(switchWarning(sonnet, { ...sonnet, effort: 'max' }, five(82), 70, [], NOW, 'pt-BR')).toBe('5h em 82%: effort max gasta a janela mais rápido · /limits')
+    expect(switchWarning(sonnet, opus, five(82), 70, [], [], NOW)).toBe('5h at 82%: opus uses the window faster · /limits')
+    expect(switchWarning(sonnet, { ...sonnet, model: 'claude-fable-5-1' }, five(82), 70, [], [], NOW)).toBe('5h at 82%: fable uses the window faster · /limits')
+    expect(switchWarning(sonnet, { ...sonnet, effort: 'max' }, five(82), 70, [], [], NOW, 'pt-BR')).toBe('5h em 82%: effort max gasta a janela mais rápido · /limits')
   })
 
   test('effort max: the same toast; staying at max or going down says nothing', async () => {
-    const turns = [t(70, -12), t(76, -6), t(82, 0)]
-    expect(switchWarning(sonnet, { ...sonnet, effort: 'max' }, five(82), 70, turns, NOW, 'pt-BR')).toBe('5h em 82%: neste ritmo a janela acaba em ~18 min · /limits')
-    expect(switchWarning({ ...sonnet, effort: 'max' }, { ...sonnet, effort: 'max' }, five(82), 70, turns, NOW)).toBeNull()
-    expect(switchWarning({ ...sonnet, effort: 'max' }, sonnet, five(82), 70, turns, NOW)).toBeNull()
+    const points = [p(70, -12), p(76, -6), p(82, 0)]
+    expect(switchWarning(sonnet, { ...sonnet, effort: 'max' }, five(82), 70, points, THREE, NOW, 'pt-BR')).toBe('5h em 82%: neste ritmo a janela acaba em ~18 min · /limits')
+    expect(switchWarning({ ...sonnet, effort: 'max' }, { ...sonnet, effort: 'max' }, five(82), 70, points, THREE, NOW)).toBeNull()
+    expect(switchWarning({ ...sonnet, effort: 'max' }, sonnet, five(82), 70, points, THREE, NOW)).toBeNull()
   })
 
   test('switch below the threshold, a cheaper model, or no 5-hour window: nothing', async () => {
-    const opus = { ...sonnet, model: 'claude-opus-5-5' }
-    expect(switchWarning(sonnet, opus, five(45), 70, [], NOW)).toBeNull()
-    expect(switchWarning(sonnet, opus, five(45), 40, [], NOW)).toBe('5h at 45%: opus uses the window faster · /limits')
-    expect(switchWarning(opus, sonnet, five(95), 70, [], NOW)).toBeNull()
-    expect(switchWarning(sonnet, opus, undefined, 70, [], NOW)).toBeNull()
+    expect(switchWarning(sonnet, opus, five(45), 70, [], [], NOW)).toBeNull()
+    expect(switchWarning(sonnet, opus, five(45), 40, [], [], NOW)).toBe('5h at 45%: opus uses the window faster · /limits')
+    expect(switchWarning(opus, sonnet, five(95), 70, [], [], NOW)).toBeNull()
+    expect(switchWarning(sonnet, opus, undefined, 70, [], [], NOW)).toBeNull()
   })
 
   test('resets first: when it resets, with no pace minutes', async () => {
     // 1% a minute from 85%: 15 minutes to 100%, but the window resets in 12.
-    const turns = [t(73, -12), t(79, -6), t(85, 0)]
-    expect(switchWarning(sonnet, { ...sonnet, model: 'claude-opus-5-5' }, five(85, NOW + 12 * MIN), 70, turns.map(x => ({ ...x, fiveResetsAt: NOW + 12 * MIN })), NOW, 'pt-BR')).toBe(
+    expect(switchWarning(sonnet, opus, five(85, NOW + 12 * MIN), 70, [p(73, -12), p(79, -6), p(85, 0)], THREE, NOW, 'pt-BR')).toBe(
       '5h em 85%: reinicia em 12m, antes de acabar · /limits',
     )
   })

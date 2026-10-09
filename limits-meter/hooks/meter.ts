@@ -160,6 +160,12 @@ export const summary = (s: Snapshot, last: Turn | undefined, now: number, lang: 
 /** Effort levels from least to most thinking, the gauge's five steps. */
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
+/** The level an effort value names, or null: a string from EFFORT_LEVELS, any case. */
+export const effortLevel = (v: unknown) => {
+  const level = typeof v === 'string' ? v.toLowerCase() : ''
+  return (EFFORT_LEVELS as readonly string[]).includes(level) ? level : null
+}
+
 /** Effort as a five-step gauge, low ▰▱▱▱▱ to max ▰▰▰▰▰; "" for a level outside the list. */
 export const gauge = (level: string | number | null | undefined) => {
   const n = EFFORT_LEVELS.indexOf(String(level) as (typeof EFFORT_LEVELS)[number]) + 1
@@ -171,8 +177,8 @@ export const MODEL_ORDER = ['haiku', 'sonnet', 'opus', 'fable'] as const
 
 /** A model's place in MODEL_ORDER, or -1 for a model it does not name. */
 export const rankOf = (model: string | null | undefined) => {
-  const hit = /(haiku|sonnet|opus|fable)/i.exec(model ?? '')
-  return hit ? MODEL_ORDER.indexOf(hit[1]!.toLowerCase() as (typeof MODEL_ORDER)[number]) : -1
+  const name = (model ?? '').toLowerCase()
+  return MODEL_ORDER.findIndex(family => name.includes(family))
 }
 
 /** Whether going from one model to another climbs MODEL_ORDER; an unknown model never does. */
@@ -187,17 +193,21 @@ export const PACE_TURNS = 3
 
 /**
  * Minutes until the 5-hour window reaches 100% at the pace of the last PACE_TURNS main-thread
- * turns of this same window, or null: fewer turns than that, or no rise between them.
+ * turns, or null: fewer turns than that, or no rise. The pace comes from the window's own
+ * timestamped readings (`points`, as addSamples keeps them) since the first of those turns
+ * started; the turns only bound the span, so a reading that lands after its turn still counts.
  */
-export const minutesLeft = (five: Limit, recentTurns: readonly Turn[]): number | null => {
-  const same = recentTurns.filter(t => t.fivePercent != null && t.endedAt != null && t.fiveResetsAt === five.resetsAt).slice(-PACE_TURNS)
-  if (same.length < PACE_TURNS) return null
-  const first = same[0]!
-  const last = same[same.length - 1]!
-  const span = last.endedAt! - first.endedAt!
-  const rise = last.fivePercent! - first.fivePercent!
-  if (span <= 0 || rise <= 0) return null
-  return Math.max(0, Math.round(((100 - five.percent) * span) / rise / 60_000))
+export const minutesLeft = (five: Limit, points: readonly (readonly [number, number])[], recentTurns: readonly Turn[]): number | null => {
+  const ended = recentTurns.filter(t => t.endedAt != null)
+  if (ended.length < PACE_TURNS) return null
+  const first = ended[ended.length - PACE_TURNS]!
+  const since = first.endedAt! - first.durationMs
+  const span = points.filter(p => p[0] >= since)
+  if (span.length < 2) return null
+  const [t0, p0] = span[0]!
+  const [t1, p1] = span[span.length - 1]!
+  if (t1 <= t0 || p1 <= p0) return null
+  return Math.max(0, Math.round(((100 - five.percent) * (t1 - t0)) / (p1 - p0) / 60_000))
 }
 
 /** What the session runs: a model id and the effort of its last request. */
@@ -213,6 +223,7 @@ export const switchWarning = (
   to: Setting,
   five: Limit | undefined,
   threshold: number,
+  points: readonly (readonly [number, number])[],
   recentTurns: readonly Turn[],
   now: number,
   lang: Lang = 'en',
@@ -223,11 +234,11 @@ export const switchWarning = (
   if (!five || five.percent < threshold) return null
   const w = WORDS[lang]
   const percent = pct(five.percent)
-  const minutes = minutesLeft(five, recentTurns)
+  const minutes = minutesLeft(five, points, recentTurns)
   if (minutes !== null) {
     const runsOutAt = now + minutes * 60_000
     if (five.resetsAt !== null && runsOutAt >= five.resetsAt) return w.switchResets(percent, resetIn(five.resetsAt, now, lang))
     return w.switchPace(percent, minutes < 60 ? `${minutes} min` : resetIn(runsOutAt, now, lang))
   }
-  return w.switchFaster(percent, toModel ? (/(haiku|sonnet|opus|fable)/i.exec(to.model ?? '')?.[1]?.toLowerCase() ?? '') : 'effort max')
+  return w.switchFaster(percent, toModel ? MODEL_ORDER[rankOf(to.model)]! : 'effort max')
 }

@@ -19,11 +19,11 @@
 // moves a point), so nothing polls. Reads nothing from disk, runs no process, calls no model.
 
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { Elements, EngineInterface, Register } from 'claude-code'
 
 import type { Samples, Snapshot, Turn } from '../types'
 import type { Setting } from './meter'
-import { addSamples, alerts, bar, contextSpark, gauge, heaviest, label, mini, needsCompact, pace, pct, resetIn, summary, switchWarning, toSnapshot, toTurn, tone as toneOf, TURNS_KEPT } from './meter'
+import { addSamples, alerts, bar, contextSpark, effortLevel, gauge, heaviest, label, mini, needsCompact, pace, pct, resetIn, summary, switchWarning, toSnapshot, toTurn, tone as toneOf, TURNS_KEPT } from './meter'
 import type { Lang, Verb } from './ui'
 import { fillArgs, langOf, linesOf, shortModel, tokens, verbRow } from './ui'
 import { COMMAND, WORDS } from './words'
@@ -100,30 +100,57 @@ const setSwitchAt = async ($: EngineInterface, percent: number) => {
 const warnIfCostly = async ($: EngineInterface, from: Setting, to: Setting) => {
   const s = await read($, snapshot)
   const five = s.limits.find(l => l.kind === 'five_hour')
-  const text = switchWarning(from, to, five, await read($, switchAt), await read($, turns), await $.clock.now(), lang)
+  const readings = five && five.resetsAt !== null ? (await read($, samples))[five.kind] : undefined
+  const points = readings && five && readings.resetsAt === five.resetsAt ? readings.points : []
+  const text = switchWarning(from, to, five, await read($, switchAt), points, await read($, turns), await $.clock.now(), lang)
   if (text) $.ui.toast(text, { timeoutMs: 8000 })
 }
 
 /**
- * An effort seen on the main thread: kept for the band, and a change to max may warn. A source
- * with no effort (a request that carries none, a hook outside a turn) keeps the one known.
+ * Where the effort came from, best first: a request (`turn.step`, the setting it asks for), the
+ * turn's end (`classic.Stop`, after any downgrade for the model), /config (the stored setting).
+ * The sources can disagree, so a weaker one never overwrites a stronger one, and only a change
+ * within one source counts as a switch: the band does not flip between a request's max and the
+ * high it was downgraded to, and no toast fires for it. A module variable: a reload starts over.
  */
-const seeEffort = async ($: EngineInterface, level: string | number | null | undefined, id?: string | null) => {
+const SOURCES = { request: 2, turnEnd: 1, config: 0 } as const
+let effortFrom: keyof typeof SOURCES | null = null
+
+/**
+ * An effort seen on the main thread, from `source`: kept for the band when no stronger source
+ * gave one, and a change within the same source to max may warn (never from /config). A source
+ * with no effort (a request that carries none) keeps the one known.
+ */
+const seeEffort = async ($: EngineInterface, level: string | number | null | undefined, source: keyof typeof SOURCES, id?: string | null) => {
   if (level == null || level === '') return
-  const was = await read($, effort)
+  if (effortFrom !== null && SOURCES[source] < SOURCES[effortFrom]) return
+  const was = effortFrom === source ? await read($, effort) : null
+  effortFrom = source
   if (was === level) return
   await update($, effort, () => level)
-  if (was !== null) {
+  if (was !== null && source !== 'config') {
     const current = id ?? (await read($, model))
     await warnIfCostly($, { model: current, effort: was }, { model: current, effort: level })
   }
 }
 
-/** The session's effort from /config, where a row holds one: the band's first reading. */
+/** The session's effort from /config: the first row named for effort whose value is a level. */
 const effortOfConfig = (rows: readonly { key: string; label: string; value: unknown }[]) => {
-  const row = rows.find(r => /effort/i.test(r.key) || /effort|esforço/i.test(r.label))
-  const v = typeof row?.value === 'string' ? row.value.toLowerCase() : null
-  return v && ['low', 'medium', 'high', 'xhigh', 'max'].includes(v) ? v : null
+  for (const r of rows) {
+    if (!/effort/i.test(r.key) && !/^(effort|esforço)/i.test(r.label)) continue
+    const level = effortLevel(r.value)
+    if (level) return level
+  }
+  return null
+}
+
+/** The effort drawn, band and pane alike: its gauge and its name, max in the warning color. */
+const effortView = (Text: Elements[keyof Elements]['Text'], level: string | number) => {
+  const max = level === 'max'
+  return [
+    ...(gauge(level) !== '' ? [<Text key="gauge" color={max ? 'warning' : undefined} dimColor={!max}>{`${gauge(level)} `}</Text>] : []),
+    <Text key="level" color={max ? 'warning' : undefined} bold={max}>{String(level)}</Text>,
+  ]
 }
 
 /** A threshold from /limits warn: a whole number from 1 to 100, else null. */
@@ -210,10 +237,9 @@ export const register: Register = (on, options) => {
       // The first turn.step brings it.
     }
     try {
-      const level = effortOfConfig(await $.config.list())
-      if (level && (await read($, effort)) === null) await update($, effort, () => level)
+      await seeEffort($, effortOfConfig(await $.config.list()), 'config')
     } catch {
-      // The first request or tool call brings it.
+      // The first request or turn end brings it.
     }
     try {
       const usage = await $.session.usage()
@@ -233,28 +259,25 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (!e.agentId && e.usage) {
-      const s = await read($, snapshot)
-      const five = s.limits.find(l => l.kind === 'five_hour')
-      const turn = {
-        ...toTurn(e.usage, e.durationMs),
-        contextPercent: s.contextPercent,
-        fivePercent: five?.percent ?? null,
-        fiveResetsAt: five?.resetsAt ?? null,
-        endedAt: await $.clock.now(),
-      }
+      const turn = { ...toTurn(e.usage, e.durationMs), contextPercent: (await read($, snapshot)).contextPercent, endedAt: await $.clock.now() }
       await update($, turns, list => [...list, turn].slice(-TURNS_KEPT))
     }
     return result
   })
 
   // A switch to a costlier model: the band's model and, near the 5-hour limit, a toast. A resumed
-  // session restores its model, which is no switch. Fail-open: the switch goes on regardless.
+  // session restores its model, which is no switch. The new model may take no effort, or another
+  // default: the effort starts over and the next source fills it. Fail-open: the switch goes on.
   on('classic.PostModelSwitch', async ($, e, next) => {
     const result = await next(e)
     await update($, model, () => e.to_model)
     if (e.source !== 'resume') {
       const now = await read($, effort)
       await warnIfCostly($, { model: e.from_model, effort: now }, { model: e.to_model, effort: now })
+    }
+    if (e.from_model !== e.to_model) {
+      effortFrom = null
+      await update($, effort, () => null)
     }
     return result
   }).catch(($, e, next) => next(e))
@@ -265,7 +288,7 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       try {
         await update($, model, () => e.model)
-        await seeEffort($, e.effort, e.model)
+        await seeEffort($, e.effort, 'request', e.model)
       } catch {
         // The band keeps what it had; the request goes on.
       }
@@ -273,17 +296,11 @@ export const register: Register = (on, options) => {
     return yield* next(e)
   })
 
-  // The classic hooks carry the turn's effort too (`effort.level`, after any downgrade for the
-  // model), where a request may carry none: each tool call and each turn's end on main.
-  on('classic.PostToolUse', async ($, e, next) => {
-    const result = await next(e)
-    if (!e.agent_id) await seeEffort($, e.effort?.level)
-    return result
-  }).catch(($, e, next) => next(e))
-
+  // The turn's end carries its effort too (`effort.level`), where the requests carry none. One a
+  // turn on main, in order: unlike PostToolUse, which may run in parallel and toast twice.
   on('classic.Stop', async ($, e, next) => {
     const result = await next(e)
-    if (!e.agent_id) await seeEffort($, e.effort?.level)
+    if (!e.agent_id) await seeEffort($, e.effort?.level, 'turnEnd')
     return result
   }).catch(($, e, next) => next(e))
 
@@ -311,8 +328,7 @@ export const register: Register = (on, options) => {
         <Text key="model">
           {id && <Text color="claude" bold>{shortModel(id)}</Text>}
           {id && level !== null && <Text> </Text>}
-          {level !== null && gauge(level) !== '' && <Text color={level === 'max' ? 'warning' : undefined} dimColor={level !== 'max'}>{`${gauge(level)} `}</Text>}
-          {level !== null && <Text color={level === 'max' ? 'warning' : undefined} bold={level === 'max'}>{String(level)}</Text>}
+          {level !== null && effortView(Text, level)}
         </Text>
       ) : null
 
@@ -425,7 +441,7 @@ export const register: Register = (on, options) => {
     // Rows besides the turns: the hint, three headings, the context row, the table head, the
     // footer, the gaps, a pace line per window that has one and the trend line; then the
     // costly-switch section (heading, hint, choices, order, gap) and the model's (heading, row, gap).
-    const fixed = 12 + Math.max(1, s.limits.length) + paces.filter(p => p !== null).length + (trend.length > 1 ? 1 : 0) + 5 + (id ? 3 : 0)
+    const fixed = 12 + Math.max(1, s.limits.length) + paces.filter(p => p !== null).length + (trend.length > 1 ? 1 : 0) + 5 + (id || level !== null ? 3 : 0)
     const room = Math.max(3, (e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 30) - fixed)
     const [cIn, cOut, cCache, cTime, cModel] = w.columns
 
@@ -472,14 +488,13 @@ export const register: Register = (on, options) => {
           )}
         </Box>
 
-        {id && (
+        {(id || level !== null) && (
           <Box flexDirection="column">
             <Text bold>{w.modelHeading}</Text>
             <Text>
-              <Text color="claude" bold>{shortModel(id)}</Text>
-              {level !== null && <Text dimColor>{`   ${w.effort} `}</Text>}
-              {level !== null && gauge(level) !== '' && <Text color={level === 'max' ? 'warning' : undefined} dimColor={level !== 'max'}>{`${gauge(level)} `}</Text>}
-              {level !== null && <Text color={level === 'max' ? 'warning' : undefined} bold={level === 'max'}>{String(level)}</Text>}
+              {id && <Text color="claude" bold>{shortModel(id)}</Text>}
+              {level !== null && <Text dimColor>{`${id ? '   ' : ''}${w.effort} `}</Text>}
+              {level !== null && effortView(Text, level)}
             </Text>
           </Box>
         )}
@@ -494,7 +509,7 @@ export const register: Register = (on, options) => {
                 {n === at ? (
                   <Text color="claude" bold>{`${n}%`}</Text>
                 ) : (
-                  <Button key={`warn:${n}`} plain dimColor label={`${n}%`} onPress={() => setSwitchAt($, n).then(() => $.ui.toast(w.warnSet(n)))} />
+                  <Button key={`warn:${n}`} plain dimColor label={`${n}%`} onPress={() => setSwitchAt($, n).then(() => $.ui.toast(w.warnSet(n)), () => $.ui.toast(w.failedToRun(`/${COMMAND} warn ${n}`)))} />
                 )}
               </Box>
             ))}
