@@ -1,6 +1,6 @@
 {
   "name": "launchpad",
-  "version": "0.4.2",
+  "version": "0.4.1",
   "description": "A menu of one-click actions under the header, below the prompt or in a pane: each button runs an installed command, skill or agent. Pick and order up to 8 with /pad configuration",
   "types": "./types/index.d.ts",
   "userConfig": {
