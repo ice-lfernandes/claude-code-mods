@@ -1,0 +1,62 @@
+{
+  "name": "plain-view",
+  "version": "0.1.0",
+  "description": "A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "On",
+      "description": "Hide successful tool rows and show the plan card above the prompt. Failures, permission dialogs and the agent's questions always show in full. /plain-view on and off change it too",
+      "default": false
+    },
+    "palette": {
+      "type": "string",
+      "title": "Bar colors",
+      "description": "The gradient of the progress bars and the request's title. /plain-view palette shows each one with a sample",
+      "options": [
+        "claude",
+        "clean",
+        "sunset",
+        "aurora",
+        "ocean",
+        "neon",
+        "forest",
+        "calm"
+      ],
+      "default": "claude"
+    },
+    "animation": {
+      "type": "boolean",
+      "title": "Animated bars",
+      "description": "A shine runs along the bars while the agent works. Off: still bars in the theme's own colors, with no gradient",
+      "default": true
+    },
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the card and the messages. auto follows the system's LANG: Portuguese for pt_*, English otherwise and when LANG is unset",
+      "options": [
+        "auto",
+        "pt-BR",
+        "en"
+      ],
+      "default": "auto"
+    },
+    "icons": {
+      "type": "string",
+      "title": "Icons in the terminal",
+      "description": "emoji draws the steps as ✅ 🟠 ⚪; symbol draws them as ✓ ● ○ for terminals that draw emoji at odd widths; auto uses symbol in a JetBrains IDE's terminal and emoji elsewhere",
+      "options": [
+        "auto",
+        "emoji",
+        "symbol"
+      ],
+      "default": "auto"
+    }
+  },
+  "author": {
+    "name": "Lucas Fernandes"
+  },
+  "license": "MIT"
+}

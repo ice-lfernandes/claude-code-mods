@@ -1,5 +1,5 @@
 """Turns the trees a mod drew (claude plugin test output) into terminal-style SVG images."""
-import json, sys, os, textwrap, unicodedata
+import base64, json, struct, sys, os, textwrap, unicodedata
 from xml.sax.saxutils import escape
 
 FG, DIM, BG, CHROME, BORDER, CAP = '#d4d4d8', '#7c7c88', '#16161e', '#22222c', '#3a3a48', '#8a8aa0'
@@ -49,6 +49,14 @@ def lines(node, style=None, avail=None):
     if node is None or isinstance(node, bool): return []
     if isinstance(node, str) or node['type'] in ('Text', 'Button'): return [spans(node, style)]
     p = node.get('props') or {}
+    if node['type'] == 'Raster':
+        # Cells packed as little-endian u32 triplets: code point, foreground, background.
+        raw, cols = base64.b64decode(p['cells']), p['columns']
+        row = []
+        for i in range(len(raw) // 12):
+            cp, fg, _ = struct.unpack_from('<3I', raw, i * 12)
+            row.append((chr(cp), {'color': '#%06x' % fg} if fg < 0x1000000 else dict(style)))
+        return [row[r * cols:(r + 1) * cols] for r in range(p['rows'])]
     border = p.get('borderStyle')
     pad, right = p.get('paddingX', 0), p.get('paddingRight', 0)
     own = p['width'] if isinstance(p.get('width'), int) else (avail if p.get('flexGrow') else None)
@@ -242,3 +250,14 @@ open(f'{out}/launchpad.svg', 'w').write(svg([
     ('◆ pad: the panel, 5h at 74%', 'pane:Painel', wrapped(d['PANE'][0], cw - 4)),
     ('/pad place pane', 'pane:Atalhos', wrapped(d['PANE'][1], cw - 4)),
 ], 60, 'launchpad'))
+
+# plain-view
+d = load(f'{snap}/plain-view.txt')
+work, done = trim(tree(d['BAND'][0])), trim(tree(d['BAND'][1]))
+pw = max(width(l) for l in work) - 2
+prompt = [plain('─' * (pw - 12) + ' plain view ─', dimColor=True), plain('> ')]
+open(f'{out}/plain-view.svg', 'w').write(svg([
+    ('card above the prompt while the agent works (palette claude)', 'raw', work + prompt),
+    ('when the turn ends', 'raw', done),
+    ('/plain-view palette', 'raw', trim(tree(d['TREE'][0]))),
+], 60, 'plain-view'))

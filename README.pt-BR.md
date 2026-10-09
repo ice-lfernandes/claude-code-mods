@@ -13,6 +13,7 @@ Requer Claude Code 2.1.287 ou mais recente.
 | [agent-watch](agent-watch/) | `/watch` | Subagentes num relance: tokens por agente, um toast quando um trava e um resumo com o agente mais pesado quando terminam |
 | [test-hud](test-hud/) | `/test-hud` | Execuções de teste num relance: aprovados sobre o total na status line, um sparkline das falhas entre execuções, os testes que falham e um toast quando a suíte fica verde |
 | [launchpad](launchpad/) | `/pad` | Um menu de ações de um clique sob o cabeçalho, acima do prompt ou num painel: cada botão roda um comando, skill ou agente instalado. `◆ pad` abre um painel de controle: modelo e esforço em um clique, os mods desta coleção, os atalhos. Escolha e ordene até 8 em `/pad configuration`, ou distribua os de um time no repositório |
+| [plain-view](plain-view/) | `/plain-view` | Transcript sem ruído: as linhas de tool saem da frente e o plano do agente aparece num cartão acima do prompt, com o passo atual, barras de progresso e um resumo no fim do turno |
 
 ## Usando os mods
 
@@ -156,6 +157,39 @@ os atalhos. Comandos:
 
 Ou para uma sessão, a partir de um clone: `claude --plugin-dir ./launchpad`.
 
+### plain-view
+
+Fica desligado até você ligar (`/plain-view on`, a opção `enabled` ou o interruptor no painel do
+launchpad). Ligado, o transcript mantém a conversa e tira as linhas de tool que deram certo;
+uma chamada que falhou ou foi interrompida, o diálogo de permissão e as perguntas do agente
+sempre aparecem inteiros. Acima do prompt, um cartão acompanha o pedido: o título, `Passo 2 de
+4` com uma barra, uma linha por tarefa da lista do agente com a sua própria barra (`Feito`,
+`~40%` no passo atual, `Próximo`, `Depois`). O % do passo atual é uma estimativa pelas chamadas
+de tool, por isso o `~`. No fim do turno o cartão fica verde, com o tempo que levou e os
+arquivos mudados e lidos, ou cinza no Esc; o próximo pedido começa um novo, e o `[-]` recolhe.
+
+```
+/plain-view on | off          mostra ou esconde o cartão e as linhas de tool
+/plain-view demo              um plano de exemplo no cartão por 15 segundos
+/plain-view palette           as 8 paletas das barras com amostra, e um botão para trocar
+/plain-view palette aurora    troca para uma pelo nome
+/plain-view help              lista os comandos
+```
+
+As barras são um degradê das cores da opção `palette` (padrão `claude`), com um brilho que corre
+enquanto o agente trabalha. Cada paleta tem uma versão escura e uma clara, escolhida pelo seu
+tema. `animation: off` deixa as barras paradas, nas cores do próprio tema.
+
+![plain-view: o cartão enquanto o agente trabalha, no fim do turno, e as paletas](screenshots/plain-view.svg)
+
+#### Instalação
+
+```
+/plugin install plain-view --marketplace ice-lfernandes/claude-code-mods
+```
+
+Ou para uma sessão, a partir de um clone: `claude --plugin-dir ./plain-view`.
+
 ## Instalação
 
 A seção de cada mod acima tem sua própria linha de instalação. Numa sessão do Claude Code no
@@ -186,6 +220,7 @@ se conecta e cada chamada que faz.
 | agent-watch | Não | Não | Não | Não | Não |
 | test-hud | Não | Não | Lê a cópia salva pelo Bash de uma saída longa demais para mostrar inteira | Não | Não |
 | launchpad | Não | Não | Lê `.claude/launchpad.json` e os arquivos de agente em `.claude/agents/`, no projeto e na sua pasta home | Não | Não |
+| plain-view | Não | Não | Não (grava as próprias opções pelo `/config` quando você roda `on`, `off` ou `palette`) | Não | Não |
 
 ## Desenvolvimento
 
@@ -200,6 +235,8 @@ claude plugin validate ./test-hud
 claude plugin test ./test-hud
 claude plugin validate ./launchpad
 claude plugin test ./launchpad
+claude plugin validate ./plain-view
+claude plugin test ./plain-view
 ```
 
 Cada mod vem com testes, incluindo um teste de render nas superfícies `terminal` e `desktop`.
@@ -259,8 +296,8 @@ vez de rodá-lo.
 
 ### Faixas compartilhadas
 
-Vários mods podem desenhar na mesma linha: `AbovePrompt` (limits-meter, e o launchpad com
-`/pad place prompt`) e `PromptHint` (o `◆ pad` do launchpad). Cada hook `ui.render` ali chama
+Vários mods podem desenhar na mesma linha: `AbovePrompt` (limits-meter, plain-view, e o
+launchpad com `/pad place prompt`) e `PromptHint` (o `◆ pad` do launchpad). Cada hook `ui.render` ali chama
 `next(e)` e empilha a própria linha com o que voltou, nunca no lugar dele, para que a linha de
 cada mod apareça:
 

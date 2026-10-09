@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mod: [limits-meter, allowlist-coach, agent-watch, test-hud, launchpad]
+        mod: [limits-meter, allowlist-coach, agent-watch, test-hud, launchpad, plain-view]
     steps:
       - uses: actions/checkout@v4
       - name: Install Claude Code

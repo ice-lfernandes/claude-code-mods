@@ -1,0 +1,368 @@
+import { expect, mock, test } from 'claude-code/testing'
+
+const NOW = Date.parse('2026-10-09T12:00:00Z')
+const ON = { options: { enabled: true, language: 'pt-BR', icons: 'symbol' } }
+const TASKS = ['Escolher o estilo e o layout da página', 'Ver como a página pega o tempo ao vivo', 'Montar o painel do tempo', 'Publicar e compartilhar o link']
+
+/** The drawn tree as JSON, then its texts joined, so a word split across Texts (the gradient title) still reads. */
+const show = (tree: unknown) => {
+  const texts: string[] = []
+  const walk = (n: any): void => void (typeof n === 'string' ? texts.push(n) : Array.isArray(n) ? n.forEach(walk) : n && typeof n === 'object' ? walk(n.children ?? []) : undefined)
+  walk(tree)
+  return `${JSON.stringify(tree)}\n${texts.join('')}`
+}
+
+type World = { sets: { key: string; value: unknown }[]; logs: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
+
+/** The engine beneath the mod: options, turns and tools answered as a session would. */
+function engine(on: any, theme = 'dark'): World {
+  const world: World = { sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }) }
+  let id = 0
+  on('env.get', () => ({ value: undefined }) as never)
+  on('command.register', () => ({ value: undefined }) as never)
+  on('session.start', ($: any, e: any) => ({ cwd: e.cwd }) as never)
+  on('config.list', () => ({ value: [{ key: 'theme', value: theme }] }) as never)
+  on('config.set', ($: any, e: any) => (world.sets.push({ key: e.key, value: e.value }), { value: e.value }) as never)
+  on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }) as never)
+  on('turn.complete', () => ({ text: 'done' }) as never)
+  on('ui.toast', ($: any, e: any) => (world.toasts.push(e.text), { value: undefined }) as never)
+  on('ui.log', ($: any, e: any) => (world.logs.push(e.text), { value: undefined }) as never)
+  on('tool.call', ($: any, e: any) => {
+    if (e.tool === 'TaskCreate') return { result: { task: { id: String(++id), subject: e.subject } }, text: 'ok' } as never
+    if (e.tool === 'Bash' && e.command === 'npm test') return { result: { stdout: '', stderr: 'FAIL' }, text: 'FAIL', isError: true } as never
+    return { result: 'ok', text: 'ok' } as never
+  })
+  // What the engine draws for any component: a box this file can tell apart.
+  on('ui.render', ($: any, e: any) => {
+    const { Box, Text } = $.ui.resolve(e)
+    if (e.component === 'SessionMode') return Text({ children: `modes: ${e.props.modes.join(' & ')}` }) as never
+    return Box({ key: 'engine', children: Text({ children: 'engine row' }) }) as never
+  })
+  return world
+}
+
+const start = ($: any, surface = 'terminal') => $.session.start({ cwd: '/repo', surface, isInteractive: true } as never)
+const ask = ($: any, text = 'Monte um painel do tempo para São Paulo.') => $.turn.start({ text, turnId: 't1' } as never)
+const end = ($: any, reason = 'answer') => $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: reason === 'aborted', turnId: 't1', reason } as never)
+const call = ($: any, tool: string, input: Record<string, unknown> = {}) => $.tool.call({ tool, ...input } as never)
+const run = ($: any, args: string) => $.command.run({ command: 'plain-view', args, origin: { kind: 'composer' } } as never) as Promise<{ text?: string }>
+const card = async ($: any, surface = 'terminal', columns = 140) => {
+  const ui = await $.ui.mount({ plugin: 'plain-view', surface, component: 'AbovePrompt', props: { bodyColumns: columns, hasSurvey: false, isWorking: true, maxRows: 20 }, viewport: { columns, rows: 40 } } as never)
+  const drawn = show(await ui.drawn())
+  await ui.unmount()
+  return drawn
+}
+const row = async ($: any, component: string, props: Record<string, unknown>, surface = 'terminal') => {
+  const ui = await $.ui.mount({ plugin: 'plain-view', surface, component, props, viewport: { columns: 120, rows: 40 } } as never)
+  const drawn = JSON.stringify(await ui.drawn())
+  await ui.unmount()
+  return drawn
+}
+const toolUse = (tool: string, more: Record<string, unknown> = {}) => ({ tool_use_id: 'tu1', tool, input: {}, isRunning: false, isErrored: false, isInterrupted: false, ...more })
+
+/** The plan of the prototype: four tasks, the first done, the second in progress. */
+const plan = async ($: any) => {
+  for (const subject of TASKS) await call($, 'TaskCreate', { subject, description: subject })
+  await call($, 'TaskUpdate', { taskId: '1', status: 'in_progress' })
+  for (let i = 0; i < 4; i++) await call($, 'Read', { file_path: `/repo/src/f${i}.ts` })
+  await call($, 'TaskUpdate', { taskId: '1', status: 'completed' })
+  await call($, 'TaskUpdate', { taskId: '2', status: 'in_progress' })
+  await call($, 'WebFetch', { url: 'https://api.open-meteo.com/v1/forecast', prompt: 'x' })
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`entendendo o pedido, then passo 2 de 4 on ${surface}`, ON, async ($, on) => {
+    const w = engine(on)
+    await start($, surface)
+    await ask($)
+    await w.clock.advance(3000)
+    let drawn = await card($, surface)
+    expect(drawn).toContain('Monte um painel do tempo para São Paulo.')
+    expect(drawn).toContain('Passo 1 de 2')
+    expect(drawn).toContain('Entender o pedido')
+    expect(drawn).toContain('Planejar os passos')
+    expect(drawn).toContain('engine row') // the band beneath stays
+
+    await plan($)
+    drawn = await card($, surface)
+    expect(drawn).toContain('Passo 2 de 4')
+    expect(drawn).toContain('Feito')
+    expect(drawn).toContain('~25%')
+    expect(drawn).toContain('na web')
+    expect(drawn).toContain('Próximo')
+    expect(drawn).toContain('Depois')
+    expect(drawn).toContain('31%')
+    // The terminal draws the bars as Rasters; the desktop as text in theme keys.
+    if (surface === 'terminal') expect(drawn).toContain('"columns":18')
+    else expect(drawn).toContain('░')
+  })
+
+  test(`tudo pronto, with the files, on ${surface}`, ON, async ($, on) => {
+    engine(on)
+    await start($, surface)
+    await ask($)
+    for (const subject of TASKS) await call($, 'TaskCreate', { subject, description: subject })
+    await call($, 'Read', { file_path: '/repo/src/api/weather.ts' })
+    await call($, 'Write', { file_path: '/repo/src/Dashboard.tsx' })
+    for (const taskId of ['1', '2', '3', '4']) await call($, 'TaskUpdate', { taskId, status: 'completed' })
+    await end($)
+    const drawn = await card($, surface)
+    expect(drawn).toContain('✓ Tudo pronto')
+    expect(drawn).toContain('levou')
+    expect(drawn).toContain('4 de 4 passos')
+    expect(drawn).toContain('100%')
+    expect(drawn).toContain('mudei 1 arquivo · li 1 arquivo')
+  })
+}
+
+test('plano longo: five rows around the current task and the count of the rest', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  for (let i = 1; i <= 9; i++) await call($, 'TaskCreate', { subject: `Tarefa ${i}`, description: '' })
+  for (const taskId of ['1', '2', '3', '4', '5']) await call($, 'TaskUpdate', { taskId, status: 'completed' })
+  await call($, 'TaskUpdate', { taskId: '6', status: 'in_progress' })
+  const drawn = await card($)
+  expect(drawn).toContain('✓ mais 4 feitos')
+  expect(drawn).toContain('Tarefa 9')
+  expect(drawn).not.toContain('Tarefa 3')
+})
+
+test('sem lista de tarefas: the tool in flight; fim sem lista: the engine band alone', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, 'O que o weather.ts faz?')
+  await call($, 'Read', { file_path: '/repo/src/weather.ts' })
+  let drawn = await card($)
+  expect(drawn).toContain('Lendo weather.ts')
+  expect(drawn).toContain('O que o weather.ts faz?')
+  await end($)
+  drawn = await card($)
+  expect(drawn).not.toContain('weather.ts')
+  expect(drawn).toContain('engine row')
+})
+
+test('interrompido: the grey badge and where it stopped', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  await plan($)
+  await end($, 'aborted')
+  const drawn = await card($)
+  expect(drawn).toContain('■ Interrompido')
+  expect(drawn).toContain('parou em')
+  expect(drawn).toContain('Parado')
+  expect(drawn).toContain('li 4 arquivos')
+})
+
+test('a new request clears the card of the last one', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  for (const subject of TASKS) await call($, 'TaskCreate', { subject, description: subject })
+  for (const taskId of ['1', '2', '3', '4']) await call($, 'TaskUpdate', { taskId, status: 'completed' })
+  await end($)
+  await ask($, 'E agora em inglês?')
+  const drawn = await card($)
+  expect(drawn).not.toContain('Tudo pronto')
+  expect(drawn).toContain('E agora em inglês?')
+  expect(drawn).toContain('Entender o pedido')
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`tool rows step aside; a failure, an interrupt and the agent's questions draw in full on ${surface}`, ON, async ($, on) => {
+    engine(on)
+    await start($, surface)
+    expect(await row($, 'ToolUse', toolUse('Read'), surface)).not.toContain('engine row')
+    expect(await row($, 'ToolUse', toolUse('Bash', { isErrored: true }), surface)).toContain('engine row')
+    expect(await row($, 'ToolUse', toolUse('Edit', { isInterrupted: true }), surface)).toContain('engine row')
+    for (const tool of ['AskUserQuestion', 'ExitPlanMode', 'Agent']) expect(await row($, 'ToolUse', toolUse(tool), surface)).toContain('engine row')
+    expect(await row($, 'ToolResult', { tool_use_id: 'tu1', tool: 'Write', output: {}, isErrored: false }, surface)).not.toContain('engine row')
+    expect(await row($, 'ToolResult', { tool_use_id: 'tu1', tool: 'Bash', output: {}, isErrored: true }, surface)).toContain('engine row')
+    const calls = [
+      { tool: 'Read', input: {}, isRunning: false, isErrored: false, isInterrupted: false },
+      { tool: 'Grep', input: {}, isRunning: false, isErrored: false, isInterrupted: false },
+    ]
+    expect(await row($, 'ToolGroup', { calls, isActive: false, isExpanded: false }, surface)).not.toContain('engine row')
+    expect(await row($, 'ToolGroup', { calls: [...calls, { ...calls[0], isErrored: true }], isActive: false, isExpanded: false }, surface)).toContain('engine row')
+  })
+}
+
+test('tool falhou: the failed call counts in the turn and the card goes on', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  await plan($)
+  await call($, 'Bash', { command: 'npm test' })
+  const drawn = await card($)
+  expect(drawn).toContain('Passo 2 de 4')
+  expect(drawn).toContain('rodando npm test')
+})
+
+test('desligado (padrão): nothing changes', async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  await call($, 'Read', { file_path: '/repo/a.ts' })
+  expect(await card($)).not.toContain('a.ts')
+  expect(await row($, 'ToolUse', toolUse('Read'))).toContain('engine row')
+  const mode = await row($, 'SessionMode', { modes: [] })
+  expect(mode).not.toContain('plain view')
+})
+
+test('the footer names the mode while it is on', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  const ui = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'SessionMode', props: { modes: ['focus'] }, viewport: { columns: 120, rows: 40 } } as never)
+  expect(JSON.stringify(await ui.drawn())).toContain('modes: focus & plain view')
+  await ui.unmount()
+})
+
+test('/plain-view on and off write the option, and say so', async ($, on) => {
+  const w = engine(on)
+  await start($)
+  expect((await run($, 'off')).text).toBe('plain-view is already off.')
+  expect((await run($, 'on')).text).toBe('plain-view on · /plain-view off turns it off')
+  expect(w.sets).toEqual([{ key: 'plain-view.enabled', value: true }])
+})
+
+test('/plain-view off when on', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  expect((await run($, 'off')).text).toBe('plain-view desligado · /plain-view on liga')
+  expect(w.sets).toEqual([{ key: 'plain-view.enabled', value: false }])
+})
+
+test('help: the verbs and where the palette changes, with buttons', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  const { text } = await run($, 'help')
+  expect(text).toContain('`palette` mostra as 8 paletas')
+  expect(text).toContain('Paleta padrão: claude')
+  const ui = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'CommandOutput', props: { command: 'plain-view', args: 'help', text, isErrored: false }, viewport: { columns: 120, rows: 40 } } as never)
+  const drawn = JSON.stringify(await ui.drawn())
+  for (const verb of ['on', 'off', 'demo', 'palette']) expect(drawn).toContain(`"key":"verb:${verb}"`)
+  await ui.press({ key: 'verb:palette' })
+  expect(w.logs.join('\n')).toContain('aurora')
+  await ui.unmount()
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`palette: the eight with a sample, the one in use, a button to switch on ${surface}`, { options: { language: 'pt-BR', palette: 'claude' } }, async ($, on) => {
+    const w = engine(on)
+    await start($, surface)
+    const { text } = await run($, 'palette')
+    expect(text).toContain('agora: claude')
+    expect(text).toContain('`neon`')
+    const ui = await $.ui.mount({ plugin: 'plain-view', surface, component: 'CommandOutput', props: { command: 'plain-view', args: 'palette', text, isErrored: false }, viewport: { columns: 120, rows: 40 } } as never)
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn).toContain('em uso')
+    expect(drawn).toContain('use:aurora')
+    expect(drawn).not.toContain('use:claude')
+    expect(drawn).toContain('/config → plain-view → palette')
+    if (surface === 'terminal') expect(drawn).toContain('work:aurora')
+    await ui.press({ key: 'use:aurora' })
+    expect(w.sets).toEqual([{ key: 'plain-view.palette', value: 'aurora' }])
+    expect(w.toasts).toEqual(['Paleta aurora · salva em /config'])
+    await ui.unmount()
+  })
+}
+
+test('palette by name, and a name it does not know', { options: { language: 'en' } }, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  expect((await run($, 'palette Neon')).text).toBe('Palette neon · saved in /config')
+  expect((await run($, 'palette pink')).text).toContain('No palette named "pink"')
+  expect(w.sets).toEqual([{ key: 'plain-view.palette', value: 'neon' }])
+})
+
+test('demo: the sample card, step by step, even with the mod off', { options: { language: 'pt-BR' } }, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  expect((await run($, 'demo')).text).toContain('Demo no cartão acima do prompt')
+  let drawn = await card($)
+  expect(drawn).toContain('Demo: monte um painel do tempo')
+  expect(drawn).toContain('Passo 1 de 4')
+  await w.clock.advance(3000)
+  expect(await card($)).toContain('Passo 2 de 4')
+  await w.clock.advance(9000)
+  drawn = await card($)
+  expect(drawn).toContain('✓ Tudo pronto')
+})
+
+test('demo waits while the agent works', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  expect((await run($, 'demo')).text).toBe('O agente está trabalhando. Rode a demo quando o pedido terminar.')
+})
+
+test('the figures take the bar end color of the palette; animation off falls back to theme keys', { options: { enabled: true, palette: 'aurora' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  await plan($)
+  const drawn = await card($)
+  expect(drawn).toContain('#4aa8ff') // aurora's g2 in the dark set
+})
+
+test('light theme picks the light set', { options: { enabled: true, palette: 'aurora' } }, async ($, on) => {
+  engine(on, 'light')
+  await start($)
+  await ask($)
+  await plan($)
+  expect(await card($)).toContain('#1f6feb')
+})
+
+test('animation off: no gradient, no Raster, theme keys', { options: { enabled: true, animation: false } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  await plan($)
+  const drawn = await card($)
+  expect(drawn).not.toContain('"cells"')
+  expect(drawn).toContain('"claude"')
+})
+
+test('the shine moves while the agent works and stops when the turn ends', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await ask($)
+  await plan($)
+  const before = await card($)
+  await w.clock.advance(100)
+  const after = await card($)
+  expect(after).not.toBe(before)
+  await end($)
+  const done = await card($)
+  await w.clock.advance(500)
+  expect(await card($)).toBe(done)
+})
+
+test('80 columns: the card fits', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  await plan($)
+  const drawn = await card($, 'terminal', 80)
+  expect(drawn).toContain('"columns":10')
+  expect(drawn).toContain('"columns":56')
+})
+
+test('subagent calls do not move the card', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  await call($, 'Read', { file_path: '/repo/x.ts', agentId: 'a1' })
+  expect(await card($)).toContain('Entender o pedido')
+})
+
+test('icons: emoji in the steps when asked', { options: { enabled: true, icons: 'emoji', language: 'pt-BR' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  await plan($)
+  const drawn = await card($)
+  expect(drawn).toContain('✅')
+  expect(drawn).toContain('🟠')
+})
