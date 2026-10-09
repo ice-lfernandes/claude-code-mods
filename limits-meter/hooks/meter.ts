@@ -1,4 +1,4 @@
-import type { Samples, Snapshot, Turn } from '../types'
+import type { Limit, Samples, Snapshot, Turn } from '../types'
 import type { Lang } from './ui'
 import { WORDS } from './words'
 
@@ -155,4 +155,90 @@ export const summary = (s: Snapshot, last: Turn | undefined, now: number, lang: 
   if (last?.cacheHit != null) parts.push(`cache ${pct(last.cacheHit * 100)}`)
   if (s.limits.length === 0) parts.push(w.noReadings)
   return parts.join(' · ')
+}
+
+/** Effort levels from least to most thinking, the gauge's five steps. */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/** The level an effort value names, or null: a string from EFFORT_LEVELS, any case. */
+export const effortLevel = (v: unknown) => {
+  const level = typeof v === 'string' ? v.toLowerCase() : ''
+  return (EFFORT_LEVELS as readonly string[]).includes(level) ? level : null
+}
+
+/** Effort as a five-step gauge, low ▰▱▱▱▱ to max ▰▰▰▰▰; "" for a level outside the list. */
+export const gauge = (level: string | number | null | undefined) => {
+  const n = EFFORT_LEVELS.indexOf(String(level) as (typeof EFFORT_LEVELS)[number]) + 1
+  return n > 0 ? '▰'.repeat(n) + '▱'.repeat(EFFORT_LEVELS.length - n) : ''
+}
+
+/** Models from cheapest to costliest; a switch up this list is a costly one. */
+export const MODEL_ORDER = ['haiku', 'sonnet', 'opus', 'fable'] as const
+
+/** A model's place in MODEL_ORDER, or -1 for a model it does not name. */
+export const rankOf = (model: string | null | undefined) => {
+  const name = (model ?? '').toLowerCase()
+  return MODEL_ORDER.findIndex(family => name.includes(family))
+}
+
+/** Whether going from one model to another climbs MODEL_ORDER; an unknown model never does. */
+export const isCostlier = (from: string | null | undefined, to: string | null | undefined) => {
+  const a = rankOf(from)
+  const b = rankOf(to)
+  return a >= 0 && b > a
+}
+
+/** Turns the toast's pace reads: the last few, as the plan item says. */
+export const PACE_TURNS = 3
+
+/**
+ * Minutes until the 5-hour window reaches 100% at the pace of the last PACE_TURNS main-thread
+ * turns, or null: fewer turns than that, or no rise. The pace comes from the window's own
+ * timestamped readings (`points`, as addSamples keeps them) since the first of those turns
+ * started; the turns only bound the span, so a reading that lands after its turn still counts.
+ */
+export const minutesLeft = (five: Limit, points: readonly (readonly [number, number])[], recentTurns: readonly Turn[]): number | null => {
+  const ended = recentTurns.filter(t => t.endedAt != null)
+  if (ended.length < PACE_TURNS) return null
+  const first = ended[ended.length - PACE_TURNS]!
+  const since = first.endedAt! - first.durationMs
+  const span = points.filter(p => p[0] >= since)
+  if (span.length < 2) return null
+  const [t0, p0] = span[0]!
+  const [t1, p1] = span[span.length - 1]!
+  if (t1 <= t0 || p1 <= p0) return null
+  return Math.max(0, Math.round(((100 - five.percent) * (t1 - t0)) / (p1 - p0) / 60_000))
+}
+
+/** What the session runs: a model id and the effort of its last request. */
+export type Setting = { model: string | null; effort: string | number | null }
+
+/**
+ * The toast for a costly switch (a model up MODEL_ORDER, or effort turning to max) with the
+ * 5-hour window at `threshold` or more, or null when there is nothing to say. With a pace, the
+ * minutes left; when the window resets before that, its reset time; with no pace, no number.
+ */
+export const switchWarning = (
+  from: Setting,
+  to: Setting,
+  five: Limit | undefined,
+  threshold: number,
+  points: readonly (readonly [number, number])[],
+  recentTurns: readonly Turn[],
+  now: number,
+  lang: Lang = 'en',
+): string | null => {
+  const toModel = isCostlier(from.model, to.model)
+  const toMax = to.effort === 'max' && from.effort !== 'max'
+  if (!toModel && !toMax) return null
+  if (!five || five.percent < threshold) return null
+  const w = WORDS[lang]
+  const percent = pct(five.percent)
+  const minutes = minutesLeft(five, points, recentTurns)
+  if (minutes !== null) {
+    const runsOutAt = now + minutes * 60_000
+    if (five.resetsAt !== null && runsOutAt >= five.resetsAt) return w.switchResets(percent, resetIn(five.resetsAt, now, lang))
+    return w.switchPace(percent, minutes < 60 ? `${minutes} min` : resetIn(runsOutAt, now, lang))
+  }
+  return w.switchFaster(percent, toModel ? MODEL_ORDER[rankOf(to.model)]! : 'effort max')
 }

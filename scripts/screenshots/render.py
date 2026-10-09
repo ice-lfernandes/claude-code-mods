@@ -190,7 +190,8 @@ band = trim(tree(d['BAND'][0]))
 bw = max(width(l) for l in band) - 2
 prompt = [plain('╭' + '─' * bw + '╮', dimColor=True), plain('│ ', dimColor=True) + plain('> ') + plain(' ' * (bw - 3)) + plain('│', dimColor=True), plain('╰' + '─' * bw + '╯', dimColor=True)]
 open(f'{out}/limits-meter.svg', 'w').write(svg([
-    ('band above the prompt', 'raw', band + prompt),
+    ('band above the prompt (format: full, the default)', 'raw', band + prompt),
+    ('format: compact, 80 columns', 'raw', trim(tree(d['BAND'][1]))),
     ('/limits', 'pane:Limits & context', trim(tree(d['PANE'][0]))),
     ('toasts', 'toast', [plain(t) for t in d['TOAST']]),
 ], 60, 'limits-meter'))

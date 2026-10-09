@@ -30,6 +30,8 @@ export type Turn = {
   durationMs: number
   /** Context fill when the turn ended, 0 to 100; null when unknown. */
   contextPercent?: number | null
+  /** When the turn ended, in epoch milliseconds: the costly-switch pace spans the last turns. */
+  endedAt?: number
 }
 
 /** Readings of each plan window since it last reset, for the pace: [epoch ms, percent]. */
@@ -43,6 +45,12 @@ declare module 'claude-code' {
       isHidden: boolean
       fired: string[]
       samples: Samples
+      /** The main thread's model id, from session.model, PostModelSwitch and turn.step. */
+      model: string | null
+      /** The main thread's effort, from the best source seen; null when unknown or the model has none. */
+      effort: string | number | null
+      /** The 5-hour percent from which a costly switch raises a toast; kept in $.store. */
+      switchAt: number
     }
   }
 }

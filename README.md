@@ -8,7 +8,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 
 | Mod | Command | What it does |
 | --- | --- | --- |
-| [limits-meter](limits-meter/) | `/limits` | Plan limits and context above the prompt: 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn |
+| [limits-meter](limits-meter/) | `/limits` | Plan limits and context above the prompt: model and effort, 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn, and a toast on a costly model switch near the limit |
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
 | [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish |
 | [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
@@ -28,12 +28,16 @@ The band shows on its own after the first response. Commands:
 /limits          open the pane: plan windows, context in tokens, the last 20 turns
 /limits hide     hide the band above the prompt, in later sessions too
 /limits show     bring the band back
+/limits warn N   warn on a costly switch with the 5-hour window from N% (default 70)
 /limits help     list the commands
 ```
 
+The band leads with the model and effort; `format: compact` draws it as one line of numbers.
 From 85% context the band and the pane show `compact`, which puts `/compact [focus]` in the
 prompt and runs nothing. `details` on the band opens the pane. The pane also says when a window
 reaches 100% at the current pace, before it resets, and draws the context fill turn by turn.
+A switch to a bigger model (haiku < sonnet < opus < fable) or to effort `max` with the 5-hour
+window at 70% or more shows one toast with the minutes left at the pace of the last 3 turns.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](screenshots/limits-meter.svg)
 

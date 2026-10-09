@@ -1,30 +1,39 @@
 // limits-meter: plan limits and context, above the prompt and in a pane.
 //
-//   band   AbovePrompt: 5-hour and weekly windows with reset times, context fill, last turn's
-//          cache hit rate. Tokens and percent only, never money. `details` opens the pane,
-//          `hide` hides the band, and from 85% context `compact` puts /compact in the prompt.
-//          The `cells`, `density`, `warnAt` and `dangerAt` options shape it; below 90 columns
-//          each bar shrinks to one cell.
+//   band   AbovePrompt: the main thread's model and effort, 5-hour and weekly windows with reset
+//          times, context fill, last turn's cache hit rate. Tokens and percent only, never money.
+//          `details` opens the pane, `hide` hides the band, and from 85% context `compact` puts
+//          /compact in the prompt. The `format`, `cells`, `density`, `warnAt` and `dangerAt`
+//          options shape it; below 90 columns each bar shrinks to one cell, and `format: compact`
+//          draws one line of numbers.
 //   pace   each window's readings since its reset; when their pace reaches 100% before the
 //          reset, the pane says when.
 //   /limits  opens a pane with the same figures at full width and the last turns' tokens;
 //          /limits hide | show toggles the band, and the choice is kept across sessions.
-//   toasts once per threshold: a window at 80, 90 and 100%, context at 85%.
+//   toasts once per threshold: a window at 80, 90 and 100%, context at 85%. And once per costly
+//          switch (a model up haiku < sonnet < opus < fable, or effort turning to max) with the
+//          5-hour window at /limits warn N or more (70 by default): the minutes left at the pace
+//          of the last 3 turns, or when the window resets first, or no number without a pace.
 //
 // Figures come from `session.measure` (pushed by the engine after each turn and when a window
 // moves a point), so nothing polls. Reads nothing from disk, runs no process, calls no model.
 
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { Elements, EngineInterface, Register } from 'claude-code'
 
 import type { Samples, Snapshot, Turn } from '../types'
-import { addSamples, alerts, bar, contextSpark, heaviest, label, mini, needsCompact, pace, pct, resetIn, summary, toSnapshot, toTurn, tone as toneOf, TURNS_KEPT } from './meter'
+import type { Setting } from './meter'
+import { addSamples, alerts, bar, contextSpark, effortLevel, gauge, heaviest, label, mini, needsCompact, pace, pct, resetIn, summary, switchWarning, toSnapshot, toTurn, tone as toneOf, TURNS_KEPT } from './meter'
 import type { Lang, Verb } from './ui'
 import { fillArgs, langOf, linesOf, shortModel, tokens, verbRow } from './ui'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'limits'
 const KEY_HIDDEN = 'hidden'
+const KEY_SWITCH = 'switchWarnAt'
+const SWITCH_AT = 70
+/** The thresholds the pane offers for the costly-switch toast; /limits warn takes any 1 to 100. */
+const SWITCH_CHOICES = [50, 60, 70, 80, 90]
 
 const EMPTY: Snapshot = { limits: [], contextPercent: null, contextTokens: null, contextWindow: 0 }
 
@@ -33,6 +42,9 @@ const turns = atom({ plugin: 'limits-meter', key: 'turns' } as const, [] as Turn
 const isHidden = atom({ plugin: 'limits-meter', key: 'isHidden' } as const, false)
 const fired = atom({ plugin: 'limits-meter', key: 'fired' } as const, [] as string[])
 const samples = atom({ plugin: 'limits-meter', key: 'samples' } as const, {} as Samples)
+const model = atom({ plugin: 'limits-meter', key: 'model' } as const, null as string | null)
+const effort = atom({ plugin: 'limits-meter', key: 'effort' } as const, null as string | number | null)
+const switchAt = atom({ plugin: 'limits-meter', key: 'switchAt' } as const, SWITCH_AT)
 
 // Set by register from the options, and by session.start from the system's LANG.
 let lang: Lang = 'en'
@@ -41,18 +53,20 @@ let dangerAt = 90
 /** The band's cells by id (5h, wk, spend, ctx, cache); null shows them all. */
 let cells: Set<string> | null = null
 let density: 'auto' | 'bars' | 'mini' | 'numbers' = 'auto'
+/** `full`, the band with bars, or `compact`, one line of numbers. */
+let format: 'full' | 'compact' = 'full'
 
 const tone = (percent: number | null) => toneOf(percent, warnAt, dangerAt)
 
 const CELL_IDS: Record<string, string> = { five_hour: '5h', seven_day: 'wk', spend_limit: 'spend' }
 const shows = (id: string) => cells === null || cells.has(id)
 
-/** The `cells` option: names from 5h, wk, spend, ctx, cache, comma-separated; `all` or nothing known shows them all. */
+/** The `cells` option: names from model, 5h, wk, spend, ctx, cache, comma-separated; `all` or nothing known shows them all. */
 const cellsOf = (option: unknown): Set<string> | null => {
   const names = String(option ?? '')
     .toLowerCase()
     .split(/[\s,]+/)
-    .filter(n => ['5h', 'wk', 'spend', 'ctx', 'cache'].includes(n))
+    .filter(n => ['model', '5h', 'wk', 'spend', 'ctx', 'cache'].includes(n))
   return names.length ? new Set(names) : null
 }
 
@@ -76,11 +90,85 @@ const setHidden = async ($: EngineInterface, hidden: boolean) => {
   await $.store.set(KEY_HIDDEN, hidden)
 }
 
+/** Sets the costly-switch threshold, and keeps it for later sessions. */
+const setSwitchAt = async ($: EngineInterface, percent: number) => {
+  await update($, switchAt, () => percent)
+  await $.store.set(KEY_SWITCH, percent)
+}
+
+/** A costly switch with the 5-hour window at the threshold or more raises one toast. */
+const warnIfCostly = async ($: EngineInterface, from: Setting, to: Setting) => {
+  const s = await read($, snapshot)
+  const five = s.limits.find(l => l.kind === 'five_hour')
+  const readings = five && five.resetsAt !== null ? (await read($, samples))[five.kind] : undefined
+  const points = readings && five && readings.resetsAt === five.resetsAt ? readings.points : []
+  const text = switchWarning(from, to, five, await read($, switchAt), points, await read($, turns), await $.clock.now(), lang)
+  if (text) $.ui.toast(text, { timeoutMs: 8000 })
+}
+
+/**
+ * Where the effort came from, best first: a request (`turn.step`, the setting it asks for), the
+ * turn's end (`classic.Stop`, after any downgrade for the model), /config (the stored setting).
+ * The sources can disagree, so a weaker one never overwrites a stronger one, and only a change
+ * within one source counts as a switch: the band does not flip between a request's max and the
+ * high it was downgraded to, and no toast fires for it. A module variable: a reload starts over.
+ */
+const SOURCES = { request: 2, turnEnd: 1, config: 0 } as const
+let effortFrom: keyof typeof SOURCES | null = null
+
+/**
+ * An effort seen on the main thread, from `source`: kept for the band when no stronger source
+ * gave one, and a change within the same source to max may warn (never from /config). A source
+ * with no effort (a request that carries none) keeps the one known.
+ */
+const seeEffort = async ($: EngineInterface, level: string | number | null | undefined, source: keyof typeof SOURCES, id?: string | null) => {
+  if (level == null || level === '') return
+  if (effortFrom !== null && SOURCES[source] < SOURCES[effortFrom]) return
+  const was = effortFrom === source ? await read($, effort) : null
+  effortFrom = source
+  if (was === level) return
+  await update($, effort, () => level)
+  if (was !== null && source !== 'config') {
+    const current = id ?? (await read($, model))
+    await warnIfCostly($, { model: current, effort: was }, { model: current, effort: level })
+  }
+}
+
+/** The session's effort from /config: the first row named for effort whose value is a level. */
+const effortOfConfig = (rows: readonly { key: string; label: string; value: unknown }[]) => {
+  for (const r of rows) {
+    if (!/effort/i.test(r.key) && !/^(effort|esforço)/i.test(r.label)) continue
+    const level = effortLevel(r.value)
+    if (level) return level
+  }
+  return null
+}
+
+/** The effort drawn, band and pane alike: its gauge and its name, max in the warning color. */
+const effortView = (Text: Elements[keyof Elements]['Text'], level: string | number) => {
+  const max = level === 'max'
+  return [
+    ...(gauge(level) !== '' ? [<Text key="gauge" color={max ? 'warning' : undefined} dimColor={!max}>{`${gauge(level)} `}</Text>] : []),
+    <Text key="level" color={max ? 'warning' : undefined} bold={max}>{String(level)}</Text>,
+  ]
+}
+
+/** A threshold from /limits warn: a whole number from 1 to 100, else null. */
+const percentOf = (arg: string) => (/^\d{1,3}%?$/.test(arg) && Number.parseInt(arg, 10) >= 1 && Number.parseInt(arg, 10) <= 100 ? Number.parseInt(arg, 10) : null)
+
 const open = ($: EngineInterface) => $.ui.open({ id: PANE, title: WORDS[lang].pane, focus: true, closeOnEscape: true }).catch(() => null)
 
 /** /limits and its arguments: what the command answers, and what the pane's verbs run. */
 const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
   const w = WORDS[lang]
+  const [verb = '', arg = ''] = args.trim().toLowerCase().split(/\s+/)
+  if (verb === 'warn') {
+    if (arg === '') return { text: w.warnIs(await read($, switchAt)) }
+    const percent = percentOf(arg)
+    if (percent === null) return { text: w.help }
+    await setSwitchAt($, percent)
+    return { text: w.warnSet(percent) }
+  }
   switch (args.trim().toLowerCase()) {
     case 'hide':
       await setHidden($, true)
@@ -127,6 +215,7 @@ export const register: Register = (on, options) => {
   dangerAt = Math.max(warnAt, num(options.dangerAt, 90))
   cells = cellsOf(options.cells)
   density = options.density === 'bars' || options.density === 'mini' || options.density === 'numbers' ? options.density : 'auto'
+  format = options.format === 'compact' ? 'compact' : 'full'
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -134,11 +223,24 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[hide|show|help]',
+      argumentHint: '[hide|show|warn N|help]',
       immediate: true,
     })
     const hidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
     await update($, isHidden, () => hidden)
+    const kept = await $.store.get(KEY_SWITCH).catch(() => undefined)
+    await update($, switchAt, () => (typeof kept === 'number' && kept >= 1 && kept <= 100 ? kept : SWITCH_AT))
+    try {
+      const id = await $.session.model()
+      await update($, model, () => id || null)
+    } catch {
+      // The first turn.step brings it.
+    }
+    try {
+      await seeEffort($, effortOfConfig(await $.config.list()), 'config')
+    } catch {
+      // The first request or turn end brings it.
+    }
     try {
       const usage = await $.session.usage()
       await update($, snapshot, () => toSnapshot(usage.context, usage.rateLimits))
@@ -157,11 +259,50 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (!e.agentId && e.usage) {
-      const turn = { ...toTurn(e.usage, e.durationMs), contextPercent: (await read($, snapshot)).contextPercent }
+      const turn = { ...toTurn(e.usage, e.durationMs), contextPercent: (await read($, snapshot)).contextPercent, endedAt: await $.clock.now() }
       await update($, turns, list => [...list, turn].slice(-TURNS_KEPT))
     }
     return result
   })
+
+  // A switch to a costlier model: the band's model and, near the 5-hour limit, a toast. A resumed
+  // session restores its model, which is no switch. The new model may take no effort, or another
+  // default: the effort starts over and the next source fills it. Fail-open: the switch goes on.
+  on('classic.PostModelSwitch', async ($, e, next) => {
+    const result = await next(e)
+    await update($, model, () => e.to_model)
+    if (e.source !== 'resume') {
+      const now = await read($, effort)
+      await warnIfCostly($, { model: e.from_model, effort: now }, { model: e.to_model, effort: now })
+    }
+    if (e.from_model !== e.to_model) {
+      effortFrom = null
+      await update($, effort, () => null)
+    }
+    return result
+  }).catch(($, e, next) => next(e))
+
+  // The main loop's model and effort as each request goes out; effort turning to max warns here,
+  // on the first request at max, since a /effort command raises no event of its own.
+  on('turn.step', async function* ($, e, next) {
+    if (!e.agentId) {
+      try {
+        await update($, model, () => e.model)
+        await seeEffort($, e.effort, 'request', e.model)
+      } catch {
+        // The band keeps what it had; the request goes on.
+      }
+    }
+    return yield* next(e)
+  })
+
+  // The turn's end carries its effort too (`effort.level`), where the requests carry none. One a
+  // turn on main, in order: unlike PostToolUse, which may run in parallel and toast twice.
+  on('classic.Stop', async ($, e, next) => {
+    const result = await next(e)
+    if (!e.agent_id) await seeEffort($, e.effort?.level, 'turnEnd')
+    return result
+  }).catch(($, e, next) => next(e))
 
   on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
 
@@ -179,8 +320,56 @@ export const register: Register = (on, options) => {
     const width = barWidth(columns)
     const meter = (percent: number) =>
       width > 0 ? <Text color={tone(percent)}>{`${bar(width, percent)} `}</Text> : width === 0 ? <Text color={tone(percent)}>{mini(percent)}</Text> : null
+    const id = await read($, model)
+    const level = await read($, effort)
+    // The model in the accent color; the effort as a five-step gauge and its name, max in warning.
+    const setting =
+      (id || level !== null) && shows('model') ? (
+        <Text key="model">
+          {id && <Text color="claude" bold>{shortModel(id)}</Text>}
+          {id && level !== null && <Text> </Text>}
+          {level !== null && effortView(Text, level)}
+        </Text>
+      ) : null
+
+    const verbs = [
+      ...(needsCompact(s) ? [<Button key="compact" label={w.compact} plain color="warning" onPress={() => fill($, w.compactFill)} />] : []),
+      <Button key="details" label={w.details} plain dimColor onPress={() => open($)} />,
+      <Button key="hide" label={w.hide} plain dimColor onPress={() => setHidden($, true)} />,
+    ]
+
+    if (format === 'compact') {
+      // model · effort · ctx 8% · 5h 34% · wk 31%: numbers only, one line.
+      const cell = (key: string, name: string, percent: number | null) => (
+        <Text key={key}>
+          <Text dimColor>{`${name} `}</Text>
+          <Text color={tone(percent)} bold>{pct(percent)}</Text>
+        </Text>
+      )
+      const parts = [
+        ...(setting ? [setting] : []),
+        ...(shows('ctx') ? [cell('ctx', 'ctx', s.contextPercent)] : []),
+        ...s.limits.filter(l => shows(CELL_IDS[l.kind] ?? l.kind)).map(l => cell(l.kind, label(l.kind, lang), l.percent)),
+      ]
+      const line = (
+        <Box key="limits-meter" flexDirection="row" flexWrap="wrap" gap={2} paddingX={1}>
+          <Text key="numbers">{parts.flatMap((p, i) => (i > 0 ? [<Text key={`sep-${i}`} dimColor> · </Text>, p] : [p]))}</Text>
+          {verbs}
+        </Box>
+      )
+      const beneath = await next(e)
+      return beneath ? (
+        <Box flexDirection="column">
+          {line}
+          {beneath}
+        </Box>
+      ) : (
+        line
+      )
+    }
 
     const band = [
+      ...(setting ? [setting] : []),
       ...s.limits
         .filter(l => shows(CELL_IDS[l.kind] ?? l.kind))
         .map(l => {
@@ -216,9 +405,7 @@ export const register: Register = (on, options) => {
     const mine = (
       <Box key="limits-meter" flexDirection="row" flexWrap="wrap" gap={2} paddingX={1}>
         {band}
-        {needsCompact(s) && <Button key="compact" label={w.compact} plain color="warning" onPress={() => fill($, w.compactFill)} />}
-        <Button key="details" label={w.details} plain dimColor onPress={() => open($)} />
-        <Button key="hide" label={w.hide} plain dimColor onPress={() => setHidden($, true)} />
+        {verbs}
       </Box>
     )
     const theirs = await next(e)
@@ -247,9 +434,14 @@ export const register: Register = (on, options) => {
     })
     const trend = list.filter(t => t.contextPercent != null)
     const top = heaviest(list)
+    const id = await read($, model)
+    const level = await read($, effort)
+    const at = await read($, switchAt)
+    const choices = [...new Set([...SWITCH_CHOICES, at])].sort((a, b) => a - b)
     // Rows besides the turns: the hint, three headings, the context row, the table head, the
-    // footer, the gaps, a pace line per window that has one and the trend line.
-    const fixed = 12 + Math.max(1, s.limits.length) + paces.filter(p => p !== null).length + (trend.length > 1 ? 1 : 0)
+    // footer, the gaps, a pace line per window that has one and the trend line; then the
+    // costly-switch section (heading, hint, choices, order, gap) and the model's (heading, row, gap).
+    const fixed = 12 + Math.max(1, s.limits.length) + paces.filter(p => p !== null).length + (trend.length > 1 ? 1 : 0) + 5 + (id || level !== null ? 3 : 0)
     const room = Math.max(3, (e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 30) - fixed)
     const [cIn, cOut, cCache, cTime, cModel] = w.columns
 
@@ -294,6 +486,35 @@ export const register: Register = (on, options) => {
               <Text dimColor>{`  ${w.trend(Math.min(list.length, width))}`}</Text>
             </Text>
           )}
+        </Box>
+
+        {(id || level !== null) && (
+          <Box flexDirection="column">
+            <Text bold>{w.modelHeading}</Text>
+            <Text>
+              {id && <Text color="claude" bold>{shortModel(id)}</Text>}
+              {level !== null && <Text dimColor>{`${id ? '   ' : ''}${w.effort} `}</Text>}
+              {level !== null && effortView(Text, level)}
+            </Text>
+          </Box>
+        )}
+
+        <Box flexDirection="column">
+          <Text bold>{w.warnHeading}</Text>
+          <Text dimColor>{w.warnHint}</Text>
+          <Box flexDirection="row" flexWrap="wrap">
+            {choices.map((n, i) => (
+              <Box key={`warn-${n}`} flexDirection="row">
+                {i > 0 && <Text dimColor> · </Text>}
+                {n === at ? (
+                  <Text color="claude" bold>{`${n}%`}</Text>
+                ) : (
+                  <Button key={`warn:${n}`} plain dimColor label={`${n}%`} onPress={() => setSwitchAt($, n).then(() => $.ui.toast(w.warnSet(n)), () => $.ui.toast(w.failedToRun(`/${COMMAND} warn ${n}`)))} />
+                )}
+              </Box>
+            ))}
+          </Box>
+          <Text dimColor>{w.warnOrder}</Text>
         </Box>
 
         <Box flexDirection="column">

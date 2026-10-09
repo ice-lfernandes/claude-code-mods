@@ -42,11 +42,24 @@ type Words = {
   shown: string
   help: string
   failedToRun: (what: string) => string
+  /** Toasts on a costly switch: with a pace, with the window resetting first, with no pace. */
+  switchPace: (percent: string, span: string) => string
+  switchResets: (percent: string, reset: string) => string
+  switchFaster: (percent: string, what: string) => string
+  /** The pane's model section. */
+  modelHeading: string
+  effort: string
+  /** The pane's costly-switch section and /limits warn. */
+  warnHeading: string
+  warnHint: string
+  warnOrder: string
+  warnSet: (percent: number) => string
+  warnIs: (percent: number) => string
 }
 
 export const WORDS: Record<Lang, Words> = {
   'pt-BR': {
-    description: 'Limites do plano e contexto: /limits abre o painel; hide, show, help',
+    description: 'Limites do plano e contexto: /limits abre o painel; hide, show, warn, help',
     pane: 'Limites e contexto',
     hint: 'Números que o engine informa a cada turno. Tokens e percentual, nunca dinheiro.',
     labels: { five_hour: '5h', seven_day: 'sem', spend_limit: 'gasto' },
@@ -76,11 +89,22 @@ export const WORDS: Record<Lang, Words> = {
       '/limits          abre o painel: janelas do plano, contexto em tokens, os últimos 20 turnos',
       '/limits hide     oculta a banda acima do prompt, também nas próximas sessões',
       '/limits show     traz a banda de volta',
+      '/limits warn N   avisa na troca cara com a janela de 5h a partir de N% (padrão 70)',
     ].join('\n'),
     failedToRun: what => `Não deu para rodar: ${what}`,
+    switchPace: (percent, span) => `5h em ${percent}: neste ritmo a janela acaba em ~${span} · /limits`,
+    switchResets: (percent, reset) => `5h em ${percent}: reinicia em ${reset}, antes de acabar · /limits`,
+    switchFaster: (percent, what) => `5h em ${percent}: ${what} gasta a janela mais rápido · /limits`,
+    modelHeading: 'Modelo',
+    effort: 'effort',
+    warnHeading: 'Aviso de troca cara',
+    warnHint: 'Toast ao trocar para modelo maior ou effort max com 5h a partir de:',
+    warnOrder: 'ordem: haiku < sonnet < opus < fable',
+    warnSet: percent => `Aviso de troca cara a partir de ${percent}%. Vale nas próximas sessões.`,
+    warnIs: percent => `Aviso de troca cara a partir de ${percent}%. /limits warn N muda (1 a 100).`,
   },
   en: {
-    description: 'Plan limits and context: /limits opens the pane; hide, show, help',
+    description: 'Plan limits and context: /limits opens the pane; hide, show, warn, help',
     pane: 'Limits & context',
     hint: 'Figures the engine reports after each turn. Tokens and percent, never money.',
     labels: { five_hour: '5h', seven_day: 'wk', spend_limit: 'spend' },
@@ -110,7 +134,18 @@ export const WORDS: Record<Lang, Words> = {
       '/limits          open the pane: plan windows, context in tokens, the last 20 turns',
       '/limits hide     hide the band above the prompt, in later sessions too',
       '/limits show     bring the band back',
+      '/limits warn N   warn on a costly switch with the 5-hour window from N% (default 70)',
     ].join('\n'),
     failedToRun: what => `Could not run: ${what}`,
+    switchPace: (percent, span) => `5h at ${percent}: at this pace the window runs out in ~${span} · /limits`,
+    switchResets: (percent, reset) => `5h at ${percent}: resets in ${reset}, before it runs out · /limits`,
+    switchFaster: (percent, what) => `5h at ${percent}: ${what} uses the window faster · /limits`,
+    modelHeading: 'Model',
+    effort: 'effort',
+    warnHeading: 'Costly switch warning',
+    warnHint: 'Toast on a switch to a bigger model or effort max with 5h from:',
+    warnOrder: 'order: haiku < sonnet < opus < fable',
+    warnSet: percent => `Costly switch warning from ${percent}%. Kept for later sessions.`,
+    warnIs: percent => `Costly switch warning from ${percent}%. /limits warn N changes it (1 to 100).`,
   },
 }

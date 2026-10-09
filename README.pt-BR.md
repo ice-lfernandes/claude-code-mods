@@ -8,7 +8,7 @@ Requer Claude Code 2.1.287 ou mais recente.
 
 | Mod | Comando | O que faz |
 | --- | --- | --- |
-| [limits-meter](limits-meter/) | `/limits` | Limites do plano e contexto acima do prompt: janelas de 5 horas e semanal com horário de reset, ocupação do contexto, taxa de acerto do cache, tokens por turno |
+| [limits-meter](limits-meter/) | `/limits` | Limites do plano e contexto acima do prompt: modelo e effort, janelas de 5 horas e semanal com horário de reset, ocupação do contexto, taxa de acerto do cache, tokens por turno, e um toast na troca cara de modelo perto do limite |
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Conta os diálogos de permissão por regra; depois de 5 aprovações sem nenhuma recusa, oferece adicionar a regra a `permissions.allow`, perguntando antes de gravar |
 | [agent-watch](agent-watch/) | `/watch` | Subagentes num relance: tokens por agente, um toast quando um trava e um resumo com o agente mais pesado quando terminam |
 | [test-hud](test-hud/) | `/test-hud` | Execuções de teste num relance: aprovados sobre o total na status line, um sparkline das falhas entre execuções, os testes que falham e um toast quando a suíte fica verde |
@@ -28,13 +28,18 @@ A faixa aparece sozinha depois da primeira resposta. Comandos:
 /limits          abre o painel: janelas do plano, contexto em tokens, os últimos 20 turnos
 /limits hide     esconde a faixa acima do prompt, também nas próximas sessões
 /limits show     traz a faixa de volta
+/limits warn N   avisa na troca cara com a janela de 5h a partir de N% (padrão 70)
 /limits help     lista os comandos
 ```
+
+A faixa começa com o modelo e o effort; `format: compact` a desenha numa linha só de números.
 
 A partir de 85% de contexto, a faixa e o painel mostram `compact`, que coloca `/compact [focus]`
 no prompt e não roda nada. `details` na faixa abre o painel. O painel também diz quando uma
 janela chega a 100% no ritmo atual, antes do reset, e desenha a ocupação do contexto turno a
-turno.
+turno. Trocar para um modelo maior (haiku < sonnet < opus < fable) ou para effort `max` com a
+janela de 5h em 70% ou mais mostra um toast com os minutos que restam no ritmo dos últimos 3
+turnos.
 
 ![limits-meter: faixa acima do prompt, o painel /limits e seus toasts](screenshots/limits-meter.svg)
 
