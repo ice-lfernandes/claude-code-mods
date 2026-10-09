@@ -1,0 +1,78 @@
+# Checks every pull request and every push to main: each mod validates and passes its tests in
+# Claude Code's own test runner, the shared files are the same in every mod, the manifests
+# agree, a changed mod raised its version, the screenshots match what the mods draw, and the
+# shell scripts pass shellcheck. Nothing here needs a Claude login or calls a model.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The Claude Code the mods are tested against; raise it on purpose, not by drift.
+  CLAUDE_CODE_VERSION: 2.1.295
+  DISABLE_AUTOUPDATER: '1'
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
+
+jobs:
+  mods:
+    name: ${{ matrix.mod }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        mod: [limits-meter, allowlist-coach, agent-watch, test-hud, launchpad]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: claude --version
+      - name: Validate
+        run: claude plugin validate "./${{ matrix.mod }}"
+      - name: Test
+        run: claude plugin test "./${{ matrix.mod }}"
+
+  checks:
+    name: repository checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The version check compares with the pull request's base.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Shared files are the same in every mod
+        run: ./scripts/check-shared.sh
+      - name: Manifests agree
+        run: python scripts/check-manifests.py
+      - name: A changed mod raised its version
+        if: github.event_name == 'pull_request'
+        run: ./scripts/check-versions.sh "origin/${{ github.base_ref }}"
+      - name: Shell scripts
+        run: shellcheck scripts/*.sh scripts/screenshots/*.sh
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Screenshots match what the mods draw
+        run: |
+          PYTHON=python ./scripts/screenshots/run.sh
+          if ! git diff --exit-code --stat -- screenshots; then
+            echo "::error::screenshots/ is out of date: run ./scripts/screenshots/run.sh and commit the result"
+            exit 1
+          fi

@@ -153,6 +153,29 @@ claude plugin test ./test-hud
 
 Every mod ships tests, including a render test on the `terminal` and `desktop` surfaces.
 
+### Checks before a merge
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`,
+with no Claude login and no model call:
+
+- `claude plugin validate` and `claude plugin test` for each mod, on a pinned Claude Code version;
+- `scripts/check-shared.sh`: the shared files are the same in every mod;
+- `scripts/check-manifests.py`: every JSON file parses, the marketplace lists every mod, and each
+  entry's name and description match the mod's `plugin.json`;
+- `scripts/check-versions.sh <base>`: a mod changed in the pull request raised its version, since
+  Claude Code updates an installed plugin only when the version moves;
+- the screenshots match what the mods draw now (`scripts/screenshots/run.sh`, then no diff);
+- `shellcheck` on the scripts.
+
+Run the same checks locally before a push:
+
+```bash
+./scripts/check-shared.sh
+python3 scripts/check-manifests.py
+./scripts/check-versions.sh origin/main
+./scripts/screenshots/run.sh && git diff --stat screenshots
+```
+
 ### Shared helpers
 
 A mod installs alone and cannot import another mod's code. The helpers every mod needs live in

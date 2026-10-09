@@ -11,4 +11,4 @@ for mod in limits-meter allowlist-coach agent-watch test-hud launchpad; do
   claude plugin test "./$mod" 2>&1 | grep -E '^(TOAST|STATUS|TREE|BAND|PANE|NOTICE|FILL|MENU) ' > "$out/$mod.txt"
   rm "$mod/tests/zz-snap.test.tsx"
 done
-python3 scripts/screenshots/render.py "$out" screenshots
+"${PYTHON:-python3}" scripts/screenshots/render.py "$out" screenshots
