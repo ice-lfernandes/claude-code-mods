@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Agent } from '../types'
-import { addStep, adopt, clearOut, finish, fiveHourOf, glyphOf, labelOf, shares, windowUsed, reconcile, runText, stalls, stallText, summarize, toolEnd, toolStart, total, touch, tree, ZERO } from '../hooks/watch'
+import { addStep, adopt, clearOut, finish, fiveHourOf, glyphOf, shares, windowUsed, reconcile, runText, stalls, stallText, summarize, toolEnd, toolStart, total, touch, tree, ZERO } from '../hooks/watch'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
@@ -143,7 +143,6 @@ describe('the pane', () => {
   })
 
   test('Portuguese', async () => {
-    expect(labelOf('Read', { file_path: '/repo/src/routes.ts' }, 'pt-BR')).toBe('lendo routes.ts')
     expect(stallText(agent('a', { lastAt: NOW - 6 * MIN }), NOW, 'pt-BR')).toBe('parado há 6m 00s')
     const run = summarize([agent('a', { label: 'Mapear', tokens: t(0, 0, 300), startedAt: NOW, endedAt: NOW + MIN })], NOW)!
     expect(runText(run, 'pt-BR')).toBe('1 agente, 300 tokens em 1m 00s. Mais pesado: Mapear 300 (100%)')

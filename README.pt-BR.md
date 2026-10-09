@@ -231,8 +231,10 @@ precisa ficam em `hooks/ui.tsx`, testados por `tests/ui.test.ts`, e os dois arqu
 iguais em cada mod: idioma e estilo de ícone a partir das opções, um preenchimento de prompt com
 o `[blank]` marcado, a janela de uma lista longa, uma linha de verbos clicáveis e os formatos de
 número. Nada nele recebe `$`: o engine segue `$` só nas funções do arquivo que o usa, então as
-chamadas em `$` ficam no `register.tsx` de cada mod. Altere uma cópia, copie para os outros mods
-e verifique:
+chamadas em `$` ficam no `register.tsx` de cada mod. Um mod que descreve chamadas de ferramenta
+também leva `hooks/phrases.ts` e `tests/phrases.test.ts`: uma chamada de ferramenta em poucas
+palavras, nos dois idiomas (`lendo routes.ts`, `buscando "fatura"`). Altere uma cópia, copie para
+os outros mods e verifique:
 
 ```bash
 ./scripts/check-shared.sh
@@ -250,6 +252,18 @@ Todo painel segue o mesmo esboço, a partir do `/pad configuration` do launchpad
 
 Um botão que roda algo de fora do mod, ou que desfaz dados da pessoa, coloca o texto no prompt em
 vez de rodá-lo.
+
+### Faixas compartilhadas
+
+Vários mods podem desenhar na mesma linha: `AbovePrompt` (limits-meter) e `PromptHint`
+(launchpad). Cada hook `ui.render` ali chama `next(e)` e empilha a própria linha com o que voltou,
+nunca no lugar dele, para que a linha de cada mod apareça:
+
+- `AbovePrompt`: a linha do mod primeiro, depois as linhas dos mods abaixo dele.
+- `PromptHint`: a dica do engine primeiro, depois a linha do mod.
+- Um mod sem nada para mostrar, ou desligado, devolve `next(e)` como veio.
+
+A ordem entre os mods segue a ordem em que o Claude Code os carrega; um mod não consegue defini-la.
 
 Depois de uma mudança no que um mod desenha, gere as imagens de novo:
 

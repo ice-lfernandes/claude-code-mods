@@ -34,7 +34,6 @@ import {
   glyphOf,
   isActive,
   isFailed,
-  labelOf,
   nameOf,
   quietFor,
   reconcile,
@@ -52,6 +51,7 @@ import {
   ZERO,
 } from './watch'
 import type { SortBy } from './watch'
+import { PHRASES, phraseOf } from './phrases'
 import type { IconStyle, Lang, Verb } from './ui'
 import { clip, elapsed, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
 import { COMMAND, WORDS } from './words'
@@ -173,8 +173,8 @@ const runDemo = async ($: EngineInterface) => {
   const [first, second, third] = WORDS[lang].demoLabels
   const t = (input: number, output: number, cacheRead: number) => ({ input, output, cacheRead, cacheWrite: 0 })
   const demo: Agent[] = [
-    { id: `${DEMO}1`, label: first, type: 'Explore', model: 'claude-haiku-4-5', status: 'running', startedAt: now - 140_000, lastAt: now - 4000, activity: 'tool', doing: WORDS[lang].doing.reading('routes.ts'), tools: 14, errors: 0, steps: 15, tokens: t(9_000, 6_200, 118_000), isStalled: false },
-    { id: `${DEMO}2`, label: second, type: 'general-purpose', model: 'claude-opus-5-5', status: 'running', startedAt: now - 600_000, lastAt: now - stallMs - 60_000, activity: 'tool', doing: WORDS[lang].doing.running('npm test'), tools: 9, errors: 2, steps: 10, tokens: t(14_000, 8_100, 210_000), isStalled: false },
+    { id: `${DEMO}1`, label: first, type: 'Explore', model: 'claude-haiku-4-5', status: 'running', startedAt: now - 140_000, lastAt: now - 4000, activity: 'tool', doing: PHRASES[lang].reading('routes.ts'), tools: 14, errors: 0, steps: 15, tokens: t(9_000, 6_200, 118_000), isStalled: false },
+    { id: `${DEMO}2`, label: second, type: 'general-purpose', model: 'claude-opus-5-5', status: 'running', startedAt: now - 600_000, lastAt: now - stallMs - 60_000, activity: 'tool', doing: PHRASES[lang].running('npm test'), tools: 9, errors: 2, steps: 10, tokens: t(14_000, 8_100, 210_000), isStalled: false },
     { id: `${DEMO}3`, label: third, type: 'Explore', parentId: `${DEMO}1`, model: 'claude-haiku-4-5', status: 'completed', startedAt: now - 90_000, endedAt: now - 30_000, lastAt: now - 30_000, activity: 'idle', tools: 6, errors: 0, steps: 7, tokens: t(3_000, 1_900, 41_000), isStalled: false },
   ]
   await update($, agents, list => [...list.filter(a => !a.id.startsWith(DEMO)), ...demo])
@@ -299,7 +299,7 @@ export const register: Register = (on, options) => {
     const id = e.agentId
     if (!id) return next(e)
     const now = await $.clock.now()
-    await update($, agents, list => toolStart(list, id, labelOf(e.tool, e as unknown as Record<string, unknown>, lang), now))
+    await update($, agents, list => toolStart(list, id, phraseOf(e.tool, e as unknown as Record<string, unknown>, lang), now))
     let ok = false
     try {
       const ran = await next(e)

@@ -53,19 +53,6 @@ type Words = {
   range: (from: number, to: number, of: number) => string
   up: string
   down: string
-  /** A tool call in a few words. */
-  doing: {
-    running: (what: string) => string
-    reading: (file: string) => string
-    writing: (file: string) => string
-    editing: (file: string) => string
-    searching: (pattern: string) => string
-    finding: (pattern: string) => string
-    web: string
-    delegating: (what: string) => string
-    aTask: string
-    calling: (tool: string) => string
-  }
   clearedDone: string
   clearedDemo: string
   clearedBoth: string
@@ -123,18 +110,6 @@ export const WORDS: Record<Lang, Words> = {
     range: (from, to, of) => `${from}–${to} de ${of}`,
     up: '▲ acima',
     down: '▼ abaixo',
-    doing: {
-      running: what => `rodando ${what}`,
-      reading: file => `lendo ${file}`,
-      writing: file => `escrevendo ${file}`,
-      editing: file => `editando ${file}`,
-      searching: pattern => `buscando "${pattern}"`,
-      finding: pattern => `procurando ${pattern}`,
-      web: 'na web',
-      delegating: what => `delegando "${what}"`,
-      aTask: 'uma tarefa',
-      calling: tool => `chamando ${tool}`,
-    },
     clearedDone: 'Agentes concluídos removidos.',
     clearedDemo: 'Agentes de demo removidos.',
     clearedBoth: 'Agentes concluídos e de demo removidos.',
@@ -194,18 +169,6 @@ export const WORDS: Record<Lang, Words> = {
     range: (from, to, of) => `${from}–${to} of ${of}`,
     up: '▲ up',
     down: '▼ down',
-    doing: {
-      running: what => `running ${what}`,
-      reading: file => `reading ${file}`,
-      writing: file => `writing ${file}`,
-      editing: file => `editing ${file}`,
-      searching: pattern => `searching "${pattern}"`,
-      finding: pattern => `finding ${pattern}`,
-      web: 'on the web',
-      delegating: what => `delegating "${what}"`,
-      aTask: 'a task',
-      calling: tool => `calling ${tool}`,
-    },
     clearedDone: 'Finished agents cleared.',
     clearedDemo: 'Demo agents cleared.',
     clearedBoth: 'Finished and demo agents cleared.',
