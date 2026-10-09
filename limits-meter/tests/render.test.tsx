@@ -18,7 +18,7 @@ const turn = (n: number) => ({
 
 type World = { toasts: string[]; fills: string[]; logs: string[]; opened: string[]; closed: string[]; clock: ReturnType<typeof mock.clock> }
 
-function engine(on: any, env: Record<string, string> = {}): World {
+function engine(on: any, env: Record<string, string> = {}, beneath?: string): World {
   const world: World = { toasts: [], fills: [], logs: [], opened: [], closed: [], clock: mock.clock(on, { now: NOW }) }
   mock.store(on)
   on('env.get', ($: any, e: any) => ({ value: env[e.name] }) as never)
@@ -31,8 +31,11 @@ function engine(on: any, env: Record<string, string> = {}): World {
   on('prompt.fill', ($: any, e: any) => (world.fills.push(e.text), { isFilled: true, text: e.text, cursor: e.text.length }) as never)
   on('session.measure', () => ({ changed: ['context', 'rateLimits'] }) as never)
   on('turn.complete', () => ({ text: 'done' }) as never)
-  // The engine's own band beneath: empty.
-  on('ui.render', ($: any, e: any) => $.ui.resolve(e).Box({ key: 'engine' }) as never)
+  // What is beneath on the same line: empty, or another mod's row.
+  on('ui.render', ($: any, e: any) => {
+    const { Box, Text } = $.ui.resolve(e)
+    return (beneath ? Box({ key: 'beneath', children: Text({ children: beneath }) }) : Box({ key: 'engine' })) as never
+  })
   return world
 }
 
@@ -248,5 +251,21 @@ test('below 90 columns each bar is one cell, and warnAt sets the warning color',
   expect(drawn).toContain('\"▅\"')
   expect(drawn).not.toContain('█')
   expect(drawn).toContain('{\"color\":\"warning\",\"bold\":true},\"children\":[\"58%\"]')
+  await b.unmount()
+})
+
+test('the band stacks over the rows of the mods beneath it, never in their place', async ($, on) => {
+  engine(on, {}, 'other mod row')
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const b = await band($)
+  const drawn = JSON.stringify(await b.drawn())
+  expect(drawn).toContain('64%')
+  expect(drawn).toContain('other mod row')
+  expect(drawn.indexOf('64%')).toBeLessThan(drawn.indexOf('other mod row'))
+  await run($, 'hide')
+  const hidden = JSON.stringify(await b.drawn())
+  expect(hidden).not.toContain('64%')
+  expect(hidden).toContain('other mod row')
   await b.unmount()
 })

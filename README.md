@@ -228,7 +228,9 @@ A mod installs alone and cannot import another mod's code. The helpers every mod
 language and icon style from the options, a prompt fill with its `[blank]` marked, the window of
 a long list, a row of clickable verbs, and the number formats. Nothing in it takes `$`: the
 engine follows `$` only into functions of the file that uses it, so the calls on `$` stay in
-each mod's `register.tsx`. Change one copy, copy it to the other mods, then check them:
+each mod's `register.tsx`. A mod that names tool calls also carries `hooks/phrases.ts` and
+`tests/phrases.test.ts`: a tool call in a few words, in both languages (`reading routes.ts`,
+`searching "invoice"`). Change one copy, copy it to the other mods, then check them:
 
 ```bash
 ./scripts/check-shared.sh
@@ -246,6 +248,18 @@ Every pane follows the same outline, after launchpad's `/pad configuration`:
 
 A button that runs something from outside the mod, or undoes the person's data, puts the text in
 the prompt instead of running it.
+
+### Shared bands
+
+Several mods can draw on the same line: `AbovePrompt` (limits-meter) and `PromptHint`
+(launchpad). Each `ui.render` hook there calls `next(e)` and stacks its own row with what came
+back, never in its place, so every mod's row shows:
+
+- `AbovePrompt`: the mod's row first, the rows of the mods beneath it after.
+- `PromptHint`: the engine's hint first, the mod's row after.
+- A mod with nothing to show, or switched off, returns `next(e)` as it is.
+
+The order between mods follows the order Claude Code loads them; a mod cannot set it.
 
 After a change to what a mod draws, regenerate the images:
 

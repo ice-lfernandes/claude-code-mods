@@ -1,6 +1,6 @@
 {
   "name": "agent-watch",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish",
   "types": "./types/index.d.ts",
   "userConfig": {

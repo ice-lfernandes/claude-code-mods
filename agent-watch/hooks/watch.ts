@@ -2,7 +2,7 @@
 
 import type { Activity, Agent, Run, Tokens } from '../types'
 import type { Lang } from './ui'
-import { clip, elapsed, tokens } from './ui'
+import { elapsed, tokens } from './ui'
 import { WORDS } from './words'
 
 const MAX_AGENTS = 60
@@ -268,36 +268,6 @@ export const tree = (list: readonly Agent[], sortBy: SortBy = 'start'): Row[] =>
   }
   walk('', '')
   return rows
-}
-
-const base = (p: unknown) => (typeof p === 'string' ? (p.split('/').filter(Boolean).pop() ?? p) : '')
-
-/** A tool call in a few words. */
-export const labelOf = (tool: string, input: Readonly<Record<string, unknown>>, lang: Lang = 'en'): string => {
-  const w = WORDS[lang].doing
-  const s = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : '')
-  switch (tool) {
-    case 'Bash':
-      return w.running(clip(s('description') || s('command').split('\n')[0]!, 50))
-    case 'Read':
-      return w.reading(base(input.file_path))
-    case 'Write':
-      return w.writing(base(input.file_path))
-    case 'Edit':
-    case 'MultiEdit':
-      return w.editing(base(input.file_path))
-    case 'Grep':
-      return w.searching(clip(s('pattern'), 30))
-    case 'Glob':
-      return w.finding(clip(s('pattern'), 30))
-    case 'WebFetch':
-    case 'WebSearch':
-      return w.web
-    case 'Agent':
-      return w.delegating(clip(s('description') || w.aTask, 30))
-    default:
-      return w.calling(clip(tool.startsWith('mcp__') ? (tool.split('__').pop() ?? tool) : tool, 30))
-  }
 }
 
 /** The agents left after a clear: `done` drops the finished ones, `demo` the demo ones, `both` both. */
