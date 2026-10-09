@@ -33,8 +33,8 @@ that this session has installed.
   - `prompt`: the buttons in a row below the prompt that stays there, under Claude Code's own
     hint line (`? for shortcuts`), with `⋯ configure` to open the pane.
   - `pane`: a pane of its own, a tab like those of `/limits` and `/watch`, with the card's
-    bordered tiles. It opens when a session starts and after `/clear`, and on `/pad`. Claude Code opens a pane only with the
-    keyboard on it: `Esc` closes it and gives the prompt back.
+    bordered tiles. It opens when a session starts and after `/clear`, and on `/pad`. Claude
+    Code opens a pane only with the keyboard on it: `Esc` closes it and gives the prompt back.
 - **Up to 8 buttons** that work here. The defaults: compact the chat, see context, see limits,
   resume a chat, edit memory, switch model, explore the code, help.
 
