@@ -34,6 +34,14 @@ reaches 100% at the current pace, before it resets, and draws the context fill t
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](screenshots/limits-meter.svg)
 
+#### Install
+
+```
+/plugin install limits-meter --marketplace ice-lfernandes/claude-code-mods
+```
+
+Or for one session, from a clone: `claude --plugin-dir ./limits-meter`.
+
 ### allowlist-coach
 
 It counts on its own each time you answer a permission dialog. Commands:
@@ -52,6 +60,14 @@ The pane has tabs by status, a filter, and a scrolling list. A risky rule says w
 offered.
 
 ![allowlist-coach: the line under the permission dialog, the toast and the /allowlist pane](screenshots/allowlist-coach.svg)
+
+#### Install
+
+```
+/plugin install allowlist-coach --marketplace ice-lfernandes/claude-code-mods
+```
+
+Or for one session, from a clone: `claude --plugin-dir ./allowlist-coach`.
 
 ### agent-watch
 
@@ -72,6 +88,14 @@ agent's share of the tokens, a name opens its last tool calls, and a stalled age
 
 ![agent-watch: the /watch pane, the status line and its toasts](screenshots/agent-watch.svg)
 
+#### Install
+
+```
+/plugin install agent-watch --marketplace ice-lfernandes/claude-code-mods
+```
+
+Or for one session, from a clone: `claude --plugin-dir ./agent-watch`.
+
 ### test-hud
 
 The status line and the toast show on their own each time a test runner runs in Bash. Commands:
@@ -91,6 +115,14 @@ option the runs carry over to the next session in the same project.
 
 ![test-hud: the /test-hud pane, the status line and the green toast](screenshots/test-hud.svg)
 
+#### Install
+
+```
+/plugin install test-hud --marketplace ice-lfernandes/claude-code-mods
+```
+
+Or for one session, from a clone: `claude --plugin-dir ./test-hud`.
+
 ### launchpad
 
 The menu shows on its own when a session starts and after `/clear`, until the first prompt.
@@ -109,9 +141,17 @@ Commands:
 
 ![launchpad: the welcome menu under the header, and an agent request waiting in the prompt](screenshots/launchpad.svg)
 
+#### Install
+
+```
+/plugin install launchpad --marketplace ice-lfernandes/claude-code-mods
+```
+
+Or for one session, from a clone: `claude --plugin-dir ./launchpad`.
+
 ## Install
 
-In a Claude Code terminal session:
+Each mod's section above has its own install line. In a Claude Code terminal session:
 
 ```
 /plugin install limits-meter --marketplace ice-lfernandes/claude-code-mods
