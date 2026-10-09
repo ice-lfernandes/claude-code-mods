@@ -12,11 +12,11 @@ const show = (tree: unknown) => {
   return `${JSON.stringify(tree)}\n${texts.join('')}`
 }
 
-type World = { answer: string; sets: { key: string; value: unknown }[]; logs: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
+type World = { answer: string; toolUses: unknown[]; refused: string[]; sets: { key: string; value: unknown }[]; logs: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
 
 /** The engine beneath the mod: options, turns and tools answered as a session would. */
 function engine(on: any, theme = 'dark'): World {
-  const world: World = { answer: '', sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }) }
+  const world: World = { answer: '', toolUses: [], refused: [], sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }) }
   let id = 0
   on('env.get', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: undefined }) as never)
@@ -26,13 +26,14 @@ function engine(on: any, theme = 'dark'): World {
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }) as never)
   on('turn.complete', () => ({ text: 'done' }) as never)
   on('turn.step', async function* ($: any, e: any) {
-    return { turnId: e.turnId, index: e.index, answer: world.answer, toolUses: [], stopReason: 'end_turn' }
+    return { turnId: e.turnId, index: e.index, answer: world.answer, toolUses: world.toolUses, stopReason: world.toolUses.length ? 'tool_use' : 'end_turn' }
   } as never)
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' }] }) as never)
   on('ui.toast', ($: any, e: any) => (world.toasts.push(e.text), { value: undefined }) as never)
   on('ui.log', ($: any, e: any) => (world.logs.push(e.text), { value: undefined }) as never)
   on('tool.call', ($: any, e: any) => {
     if (e.tool === 'TaskCreate') return { result: { task: { id: String(++id), subject: e.subject } }, text: 'ok' } as never
+    if (e.tool === 'TaskUpdate' && world.refused.includes(e.taskId)) return { result: { success: false, taskId: e.taskId, updatedFields: [], error: 'blocked' }, text: 'blocked' } as never
     if (e.tool === 'Bash' && e.command === 'npm test') return { result: { stdout: '', stderr: 'FAIL' }, text: 'FAIL', isError: true } as never
     return { result: 'ok', text: 'ok' } as never
   })
@@ -225,8 +226,9 @@ test('the hint line names the mode while it is on, after any tail', ON, async ($
   expect(await row($, 'PromptHint', { isDraft: false, isWorking: true, hint: 'x', tail: 'other' })).toContain('tail: other · plain view')
 })
 
-const step = async ($: any, w: World, answer: string) => {
+const step = async ($: any, w: World, answer: string, toolUses: unknown[] = []) => {
   w.answer = answer
+  w.toolUses = toolUses
   const stream = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 3 } as never)
   for await (const _ of stream) {
     // drain
@@ -283,21 +285,45 @@ const message = (text: string) => ({ text, isFirstOfReply: true })
 const turnOver = async ($: any, answer: string) =>
   $.turn.complete({ answer, durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
 
-test('agentText final (the default): mid-turn messages step aside, the final answer shows once the turn ends', ON, async ($, on) => {
-  engine(on)
+const TOOL_USE = { id: 'tu1', name: 'Read', input: {}, startedAt: 0 }
+
+test('agentText final (the default): a step that calls tools steps aside, the final answer stays', ON, async ($, on) => {
+  const w = engine(on)
   await start($)
   await ask($)
-  const ui = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'AssistantMessage', props: message(FINAL), viewport: { columns: 120, rows: 40 } } as never)
-  expect(JSON.stringify(await ui.drawn())).not.toContain('engine row')
-  expect(await row($, 'AssistantMessage', message('Plano em 4 passos:\n1. [ ] Ler'))).not.toContain('engine row')
-  await turnOver($, FINAL)
-  // The mounted block redraws when the answer lands.
+  const mid = 'Plano em 4 passos:\n1. [ ] Ler a API\n2. [ ] Montar o painel'
+  const ui = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'AssistantMessage', props: message(mid), viewport: { columns: 120, rows: 40 } } as never)
+  // Unknown text shows until its step ends with a tool call; then the mounted block hides.
   expect(JSON.stringify(await ui.drawn())).toContain('engine row')
+  await step($, w, mid, [TOOL_USE])
+  expect(JSON.stringify(await ui.drawn())).not.toContain('engine row')
   await ui.unmount()
-  expect(await row($, 'AssistantMessage', message('Plano em 4 passos:\n1. [ ] Ler'))).not.toContain('engine row')
-  // An earlier turn's answer still shows after the next request.
-  await ask($, 'outro pedido')
+  // The final answer's step calls no tool: it stays, during and after the turn.
+  await step($, w, FINAL)
   expect(await row($, 'AssistantMessage', message(FINAL))).toContain('engine row')
+  await turnOver($, FINAL)
+  expect(await row($, 'AssistantMessage', message(FINAL))).toContain('engine row')
+  // A block nothing is known about (an old turn, a resumed session) shows.
+  expect(await row($, 'AssistantMessage', message('Uma resposta de antes.'))).toContain('engine row')
+})
+
+test('a refused TaskUpdate leaves the card as it was', ON, async ($, on) => {
+  const w = engine(on)
+  w.refused = ['2']
+  await start($)
+  await ask($)
+  for (const subject of TASKS) await call($, 'TaskCreate', { subject, description: subject })
+  await call($, 'TaskUpdate', { taskId: '2', status: 'completed' })
+  expect(await card($)).not.toContain('Feito')
+})
+
+test('a demo cut by a reload ends instead of freezing', { options: { language: 'pt-BR' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await run($, 'demo')
+  expect(await card($)).toContain('Demo: monte um painel do tempo')
+  await start($) // the reload runs session.start again
+  expect(await card($)).not.toContain('Demo:')
 })
 
 test('agentText none: no message shows', { options: { enabled: true, agentText: 'none' } }, async ($, on) => {

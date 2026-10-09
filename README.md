@@ -169,8 +169,8 @@ or grey on Esc; the next request starts a fresh one, and `[-]` folds it.
 
 Two options shape what you see, both in `/config`:
 
-- `agentText`, what stays of the agent's messages: `final` (default, only the final answer,
-  shown when the turn ends), `none`, `card` (the answer's first sentence in the end card) or
+- `agentText`, what stays of the agent's messages: `final` (default: the messages written before
+  a tool call step aside, the final answer stays), `none`, `card` (the answer's first sentence in the end card) or
   `all`. Failures, permission dialogs and the agent's questions always show.
 - `askForTasks` (on by default): one line in the system prompt asks the model to keep a task
   list for work of more than two steps, so the card shows each step; a few tokens per request.
@@ -178,7 +178,7 @@ Two options shape what you see, both in `/config`:
 
 ```
 /plain-view on | off          show or hide the card and the tool rows
-/plain-view demo              a sample plan in the card for 15 seconds
+/plain-view demo              a sample plan in the card for 12 seconds
 /plain-view palette           the 8 bar palettes with a sample, and a button to switch
 /plain-view palette aurora    switch to one by name
 /plain-view help              list the commands

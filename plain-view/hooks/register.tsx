@@ -11,8 +11,8 @@
 //   plan   from the agent's TaskCreate, TaskUpdate and TodoWrite calls, else from a checklist it
 //          writes in its answer (`1. [ ] Ler a API`). The `askForTasks` option asks the model, in
 //          the system prompt, to keep a task list with those tools.
-//   words  `agentText`: final (the default) hides the agent's messages but the turn's final
-//          answer, which shows once the turn ends; none hides them all; card hides them all and
+//   words  `agentText`: final (the default) hides the text of each step that went on to call
+//          tools, so the final answer stays; none hides every message; card hides them all and
 //          puts the answer's first sentence in the end card; all keeps every word.
 //   bars   a gradient of the `palette` option's colors, and a shine that runs while the agent
 //          works (`animation`); see palettes.ts and the design guide's "Exception: gradients".
@@ -29,7 +29,7 @@ import type { AgentText, Item, Turn } from '../types'
 import { drawCard, rasterCells, barCells } from './card'
 import { PALETTES, paletteOf, stopsOf } from './palettes'
 import type { Palette } from './palettes'
-import { agentTextOf, ANSWERS_KEPT, applyAnswer, applyTask, cardOf, countCall, demoOf, endTurn, NEVER_HIDDEN, normalize, showsBlock, startTurn, TASK_TOOLS, touch } from './plan'
+import { agentTextOf, applyAnswer, applyTask, cardOf, countCall, demoOf, endTurn, MID_KEPT, NEVER_HIDDEN, normalize, showsBlock, startTurn, TASK_TOOLS, touch } from './plan'
 import type { IconStyle, Lang, Verb } from './ui'
 import { langOf, linesOf, styleOf, verbRow } from './ui'
 import { COMMAND, MODE, WORDS } from './words'
@@ -37,7 +37,7 @@ import { COMMAND, MODE, WORDS } from './words'
 const turn = atom({ plugin: 'plain-view', key: 'turn' } as const, null as Turn | null)
 const items = atom({ plugin: 'plain-view', key: 'items' } as const, [] as Item[])
 const tick = atom({ plugin: 'plain-view', key: 'tick' } as const, 0)
-const answers = atom({ plugin: 'plain-view', key: 'answers' } as const, [] as string[])
+const mids = atom({ plugin: 'plain-view', key: 'mids' } as const, [] as string[])
 
 /** How often the shine moves while the agent works. */
 const TICK_MS = 100
@@ -159,9 +159,13 @@ export const register: Register = (on, options) => {
     })
     const rows = await $.config.list().catch(() => [])
     theme = rows.find(r => r.key === 'theme')?.value ?? theme
-    // A reload in the middle of a turn: the shine goes on.
+    // A reload in the middle of a turn: the shine goes on. A demo cut by the reload ends here,
+    // since its timer is gone.
     const t = await read($, turn)
-    if (isOn && t && t.end === undefined) startTicking($)
+    if (t?.isDemo && t.end === undefined) {
+      await update($, turn, () => null)
+      await update($, items, () => [])
+    } else if (isOn && t && t.end === undefined) startTicking($)
     return result
   })
 
@@ -185,7 +189,12 @@ export const register: Register = (on, options) => {
   // The agent's answer at the end of each step: a checklist in it becomes the plan.
   on('turn.step', async function* ($, e, next) {
     const result = yield* next(e)
-    if (!e.agentId && result.answer) await update($, items, list => applyAnswer(list, result.answer)).catch(() => undefined)
+    if (!e.agentId && result.answer) {
+      await update($, items, list => applyAnswer(list, result.answer)).catch(() => undefined)
+      // A step that went on to call tools: its text is mid-turn, which `final` hides.
+      const text = normalize(result.answer)
+      if (result.toolUses.length > 0 && text) await update($, mids, list => [...list, text].slice(-MID_KEPT)).catch(() => undefined)
+    }
     return result
   })
 
@@ -201,7 +210,9 @@ export const register: Register = (on, options) => {
     const input = e as unknown as Readonly<Record<string, unknown>>
     if (TASK_TOOLS.includes(e.tool)) {
       const result = await next(e)
-      if (result.deny === undefined && !('isError' in result && result.isError)) {
+      // TaskUpdate reports a refused change in its result ({ success: false }).
+      const refused = (result.result as { success?: unknown } | undefined)?.success === false
+      if (result.deny === undefined && !('isError' in result && result.isError) && !refused) {
         await update($, items, list => applyTask(list, e.tool, input, result.result)).catch(() => undefined)
       }
       return result
@@ -222,8 +233,6 @@ export const register: Register = (on, options) => {
     if (e.agentId) return result
     const now = await $.clock.now()
     await update($, turn, v => (v && v.end === undefined && !v.isDemo ? endTurn(v, e.reason, now, e.answer) : v))
-    const final = normalize(e.answer)
-    if (final) await update($, answers, list => [...list, final].slice(-ANSWERS_KEPT))
     stopTicking()
     return result
   })
@@ -260,11 +269,11 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // The agent's words, as `agentText` says. The final answer is known at turn.complete, so under
-  // `final` it shows once the turn ends (the read subscribes the block to the answers).
+  // The agent's words, as `agentText` says. Under `final` a block hides once its step is known to
+  // have gone on to call tools (the read subscribes the block to that list).
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     if (!isOn || agentText === 'all') return next(e)
-    if (showsBlock(agentText, e.props.text, agentText === 'final' ? await read($, answers) : [])) return next(e)
+    if (showsBlock(agentText, e.props.text, agentText === 'final' ? await read($, mids) : [])) return next(e)
     const { Box } = $.ui.resolve(e)
     return <Box />
   })

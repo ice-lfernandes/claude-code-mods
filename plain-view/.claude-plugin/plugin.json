@@ -1,6 +1,6 @@
 {
   "name": "plain-view",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -13,7 +13,7 @@
     "agentText": {
       "type": "string",
       "title": "The agent's words",
-      "description": "What stays of the agent's messages in the transcript while the mod is on. final: only the turn's final answer, shown when the turn ends. none: no message. card: no message, and the end card carries the answer's first sentence. all: every message. Failures, permission dialogs and the agent's questions always show",
+      "description": "What stays of the agent's messages in the transcript while the mod is on. final: the text of a step that went on to call tools steps aside, so the final answer stays. none: no message. card: no message, and the end card carries the answer's first sentence. all: every message. Failures, permission dialogs and the agent's questions always show",
       "options": [
         "final",
         "none",

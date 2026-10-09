@@ -3,8 +3,6 @@ export type Item = {
   /** TaskCreate's id; absent for a TodoWrite entry. */
   id?: string
   subject: string
-  /** The present-continuous form: `Montando o painel`. */
-  activeForm?: string
   status: 'pending' | 'in_progress' | 'completed'
   /** Tool calls made while this task was the current one: what the step's estimate reads. */
   calls: number
@@ -46,8 +44,8 @@ declare module 'claude-code' {
       items: Item[]
       /** Moves while the agent works, so the bars' shine redraws. */
       tick: number
-      /** The final answers of this session's turns, normalized: the blocks `agentText: final` shows. */
-      answers: string[]
+      /** Texts of steps that went on to call tools, normalized: the blocks `agentText: final` hides. */
+      mids: string[]
     }
   }
 }

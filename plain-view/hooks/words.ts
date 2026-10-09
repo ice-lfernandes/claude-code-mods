@@ -11,7 +11,7 @@ export const MODE = 'plain view'
 type Words = {
   description: string
   /** The two steps the card shows before the agent writes a task list. */
-  first: [string, string][]
+  first: [string, string]
   untitled: string
   step: (n: number, of: number) => string
   steps: (done: number, of: number) => string
@@ -23,7 +23,8 @@ type Words = {
   stoppedAt: (span: string) => string
   /** A task's status beside its bar. */
   done: string
-  working: string
+  leftOpen: string
+  moreBefore: (n: number) => string
   next: string
   later: string
   halted: string
@@ -39,7 +40,7 @@ type Words = {
   demoStarted: string
   demoBusy: string
   demoTitle: string
-  demoTasks: [string, string][]
+  demoTasks: string[]
   demoDoing: string
   palette: string
   paletteNow: (id: string) => string
@@ -66,7 +67,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export const WORDS: Record<Lang, Words> = {
   'pt-BR': {
     description: 'Transcript sem ruído: o plano do agente num cartão acima do prompt',
-    first: [['Entender o pedido', 'Entendendo o pedido'], ['Planejar os passos', 'Planejando os passos']],
+    first: ['Entender o pedido', 'Planejar os passos'],
     untitled: 'Pedido sem texto',
     step: (n, of) => `Passo ${n} de ${of}`,
     steps: (done, of) => `${done} de ${of} passos`,
@@ -77,7 +78,8 @@ export const WORDS: Record<Lang, Words> = {
     took: span => `levou ${span}`,
     stoppedAt: span => `parou em ${span}`,
     done: 'Feito',
-    working: 'Agora',
+    leftOpen: 'Ficou aberto',
+    moreBefore: n => `○ mais ${n} antes`,
     next: 'Próximo',
     later: 'Depois',
     halted: 'Parado',
@@ -90,15 +92,10 @@ export const WORDS: Record<Lang, Words> = {
     alreadyOn: 'plain-view já está ligado.',
     alreadyOff: 'plain-view já está desligado.',
     denied: why => `Não deu para mudar a opção: ${why}`,
-    demoStarted: 'Demo no cartão acima do prompt por 15 s. Nada roda de verdade.',
+    demoStarted: 'Demo no cartão acima do prompt por 12 s. Nada roda de verdade.',
     demoBusy: 'O agente está trabalhando. Rode a demo quando o pedido terminar.',
     demoTitle: 'Demo: monte um painel do tempo',
-    demoTasks: [
-      ['Escolher o estilo da página', 'Escolhendo o estilo da página'],
-      ['Ver como pegar o tempo ao vivo', 'Vendo como pegar o tempo ao vivo'],
-      ['Montar o painel', 'Montando o painel'],
-      ['Publicar o link', 'Publicando o link'],
-    ],
+    demoTasks: ['Escolher o estilo da página', 'Ver como pegar o tempo ao vivo', 'Montar o painel', 'Publicar o link'],
     demoDoing: 'demo',
     palette: 'Paleta das barras',
     paletteNow: id => `agora: ${id}`,
@@ -121,13 +118,13 @@ export const WORDS: Record<Lang, Words> = {
       '- `help` esta ajuda',
       'Falha de tool, permissão e perguntas sempre aparecem inteiras.',
       'Opções em /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
-      'agentText: final mostra só a resposta final do agente (padrão); none, nada; card, a resposta no cartão; all, tudo.',
+      'agentText: final esconde o que o agente escreve antes de chamar tools e deixa a resposta final (padrão); none, nada; card, a resposta no cartão; all, tudo.',
       'Paleta padrão: claude. /plain-view palette mostra as 8.',
     ].join('\n'),
   },
   en: {
     description: 'A quiet transcript: the agent’s plan in a card above the prompt',
-    first: [['Understand your request', 'Understanding your request'], ['Plan the steps', 'Planning the steps']],
+    first: ['Understand your request', 'Plan the steps'],
     untitled: 'Request with no text',
     step: (n, of) => `Step ${n} of ${of}`,
     steps: (done, of) => `${done} of ${of} steps`,
@@ -138,7 +135,8 @@ export const WORDS: Record<Lang, Words> = {
     took: span => `took ${span}`,
     stoppedAt: span => `stopped at ${span}`,
     done: 'Done',
-    working: 'Working',
+    leftOpen: 'Left open',
+    moreBefore: n => `○ ${n} more before`,
     next: 'Next',
     later: 'Up next',
     halted: 'Stopped',
@@ -151,15 +149,10 @@ export const WORDS: Record<Lang, Words> = {
     alreadyOn: 'plain-view is already on.',
     alreadyOff: 'plain-view is already off.',
     denied: why => `Could not change the option: ${why}`,
-    demoStarted: 'Demo in the card above the prompt for 15 s. Nothing really runs.',
+    demoStarted: 'Demo in the card above the prompt for 12 s. Nothing really runs.',
     demoBusy: 'The agent is working. Run the demo once the request ends.',
     demoTitle: 'Demo: build a weather dashboard',
-    demoTasks: [
-      ['Pick the page style', 'Picking the page style'],
-      ['Check how to get live weather', 'Checking how to get live weather'],
-      ['Build the dashboard', 'Building the dashboard'],
-      ['Publish the link', 'Publishing the link'],
-    ],
+    demoTasks: ['Pick the page style', 'Check how to get live weather', 'Build the dashboard', 'Publish the link'],
     demoDoing: 'demo',
     palette: 'Bar palette',
     paletteNow: id => `now: ${id}`,
@@ -182,7 +175,7 @@ export const WORDS: Record<Lang, Words> = {
       '- `help` this help',
       'Tool failures, permissions and questions always show in full.',
       'Options in /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
-      'agentText: final shows only the agent’s final answer (default); none, nothing; card, the answer in the card; all, everything.',
+      'agentText: final hides what the agent writes before calling tools and keeps the final answer (default); none, nothing; card, the answer in the card; all, everything.',
       'Default palette: claude. /plain-view palette shows all 8.',
     ].join('\n'),
   },

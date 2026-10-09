@@ -33,7 +33,7 @@ test('TaskCreate adds with its id, TaskUpdate changes and deletes, TodoWrite rep
   expect(items.map(i => i.id)).toEqual(['1', '2', '3', '4'])
   expect(items.every(i => i.status === 'pending' && i.calls === 0)).toBe(true)
   items = applyTask(items, 'TaskUpdate', { taskId: '1', status: 'in_progress', activeForm: 'Escolhendo o estilo' })
-  expect(items[0]).toEqual({ id: '1', subject: TASKS[0], status: 'in_progress', calls: 0, activeForm: 'Escolhendo o estilo' })
+  expect(items[0]).toEqual({ id: '1', subject: TASKS[0], status: 'in_progress', calls: 0 })
   items = applyTask(items, 'TaskUpdate', { taskId: '4', status: 'deleted' })
   expect(items).toHaveLength(3)
   expect(applyTask(items, 'TaskUpdate', { taskId: '99', status: 'completed' })).toBe(items)
@@ -162,7 +162,25 @@ test('a turn that answers with tasks still open says so, and counts only what wa
   if (card.kind !== 'plan') throw new Error('plan card expected')
   expect(card.badge).toBe('✓ Turno pronto')
   expect(card.pct).toBe('50%')
-  expect(card.rows[2]!.kind).toBe('halted')
+  // Nothing stopped it: the open task waits, it is not halted.
+  expect([card.rows[2]!.kind, card.rows[2]!.status]).toEqual(['later', 'Ficou aberto'])
+})
+
+test('a long plan names the rows outside its window by what they are', () => {
+  const subjects = Array.from({ length: 8 }, (_, i) => `Tarefa ${i + 1}`)
+  // Tasks 1-4 still pending, task 5 in progress: the rows above are not done.
+  const card = cardOf(fresh().turn, at(created(subjects), ['pending', 'pending', 'pending', 'pending', 'in_progress']), NOW, 'pt-BR')!
+  if (card.kind !== 'plan') throw new Error('plan card expected')
+  expect(card.before).toBe('○ mais 3 antes')
+  // Completed tasks below the window count as done.
+  const below = cardOf(fresh().turn, at(created(subjects), ['in_progress', 'pending', 'pending', 'pending', 'pending', 'completed', 'completed', 'completed']), NOW, 'en')!
+  if (below.kind !== 'plan') throw new Error('plan card expected')
+  expect(below.after).toBe('✓ 3 more done')
+})
+
+test('a demo list never carries into a real request', () => {
+  const demo = demoOf(1, NOW, 'pt-BR')
+  expect(startTurn(demo.turn, demo.items, 'pedido real', NOW, 'pt-BR').items).toEqual([])
 })
 
 test('interrompido: grey badge, where it stopped, the step left halted, the files', () => {
@@ -250,6 +268,8 @@ test('a checklist in the answer: done, in progress, pending; under two items is 
   ])
   expect(list.every(i => i.fromText)).toBe(true)
   expect(checklistOf('1. [ ] Só um')).toBeNull()
+  // Loose list items (blank lines between them) are one list.
+  expect(checklistOf('1. [x] Ler a API\n\n2. [ ] Montar o painel\n\n3. [ ] Publicar')!.map(i => i.subject)).toEqual(['Ler a API', 'Montar o painel', 'Publicar'])
   expect(checklistOf('nada aqui')).toBeNull()
 })
 
@@ -278,22 +298,26 @@ test('agentText: final by default; which blocks show; the answer\'s first senten
   expect(agentTextOf(undefined)).toBe('final')
   expect(agentTextOf('card')).toBe('card')
   expect(agentTextOf('nope')).toBe('final')
-  const answers = ['Pronto: o painel está em localhost:5173. Abra no navegador.']
-  expect(showsBlock('final', '**Pronto**: o painel está em\nlocalhost:5173.', answers)).toBe(true)
-  expect(showsBlock('final', 'Plano em 4 passos:', answers)).toBe(false)
-  expect(showsBlock('final', '   ', answers)).toBe(false)
-  expect(showsBlock('none', answers[0]!, answers)).toBe(false)
-  expect(showsBlock('card', answers[0]!, answers)).toBe(false)
-  expect(showsBlock('all', 'qualquer coisa', [])).toBe(true)
+  // Under final a block hides only when it is known mid-turn text; anything unknown shows.
+  const mids = ['Plano em 4 passos: 1. [ ] Ler a API 2. [ ] Montar']
+  expect(showsBlock('final', 'Plano em 4 passos:', mids)).toBe(false)
+  expect(showsBlock('final', '**Pronto**: o painel está em localhost:5173.', mids)).toBe(true)
+  expect(showsBlock('final', 'resposta de uma sessão retomada', [])).toBe(true)
+  expect(showsBlock('final', '   ', mids)).toBe(true)
+  expect(showsBlock('none', 'qualquer coisa', [])).toBe(false)
+  expect(showsBlock('card', 'qualquer coisa', [])).toBe(false)
+  expect(showsBlock('all', mids[0]!, mids)).toBe(true)
   expect(firstSentence('**Pronto**: o painel está em localhost:5173. Abra no navegador.')).toBe('Pronto: o painel está em localhost:5173.')
   expect(firstSentence('sem ponto final')).toBe('sem ponto final')
   expect(firstSentence('x'.repeat(150)).length).toBe(100)
-  const t = endTurn(fresh().turn, 'answer', NOW, 'Feito. O resto depois.')
-  expect(t.answer).toBe('Feito.')
+  expect(firstSentence('1. Criei a rota /api\n2. Testei')).toBe('Criei a rota /api')
+  expect(firstSentence('e.g. o painel abre em localhost:5173. Depois')).toBe('e.g. o painel abre em localhost:5173.')
+  const t = endTurn(fresh().turn, 'answer', NOW, 'Feito: o painel abriu. O resto depois.')
+  expect(t.answer).toBe('Feito: o painel abriu.')
   expect(endTurn(fresh().turn, 'answer', NOW).answer).toBeUndefined()
   const items = at(created(['A', 'B']), ['completed', 'completed'])
   const withAnswer = cardOf(t, items, NOW, 'pt-BR', true)!
-  expect(withAnswer.kind === 'plan' && withAnswer.answer).toBe('Feito.')
+  expect(withAnswer.kind === 'plan' && withAnswer.answer).toBe('Feito: o painel abriu.')
   const without = cardOf(t, items, NOW, 'pt-BR')!
   expect(without.kind === 'plan' && without.answer).toBeUndefined()
 })

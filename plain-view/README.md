@@ -17,7 +17,7 @@ turn ends.
 
   | Value | What the transcript keeps |
   | --- | --- |
-  | `final` (A, default) | Only the turn's final answer. The messages in between (a checklist, `Checking:`) step aside; the answer shows when the turn ends, since Claude Code says which text is final only then |
+  | `final` (A, default) | The final answer. A message the agent writes before calling tools (a checklist, `Checking:`) steps aside once that step ends, so it can show for a moment; a message the mod knows nothing about (an earlier session) stays |
   | `none` (B) | No message of the agent: your requests and the card |
   | `card` (C) | No message; the end card carries the answer's first sentence (`Answer: …`) until the next request |
   | `all` (D) | Every message, as Claude Code draws it |
@@ -52,7 +52,7 @@ turn ends.
 
 ```
 /plain-view on | off          show or hide the card and the tool rows
-/plain-view demo              a sample plan in the card for 15 seconds, even when off
+/plain-view demo              a sample plan in the card for 12 seconds, even when off
 /plain-view palette           the 8 bar palettes with a sample, and a button to switch
 /plain-view palette aurora    switch to one by name
 /plain-view help              list the commands, with a button for each

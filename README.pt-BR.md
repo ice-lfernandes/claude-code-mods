@@ -170,8 +170,8 @@ arquivos mudados e lidos, ou cinza no Esc; o próximo pedido começa um novo, e 
 
 Duas opções mudam o que você vê, as duas em `/config`:
 
-- `agentText`, o que fica das mensagens do agente: `final` (padrão, só a resposta final, que
-  aparece quando o turno termina), `none`, `card` (a primeira frase da resposta no cartão do fim)
+- `agentText`, o que fica das mensagens do agente: `final` (padrão: as mensagens escritas antes
+  de chamar uma tool saem, a resposta final fica), `none`, `card` (a primeira frase da resposta no cartão do fim)
   ou `all`. Falhas, diálogos de permissão e perguntas do agente sempre aparecem.
 - `askForTasks` (ligada por padrão): uma linha no system prompt pede ao modelo que mantenha uma
   lista de tarefas em trabalho de mais de dois passos, para o cartão mostrar cada passo; custa
@@ -180,7 +180,7 @@ Duas opções mudam o que você vê, as duas em `/config`:
 
 ```
 /plain-view on | off          mostra ou esconde o cartão e as linhas de tool
-/plain-view demo              um plano de exemplo no cartão por 15 segundos
+/plain-view demo              um plano de exemplo no cartão por 12 segundos
 /plain-view palette           as 8 paletas das barras com amostra, e um botão para trocar
 /plain-view palette aurora    troca para uma pelo nome
 /plain-view help              lista os comandos

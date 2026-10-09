@@ -37,7 +37,8 @@ export const titleOf = (text: string) => text.split('\n').map(l => l.trim()).fin
 /** A new turn: a fresh card, and the task list kept only while some task is still open. */
 export const startTurn = (prev: Turn | null, items: Item[], text: string, now: number, lang: Lang): { turn: Turn; items: Item[] } => {
   const title = titleOf(text) || prev?.title || WORDS[lang].untitled
-  const open = items.some(i => i.status !== 'completed')
+  // A demo's sample list never carries into a real request.
+  const open = !prev?.isDemo && items.some(i => i.status !== 'completed')
   return {
     turn: { title, startedAt: now, calls: 0, changed: [], read: [] },
     items: open ? items : [],
@@ -64,10 +65,17 @@ const CHECK = /^\s*(?:\d+[.)]|[-*+])\s+\[([ xX~>\-])\]\s+(.+?)\s*$/
  * task list: `[x]` done, `[~]` `[>]` `[-]` in progress, `[ ]` pending. Null under two items.
  */
 export const checklistOf = (text: string): Item[] | null => {
-  const items: Item[] = []
+  // The last run of checklist lines: blank lines may sit inside it, other text ends it.
+  let items: Item[] = []
+  let isOpen = false
   for (const line of text.split('\n')) {
     const m = CHECK.exec(line)
-    if (!m) continue
+    if (!m) {
+      if (line.trim() !== '') isOpen = false
+      continue
+    }
+    if (!isOpen) items = []
+    isOpen = true
     const subject = m[2]!.replace(/[*_`]/g, '').trim()
     if (!subject) continue
     const mark = m[1]!.toLowerCase()
@@ -79,7 +87,7 @@ export const checklistOf = (text: string): Item[] | null => {
 /** The list after an answer of the agent: its last checklist, unless a task tool keeps the list. */
 export const applyAnswer = (items: Item[], answer: string): Item[] => {
   if (items.some(i => !i.fromText)) return items
-  const list = checklistOf(answer.split(/\n\s*\n(?=\s*(?:\d+[.)]|[-*+])\s+\[)/).pop() ?? '')
+  const list = checklistOf(answer)
   return list ? keepCalls(items, list) : items
 }
 
@@ -93,8 +101,6 @@ export const applyTask = (from: Item[], tool: string, input: Input, result?: unk
     if (!subject) return items
     const item: Item = { subject, status: 'pending', calls: 0 }
     if (typeof task?.id === 'string') item.id = task.id
-    const form = str(input.activeForm)
-    if (form) item.activeForm = form
     return [...items, item]
   }
   if (tool === 'TaskUpdate') {
@@ -106,20 +112,14 @@ export const applyTask = (from: Item[], tool: string, input: Input, result?: unk
     const next: Item = { ...was }
     if (isStatus(input.status)) next.status = input.status
     if (str(input.subject)) next.subject = str(input.subject)
-    if (str(input.activeForm)) next.activeForm = str(input.activeForm)
     return items.map((it, i) => (i === at ? next : it))
   }
   if (tool === 'TodoWrite') {
     const todos = Array.isArray(input.todos) ? input.todos : []
-    return todos
+    const list = todos
       .filter((t): t is Record<string, unknown> => typeof t === 'object' && t !== null && str((t as Record<string, unknown>).content) !== '')
-      .map((t, i) => {
-        const subject = str(t.content)
-        const kept = items.find(it => it.subject === subject) ?? items[i]
-        const item: Item = { subject, status: isStatus(t.status) ? t.status : 'pending', calls: kept && kept.subject === subject ? kept.calls : 0 }
-        if (str(t.activeForm)) item.activeForm = str(t.activeForm)
-        return item
-      })
+      .map((t): Item => ({ subject: str(t.content), status: isStatus(t.status) ? t.status : 'pending', calls: 0 }))
+    return keepCalls(items, list)
   }
   return from
 }
@@ -177,20 +177,28 @@ export const normalize = (text: string) => text.replace(/[*_`#>]/g, '').replace(
 
 /** The first sentence of an answer, plain, up to 100 characters. */
 export const firstSentence = (answer: string) => {
-  const flat = normalize(answer)
-  const m = /^(.+?[.!?])(\s|$)/.exec(flat)
+  const line = answer.split('\n').map(l => l.trim()).find(l => l !== '') ?? ''
+  const flat = normalize(line.replace(/^(?:\d+[.)]|[-*+])\s+/, ''))
+  // A sentence of at least 12 characters: `1.` or `e.g.` does not end one.
+  const m = /^(.{11,}?[.!?])(\s|$)/.exec(flat)
   return clip(m ? m[1]! : flat, 100)
 }
 
-/** The answers kept to tell a final block apart: the last 50. */
-export const ANSWERS_KEPT = 50
+/** Mid-turn texts kept to hide their blocks under `final`: the last 200. Older ones show again. */
+export const MID_KEPT = 200
 
-/** Whether an assistant block shows, for the option and the session's final answers. */
-export const showsBlock = (mode: AgentText, text: string, answers: readonly string[]) => {
+/**
+ * Whether an assistant block shows. Under `final`, a block hides only when its text is known to
+ * be mid-turn (the text of a step that went on to call tools); anything else shows, so a final
+ * answer, an old turn or a resumed session is never hidden by mistake.
+ */
+export const showsBlock = (mode: AgentText, text: string, mids: ReadonlySet<string> | readonly string[]) => {
   if (mode === 'all') return true
   if (mode !== 'final') return false
   const block = normalize(text)
-  return block !== '' && answers.some(a => a.includes(block))
+  if (block === '') return true
+  const list = [...mids]
+  return !(list.includes(block) || list.some(m => m.includes(block)))
 }
 
 /**
@@ -251,8 +259,8 @@ export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, l
     if (turn.calls > 0) return { kind: 'phrase', title: turn.title, time: span, doing: capital(turn.doing ?? '') }
     const est = Math.min(0.9, (now - turn.startedAt) / 1000 / FIRST_STEP_SECONDS)
     const rows: Row[] = [
-      { kind: 'now', text: w.first[0]![0], frac: est, status: `~${Math.round(est * 100)}%` },
-      { kind: 'next', text: w.first[1]![0], frac: 0, status: w.next },
+      { kind: 'now', text: w.first[0], frac: est, status: `~${Math.round(est * 100)}%` },
+      { kind: 'next', text: w.first[1], frac: 0, status: w.next },
     ]
     return { kind: 'plan', state: 'work', title: turn.title, time: span, label: w.step(1, 2), frac: est / 2, pct: pct(est / 2), rows }
   }
@@ -269,11 +277,18 @@ export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, l
     const i = start + j
     if (it.status === 'completed') return { kind: 'done', text: it.subject, frac: 1, status: w.done }
     if (i === at) {
-      if (state !== 'work') return { kind: 'halted', text: it.subject, frac: Math.max(0.05, estimate(items, i)), status: w.halted }
+      if (state === 'stopped') return { kind: 'halted', text: it.subject, frac: Math.max(0.05, estimate(items, i)), status: w.halted }
+      // The turn answered with this task open: it waits, nothing stopped it.
+      if (state === 'done') return { kind: 'later', text: it.subject, frac: 0, status: w.leftOpen }
       return { kind: 'now', text: it.subject, frac: est, status: `~${Math.round(est * 100)}%`, doing: turn.doing }
     }
     return { kind: i === at + 1 ? 'next' : 'later', text: it.subject, frac: 0, status: i === at + 1 ? w.next : w.later }
   })
+  // The rows outside the window, named by what they are: all done, or a count above or below.
+  const outside = (list: readonly Item[], done: (n: number) => string, other: (n: number) => string) =>
+    list.length === 0 ? undefined : list.every(i => i.status === 'completed') ? done(list.length) : other(list.length)
+  const before = outside(items.slice(0, start), w.moreDone, w.moreBefore)
+  const after = outside(items.slice(end), w.moreDone, w.moreAfter)
 
   const badge = state === 'done' ? (completed === total ? w.allDone : w.turnDone) : state === 'stopped' ? (turn.end === 'aborted' ? w.interrupted : w.stopped) : undefined
   const touched = turn.changed.length + turn.read.length > 0 ? w.files(turn.changed.length, turn.read.length) : undefined
@@ -287,8 +302,8 @@ export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, l
     frac,
     pct: pct(frac),
     rows,
-    ...(start > 0 ? { before: w.moreDone(start) } : {}),
-    ...(end < total ? { after: w.moreAfter(total - end) } : {}),
+    ...(before ? { before } : {}),
+    ...(after ? { after } : {}),
     ...(isOver && touched ? { files: touched } : {}),
     ...(withAnswer && state === 'done' && turn.answer ? { answer: turn.answer } : {}),
   }
@@ -300,15 +315,11 @@ const capital = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s)
 /** The sample turn /plain-view demo shows: step `step` of the four, `now` the time it shows. */
 export const demoOf = (step: number, startedAt: number, lang: Lang): { turn: Turn; items: Item[] } => {
   const w = WORDS[lang]
-  const items: Item[] = w.demoTasks.map(([subject, activeForm], i) => ({
+  const items: Item[] = w.demoTasks.map((subject, i) => ({
     subject,
-    activeForm,
     status: i < step ? 'completed' : i === step ? 'in_progress' : 'pending',
     calls: i < step ? DEFAULT_CALLS : i === step ? 2 : 0,
   }))
   const turn: Turn = { title: w.demoTitle, startedAt, calls: step * DEFAULT_CALLS + 2, doing: w.demoDoing, changed: [], read: [], isDemo: true }
   return { turn, items }
 }
-
-/** The title cut for a row of `room` columns. */
-export const titleFor = (title: string, room: number) => clip(title, Math.max(8, room))
