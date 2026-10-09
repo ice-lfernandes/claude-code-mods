@@ -47,9 +47,9 @@ session's model and effort in one click, this collection's mods, and the shortcu
     at 70% or more, `opus` and `max` get a yellow border and a line says so; a press still
     switches at once.
   - **Mods:** a button for each mod of this collection installed (limits-meter, allowlist-coach,
-    agent-watch) that opens its pane, then one for each missing, which puts its
+    agent-watch, plain-view) that opens its pane, then one for each missing, which puts its
     `/plugin install` command in the prompt, or a line saying all are installed. test-hud is left
-    out: it is a tool for developers. A mod whose command takes `on` and `off` also
+    out: it is a tool for developers. A mod whose command takes `on` and `off` (plain-view) also
     gets its switch, its state read from its `enabled` option.
   - **Shortcuts:** the menu's tiles, less `Trocar modelo`, which the controls replace.
   `/pad configuration` lists the mods installed and missing the same way.

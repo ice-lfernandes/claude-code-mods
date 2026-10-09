@@ -679,6 +679,7 @@ export const MODS: readonly ModInfo[] = [
   { plugin: 'limits-meter', command: 'limits', icon: 'gauge', label: { 'pt-BR': 'limites', en: 'limits' }, toggles: false },
   { plugin: 'allowlist-coach', command: 'allowlist', icon: 'shield', label: { 'pt-BR': 'permissões', en: 'permissions' }, toggles: false },
   { plugin: 'agent-watch', command: 'watch', icon: 'agents', label: { 'pt-BR': 'agentes', en: 'agents' }, toggles: false },
+  { plugin: 'plain-view', command: 'plain-view', icon: 'spark', label: { 'pt-BR': 'transcript limpo', en: 'plain view' }, toggles: true },
 ]
 
 /** The marketplace the collection installs from. */

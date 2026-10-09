@@ -29,6 +29,11 @@
       "name": "launchpad",
       "source": "./launchpad",
       "description": "A menu of one-click actions under the header, above the prompt or in a pane, and a control panel from ◆ pad: model and effort in one click, this collection's mods, the shortcuts. Pick and order up to 8 with /pad configuration"
+    },
+    {
+      "name": "plain-view",
+      "source": "./plain-view",
+      "description": "A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends"
     }
   ]
 }

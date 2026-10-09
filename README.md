@@ -13,6 +13,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 | [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish |
 | [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
 | [launchpad](launchpad/) | `/pad` | A menu of one-click actions under the header, above the prompt or in a pane: each button runs an installed command, skill or agent. `◆ pad` opens a control panel: model and effort in one click, this collection's mods, the shortcuts. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
+| [plain-view](plain-view/) | `/plain-view` | A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends |
 
 ## Using the mods
 
@@ -155,6 +156,54 @@ shortcuts. Commands:
 
 Or for one session, from a clone: `claude --plugin-dir ./launchpad`.
 
+### plain-view
+
+Off until you turn it on (`/plain-view on`, the `enabled` option, or the switch in launchpad's
+panel). While it is on, the transcript keeps the conversation and drops the tool rows that
+worked; a failed or interrupted call, a permission dialog and the agent's questions always draw
+in full. Above the prompt, a card follows the request: its title, `Step 2 of 4` with a bar, one
+row per task of the agent's list with its own bar (`Done`, `~40%` for the current step, `Next`,
+`Up next`). The current step's percentage is an estimate from its tool calls, hence the `~`.
+When the turn ends the card turns green with the time it took and the files changed and read,
+or grey on Esc; the next request starts a fresh one, and `[-]` folds it.
+The agents the main turn hands work to show in one row of the card (`◇ 1 agent running ·
+code-review · 3m 12s`, with agent-watch's `/watch` when it is installed), and with no task list
+the card waits for them (`Waiting for 1 agent`). A turn with no list that called tools or agents
+ends in a small green card (`✓ Done`, the time, the files and the agents); a plain conversation
+leaves none.
+
+Two options shape what you see, both in `/config`:
+
+- `agentText`, what stays of the agent's messages: `final` (default: the messages written before
+  a tool call step aside, the final answer stays), `none`, `card` (the answer's first sentence in the end card) or
+  `all`. Failures, permission dialogs and the agent's questions always show.
+- `askForTasks` (on by default): one line in the system prompt asks the model to keep a task
+  list for work of more than two steps, or a checklist in its reply when the session has no task
+  tool, so the card shows each step; a few tokens per request.
+  Off, the card reads the list the agent keeps on its own, or a checklist in its answer.
+
+```
+/plain-view on | off          show or hide the card and the tool rows
+/plain-view demo              a sample plan in the card for 12 seconds
+/plain-view palette           the 8 bar palettes with a sample, and a button to switch
+/plain-view palette aurora    switch to one by name
+/plain-view help              list the commands
+```
+
+The bars are a gradient of the `palette` option's colors (default `claude`) with a shine that
+runs while the agent works. Each palette has a dark and a light set, picked by your theme.
+`animation: off` keeps the bars still, in the theme's own colors.
+
+![plain-view: the card while the agent works, when the turn ends, waiting for an agent, and the palettes](screenshots/plain-view.svg)
+
+#### Install
+
+```
+/plugin install plain-view --marketplace ice-lfernandes/claude-code-mods
+```
+
+Or for one session, from a clone: `claude --plugin-dir ./plain-view`.
+
 ## Install
 
 Each mod's section above has its own install line. In a Claude Code terminal session:
@@ -184,6 +233,7 @@ it makes.
 | agent-watch | No | No | No | No | No |
 | test-hud | No | No | Reads Bash's saved copy of an output too long to show whole | No | No |
 | launchpad | No | No | Reads `.claude/launchpad.json` and the agent files in `.claude/agents/`, in the project and in your home folder | No | No |
+| plain-view | No | No | No (writes its own options through `/config` when you run `on`, `off` or `palette`) | No | No |
 
 ## Developing
 
@@ -198,6 +248,8 @@ claude plugin validate ./test-hud
 claude plugin test ./test-hud
 claude plugin validate ./launchpad
 claude plugin test ./launchpad
+claude plugin validate ./plain-view
+claude plugin test ./plain-view
 ```
 
 Every mod ships tests, including a render test on the `terminal` and `desktop` surfaces.
@@ -255,8 +307,8 @@ the prompt instead of running it.
 
 ### Shared bands
 
-Several mods can draw on the same line: `AbovePrompt` (limits-meter, and launchpad under
-`/pad place prompt`) and `PromptHint` (launchpad's `◆ pad`). Each `ui.render` hook there calls
+Several mods can draw on the same line: `AbovePrompt` (limits-meter, plain-view, and launchpad
+under `/pad place prompt`) and `PromptHint` (launchpad's `◆ pad`). Each `ui.render` hook there calls
 `next(e)` and stacks its own row with what came back, never in its place, so every mod's row
 shows:
 

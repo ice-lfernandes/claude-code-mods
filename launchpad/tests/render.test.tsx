@@ -278,34 +278,38 @@ test('the pane lists the catalog in a window the arrows and the wheel move', asy
   world(on, {}, undefined, [...COMMANDS, ...many])
   await start($)
   await pad($, 'configuration')
-  // 34 rows less 24 for the rest (8 buttons in the menu, and the Mods section with three missing
-  // mods in one line of bordered buttons): 10 for the list.
+  // 34 rows less 27 for the rest (8 buttons in the menu, and the Mods section with four missing
+  // mods in two lines of bordered buttons): 7 for the list.
   const ui = await pane($, 'terminal', 34)
   const shown = async () => {
     const drawn = JSON.stringify(await ui.drawn())
     return { keys: [...drawn.matchAll(/"key":"add:command:([^"]+)"/g)].map(m => m[1]), drawn }
   }
   let now = await shown()
-  expect(now.keys).toEqual(['cmd-00', 'cmd-01', 'cmd-02', 'cmd-03', 'cmd-04', 'cmd-05', 'cmd-06', 'cmd-07', 'cmd-08', 'cmd-09'])
-  expect(now.drawn).toContain('1–10 de 35')
+  expect(now.keys).toEqual(['cmd-00', 'cmd-01', 'cmd-02', 'cmd-03', 'cmd-04', 'cmd-05', 'cmd-06'])
+  expect(now.drawn).toContain('1–7 de 35')
 
   await ui.press({ key: 'list:down' }) // a page less one row, so the last stays in view
   now = await shown()
-  expect(now.keys[0]).toBe('cmd-09')
-  expect(now.drawn).toContain('10–19 de 35')
+  expect(now.keys[0]).toBe('cmd-06')
+  expect(now.drawn).toContain('7–13 de 35')
 
   await ($ as any).ui.scroll({ component: 'Pane', requestId: 'launchpad', by: 100 })
   now = await shown()
-  expect(now.drawn).toContain('26–35 de 35') // the wheel stops at the end
+  expect(now.drawn).toContain('29–35 de 35') // the wheel stops at the end
   expect(now.keys.at(-1)).toBe('cost')
 
   await ui.press({ key: 'list:up' })
-  expect((await shown()).drawn).toContain('17–26 de 35')
+  expect((await shown()).drawn).toContain('23–29 de 35')
 
   await ui.input({ key: 'filter', kind: 'change', text: 'cmd-2' })
   now = await shown()
-  expect(now.keys).toEqual(['cmd-20', 'cmd-21', 'cmd-22', 'cmd-23', 'cmd-24', 'cmd-25', 'cmd-26', 'cmd-27', 'cmd-28', 'cmd-29'])
-  expect(now.drawn).not.toContain('list:down') // 10 fit: no scroll row
+  expect(now.keys).toEqual(['cmd-20', 'cmd-21', 'cmd-22', 'cmd-23', 'cmd-24', 'cmd-25', 'cmd-26'])
+  expect(now.drawn).toContain('list:down') // 10 match, 7 fit: the scroll row stays
+  await ui.input({ key: 'filter', kind: 'change', text: 'cmd-21' })
+  now = await shown()
+  expect(now.keys).toEqual(['cmd-21'])
+  expect(now.drawn).not.toContain('list:down') // all fit: no scroll row
   await ui.unmount()
 })
 
@@ -401,6 +405,7 @@ const MOD_COMMANDS = [
   { name: 'allowlist', description: 'Allowlist', source: 'plugin', plugin: 'allowlist-coach' },
   { name: 'watch', description: 'Subagents', source: 'plugin', plugin: 'agent-watch' },
   { name: 'test-hud', description: 'Tests', source: 'plugin', plugin: 'test-hud' },
+  { name: 'plain-view', description: 'A quiet transcript', source: 'plugin', plugin: 'plain-view' },
 ]
 const step = async ($: any, model: string, effort?: string | number, agentId?: string) => {
   const stream = $.turn.step({ turnId: 't1', index: 0, model, messageCount: 3, ...(effort !== undefined ? { effort } : {}), ...(agentId ? { agentId } : {}) })
