@@ -35,6 +35,8 @@ function engine(on: any, env: Record<string, string> = {}, beneath?: string): Wo
     return { turnId: 't1', index: 0, answer: '', toolUses: [], stopReason: 'end_turn' }
   } as never)
   on('classic.PostModelSwitch', () => ({}) as never)
+  on('classic.Stop', () => ({}) as never)
+  on('classic.PostToolUse', () => ({}) as never)
   // What is beneath on the same line: empty, or another mod's row.
   on('ui.render', ($: any, e: any) => {
     const { Box, Text } = $.ui.resolve(e)
@@ -328,7 +330,9 @@ test('effort max on the band is in the warning color; a subagent step changes no
   await step($, 'claude-haiku-4-5', 'low', 'agent-1')
   const drawn = JSON.stringify(await (await band($)).drawn())
   expect(drawn).toContain('opus 5.5')
-  expect(drawn).toContain('{\"color\":\"warning\"},\"children\":[\"max\"]')
+  expect(drawn).toContain('{\"color\":\"warning\",\"dimColor\":false},\"children\":[\"▰▰▰▰▰ \"]')
+  expect(drawn).toContain('{\"color\":\"warning\",\"bold\":true},\"children\":[\"max\"]')
+  expect(drawn).toContain('{\"color\":\"claude\",\"bold\":true},\"children\":[\"opus 5.5\"]')
   expect(drawn).not.toContain('haiku')
 })
 
@@ -453,7 +457,8 @@ test('/limits pane: model, effort and the threshold; a click sets it for later s
   const p = await pane($)
   let shown = JSON.stringify(await p.drawn())
   expect(shown).toContain('Model')
-  expect(shown).toContain('effort high')
+  expect(shown).toContain('{\"color\":\"claude\",\"bold\":true},\"children\":[\"sonnet 5.5\"]')
+  expect(shown).toContain('▰▰▰▱▱ ')
   expect(shown).toContain('Costly switch warning')
   expect(shown).toContain('{\"color\":\"claude\",\"bold\":true},\"children\":[\"70%\"]')
   expect(shown).toContain('order: haiku < sonnet < opus < fable')
@@ -495,4 +500,52 @@ test('hidden: the band goes, the toast still comes', async ($, on) => {
   world.toasts.length = 0
   await switchTo($, SONNET, OPUS)
   expect(world.toasts).toEqual(['5h at 82%: opus uses the window faster · /limits'])
+})
+
+// Effort, from wherever the engine gives it: a request may carry none (seen live, 2026-10-09).
+
+test('effort: a request with none keeps the known one; the turn end brings it', async ($, on) => {
+  engine(on)
+  modelIs(on, OPUS)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await step($, OPUS) // no effort on the request
+  let drawn = JSON.stringify(await (await band($)).drawn())
+  expect(drawn).toContain('opus 5.5')
+  expect(drawn).not.toContain('high')
+  await $.classic.Stop({ stop_hook_active: false, effort: { level: 'high' } } as never)
+  drawn = JSON.stringify(await (await band($)).drawn())
+  expect(drawn).toContain('\"high\"')
+  await step($, OPUS)
+  drawn = JSON.stringify(await (await band($)).drawn())
+  expect(drawn).toContain('\"high\"')
+})
+
+test('effort: a tool call on main brings it; one in a subagent does not', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await $.classic.PostToolUse({ tool_name: 'Read', tool_input: {}, tool_response: {}, tool_use_id: 'u1', agent_id: 'a1', effort: { level: 'low' } } as never)
+  expect(JSON.stringify(await (await band($)).drawn())).not.toContain('low')
+  await $.classic.PostToolUse({ tool_name: 'Read', tool_input: {}, tool_response: {}, tool_use_id: 'u2', effort: { level: 'medium' } } as never)
+  expect(JSON.stringify(await (await band($)).drawn())).toContain('medium')
+})
+
+test('effort: the /config row gives the first reading', async ($, on) => {
+  engine(on)
+  on('config.list', () => ({ value: [{ key: 'effortLevel', label: 'Effort', kind: 'choice', value: 'xhigh' }] }) as never)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  expect(JSON.stringify(await (await band($)).drawn())).toContain('xhigh')
+})
+
+test('effort max from the turn end warns once, as from a request', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await step($, SONNET, 'high')
+  await climb($, world.clock, 70)
+  world.toasts.length = 0
+  await $.classic.Stop({ stop_hook_active: false, effort: { level: 'max' } } as never)
+  await step($, SONNET, 'max')
+  expect(world.toasts).toEqual(['5h at 82%: at this pace the window runs out in ~18 min · /limits'])
 })

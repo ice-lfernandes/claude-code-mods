@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { addSamples, alerts, bar, contextSpark, heaviest, isCostlier, label, mini, minutesLeft, needsCompact, pace, pct, rankOf, resetIn, summary, switchWarning, tone, toSnapshot, toTurn } from '../hooks/meter'
+import { addSamples, alerts, bar, contextSpark, gauge, heaviest, isCostlier, label, mini, minutesLeft, needsCompact, pace, pct, rankOf, resetIn, summary, switchWarning, tone, toSnapshot, toTurn } from '../hooks/meter'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 
@@ -152,6 +152,12 @@ describe('costly switch (0.4.0)', () => {
     input: 1, output: 1, cacheHit: null, model: 'claude-sonnet-5-5', durationMs: 1, fivePercent: percent, fiveResetsAt: resetsAt, endedAt: NOW + minutes * MIN,
   })
   const sonnet = { model: 'claude-sonnet-5-5', effort: 'high' }
+
+  test('effort gauge: five steps, low to max; none for an unknown level', async () => {
+    expect(['low', 'medium', 'high', 'xhigh', 'max'].map(gauge)).toEqual(['▰▱▱▱▱', '▰▰▱▱▱', '▰▰▰▱▱', '▰▰▰▰▱', '▰▰▰▰▰'])
+    expect(gauge(3)).toBe('')
+    expect(gauge(null)).toBe('')
+  })
 
   test('model order: haiku < sonnet < opus < fable; an unknown model never climbs', async () => {
     expect(['claude-haiku-4-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'].map(rankOf)).toEqual([0, 1, 2, 3])

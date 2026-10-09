@@ -23,7 +23,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Samples, Snapshot, Turn } from '../types'
 import type { Setting } from './meter'
-import { addSamples, alerts, bar, contextSpark, heaviest, label, mini, needsCompact, pace, pct, resetIn, summary, switchWarning, toSnapshot, toTurn, tone as toneOf, TURNS_KEPT } from './meter'
+import { addSamples, alerts, bar, contextSpark, gauge, heaviest, label, mini, needsCompact, pace, pct, resetIn, summary, switchWarning, toSnapshot, toTurn, tone as toneOf, TURNS_KEPT } from './meter'
 import type { Lang, Verb } from './ui'
 import { fillArgs, langOf, linesOf, shortModel, tokens, verbRow } from './ui'
 import { COMMAND, WORDS } from './words'
@@ -102,6 +102,28 @@ const warnIfCostly = async ($: EngineInterface, from: Setting, to: Setting) => {
   const five = s.limits.find(l => l.kind === 'five_hour')
   const text = switchWarning(from, to, five, await read($, switchAt), await read($, turns), await $.clock.now(), lang)
   if (text) $.ui.toast(text, { timeoutMs: 8000 })
+}
+
+/**
+ * An effort seen on the main thread: kept for the band, and a change to max may warn. A source
+ * with no effort (a request that carries none, a hook outside a turn) keeps the one known.
+ */
+const seeEffort = async ($: EngineInterface, level: string | number | null | undefined, id?: string | null) => {
+  if (level == null || level === '') return
+  const was = await read($, effort)
+  if (was === level) return
+  await update($, effort, () => level)
+  if (was !== null) {
+    const current = id ?? (await read($, model))
+    await warnIfCostly($, { model: current, effort: was }, { model: current, effort: level })
+  }
+}
+
+/** The session's effort from /config, where a row holds one: the band's first reading. */
+const effortOfConfig = (rows: readonly { key: string; label: string; value: unknown }[]) => {
+  const row = rows.find(r => /effort/i.test(r.key) || /effort|esforço/i.test(r.label))
+  const v = typeof row?.value === 'string' ? row.value.toLowerCase() : null
+  return v && ['low', 'medium', 'high', 'xhigh', 'max'].includes(v) ? v : null
 }
 
 /** A threshold from /limits warn: a whole number from 1 to 100, else null. */
@@ -188,6 +210,12 @@ export const register: Register = (on, options) => {
       // The first turn.step brings it.
     }
     try {
+      const level = effortOfConfig(await $.config.list())
+      if (level && (await read($, effort)) === null) await update($, effort, () => level)
+    } catch {
+      // The first request or tool call brings it.
+    }
+    try {
       const usage = await $.session.usage()
       await update($, snapshot, () => toSnapshot(usage.context, usage.rateLimits))
     } catch {
@@ -236,17 +264,28 @@ export const register: Register = (on, options) => {
   on('turn.step', async function* ($, e, next) {
     if (!e.agentId) {
       try {
-        const was = await read($, effort)
-        const is = e.effort ?? null
         await update($, model, () => e.model)
-        await update($, effort, () => is)
-        if (was !== null && was !== is) await warnIfCostly($, { model: e.model, effort: was }, { model: e.model, effort: is })
+        await seeEffort($, e.effort, e.model)
       } catch {
         // The band keeps what it had; the request goes on.
       }
     }
     return yield* next(e)
   })
+
+  // The classic hooks carry the turn's effort too (`effort.level`, after any downgrade for the
+  // model), where a request may carry none: each tool call and each turn's end on main.
+  on('classic.PostToolUse', async ($, e, next) => {
+    const result = await next(e)
+    if (!e.agent_id) await seeEffort($, e.effort?.level)
+    return result
+  }).catch(($, e, next) => next(e))
+
+  on('classic.Stop', async ($, e, next) => {
+    const result = await next(e)
+    if (!e.agent_id) await seeEffort($, e.effort?.level)
+    return result
+  }).catch(($, e, next) => next(e))
 
   on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
 
@@ -266,12 +305,14 @@ export const register: Register = (on, options) => {
       width > 0 ? <Text color={tone(percent)}>{`${bar(width, percent)} `}</Text> : width === 0 ? <Text color={tone(percent)}>{mini(percent)}</Text> : null
     const id = await read($, model)
     const level = await read($, effort)
+    // The model in the accent color; the effort as a five-step gauge and its name, max in warning.
     const setting =
-      id && shows('model') ? (
+      (id || level !== null) && shows('model') ? (
         <Text key="model">
-          <Text>{shortModel(id)}</Text>
-          {level !== null && <Text dimColor> · </Text>}
-          {level !== null && <Text color={level === 'max' ? 'warning' : undefined}>{String(level)}</Text>}
+          {id && <Text color="claude" bold>{shortModel(id)}</Text>}
+          {id && level !== null && <Text> </Text>}
+          {level !== null && gauge(level) !== '' && <Text color={level === 'max' ? 'warning' : undefined} dimColor={level !== 'max'}>{`${gauge(level)} `}</Text>}
+          {level !== null && <Text color={level === 'max' ? 'warning' : undefined} bold={level === 'max'}>{String(level)}</Text>}
         </Text>
       ) : null
 
@@ -435,8 +476,10 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column">
             <Text bold>{w.modelHeading}</Text>
             <Text>
-              <Text>{shortModel(id)}</Text>
-              {level !== null && <Text dimColor>{` · ${w.effort(String(level))}`}</Text>}
+              <Text color="claude" bold>{shortModel(id)}</Text>
+              {level !== null && <Text dimColor>{`   ${w.effort} `}</Text>}
+              {level !== null && gauge(level) !== '' && <Text color={level === 'max' ? 'warning' : undefined} dimColor={level !== 'max'}>{`${gauge(level)} `}</Text>}
+              {level !== null && <Text color={level === 'max' ? 'warning' : undefined} bold={level === 'max'}>{String(level)}</Text>}
             </Text>
           </Box>
         )}

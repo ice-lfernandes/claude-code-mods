@@ -48,7 +48,7 @@ type Words = {
   switchFaster: (percent: string, what: string) => string
   /** The pane's model section. */
   modelHeading: string
-  effort: (effort: string) => string
+  effort: string
   /** The pane's costly-switch section and /limits warn. */
   warnHeading: string
   warnHint: string
@@ -96,7 +96,7 @@ export const WORDS: Record<Lang, Words> = {
     switchResets: (percent, reset) => `5h em ${percent}: reinicia em ${reset}, antes de acabar · /limits`,
     switchFaster: (percent, what) => `5h em ${percent}: ${what} gasta a janela mais rápido · /limits`,
     modelHeading: 'Modelo',
-    effort: effort => `effort ${effort}`,
+    effort: 'effort',
     warnHeading: 'Aviso de troca cara',
     warnHint: 'Toast ao trocar para modelo maior ou effort max com 5h a partir de:',
     warnOrder: 'ordem: haiku < sonnet < opus < fable',
@@ -141,7 +141,7 @@ export const WORDS: Record<Lang, Words> = {
     switchResets: (percent, reset) => `5h at ${percent}: resets in ${reset}, before it runs out · /limits`,
     switchFaster: (percent, what) => `5h at ${percent}: ${what} uses the window faster · /limits`,
     modelHeading: 'Model',
-    effort: effort => `effort ${effort}`,
+    effort: 'effort',
     warnHeading: 'Costly switch warning',
     warnHint: 'Toast on a switch to a bigger model or effort max with 5h from:',
     warnOrder: 'order: haiku < sonnet < opus < fable',

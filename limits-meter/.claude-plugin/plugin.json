@@ -1,6 +1,6 @@
 {
   "name": "limits-meter",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Plan limits and context above the prompt: model and effort, 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn, and a toast on a costly model switch near the limit",
   "types": "./types/index.d.ts",
   "userConfig": {

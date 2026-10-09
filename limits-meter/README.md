@@ -4,10 +4,12 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](../screenshots/limits-meter.svg)
 
-- **Band above the prompt:** the main thread's model and effort (`max` in the warning color),
+- **Band above the prompt:** the main thread's model, in the accent color, and its effort as a
+  five-step gauge, `opus 5.5 ▰▰▰▱▱ high` (low to max, `max` in the warning color),
   the 5-hour and weekly plan windows with their reset times, the context window's fill, and
   the last turn's cache hit rate. With `format: compact` it is one line of numbers:
-  `sonnet 5.5 · high · ctx 8% · 5h 34% · wk 31%`. Colors follow the theme: warning
+  `sonnet 5.5 ▰▰▰▱▱ high · ctx 8% · 5h 34% · wk 31%`. The effort comes from each request, the
+  turn's end and tool calls on the main thread, and `/config` at the start. Colors follow the theme: warning
   at 70%, error at 90% (the `warnAt` and `dangerAt` options). Below 90 columns each bar
   shrinks to one cell. `details` opens the pane, `hide` hides
   the band, and from 85% context `compact` puts `/compact [focus]` in the prompt, with the
@@ -20,7 +22,7 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
     100% before the reset, the pane says so: `at this pace, 5h reaches 100% in ~1h20, before
     it resets`.
   - **Context trend:** a sparkline of the context fill at the end of each turn.
-  - **Model** and the effort of the last request.
+  - **Model** and its effort gauge.
   - **Costly switch warning:** the threshold for the toast below, `50% · 60% · 70% · 80% ·
     90%`, one click each; the choice is kept for later sessions.
 - **Toasts**, once each: a window at 80, 90 and 100% (re-armed when the window resets), and

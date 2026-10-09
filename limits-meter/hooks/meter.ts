@@ -157,6 +157,15 @@ export const summary = (s: Snapshot, last: Turn | undefined, now: number, lang: 
   return parts.join(' · ')
 }
 
+/** Effort levels from least to most thinking, the gauge's five steps. */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/** Effort as a five-step gauge, low ▰▱▱▱▱ to max ▰▰▰▰▰; "" for a level outside the list. */
+export const gauge = (level: string | number | null | undefined) => {
+  const n = EFFORT_LEVELS.indexOf(String(level) as (typeof EFFORT_LEVELS)[number]) + 1
+  return n > 0 ? '▰'.repeat(n) + '▱'.repeat(EFFORT_LEVELS.length - n) : ''
+}
+
 /** Models from cheapest to costliest; a switch up this list is a costly one. */
 export const MODEL_ORDER = ['haiku', 'sonnet', 'opus', 'fable'] as const
 
