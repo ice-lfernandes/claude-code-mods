@@ -44,6 +44,13 @@ export type Agent = {
   endedAt?: number
 }
 
+/** The settings pane's line under its hint: a change saved or refused, or the reset. */
+export type Flash =
+  | { kind: 'saved'; key: string; value: boolean | string }
+  | { kind: 'denied'; why: string }
+  | { kind: 'reset' }
+  | { kind: 'resetNone' }
+
 /** What stays of the agent's words in the transcript while the mod is on. */
 export type AgentText = 'final' | 'none' | 'card' | 'all'
 
@@ -59,6 +66,13 @@ declare module 'claude-code' {
       mids: string[]
       /** The agents the main loop spawned: running ones, and the ones that ended during this request. */
       agents: Agent[]
+      /** The settings pane's tab: 0 Transcript, 1 Card, 2 General. */
+      tab: number
+      flash: Flash | null
+      /** When the pane last changed an option (epoch ms), so the reload after it opens the pane again; 0 when none. */
+      reopenAt: number
+      /** A reset from the pane under way: the next load goes on with the options left. */
+      resetting: boolean
     }
   }
 }

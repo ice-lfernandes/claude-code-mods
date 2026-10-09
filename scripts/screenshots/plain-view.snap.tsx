@@ -46,4 +46,9 @@ test('snap', { options: { enabled: true, language: 'en', icons: 'symbol' } }, as
   await band()
   const out = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'CommandOutput', props: { command: 'plain-view', args: 'palette', text: '', isErrored: false }, viewport: { columns: 110, rows: 40 } } as never)
   console.log('TREE', JSON.stringify(await out.drawn()))
+  // The settings pane (/plain-view): the Transcript tab, then the Card tab after a press.
+  const pane = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'Pane', requestId: 'plain-view-settings', props: { title: 'plain-view', isFocused: true, bodyColumns: 96, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} }, viewport: { columns: 98, rows: 60 } } as never)
+  console.log('PANE', JSON.stringify(await pane.drawn()))
+  await pane.press({ key: 'tab:1' })
+  console.log('PANE', JSON.stringify(await pane.drawn()))
 })

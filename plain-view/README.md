@@ -65,12 +65,23 @@ turn ends.
   the agents still running and drops the finished ones; the engine's `[-]` folds it.
 
 ```
+/plain-view                   the settings pane (also /plain-view config)
 /plain-view on | off          show or hide the card and the tool rows
 /plain-view demo              a sample plan in the card for 12 seconds, even when off
 /plain-view palette           the 8 bar palettes with a sample, and a button to switch
 /plain-view palette aurora    switch to one by name
 /plain-view help              list the commands, with a button for each
 ```
+
+## Settings pane
+
+`/plain-view` opens a pane, a tab like those of `/limits` and `/watch`, with the seven options in
+three tabs: **Transcript** (`enabled`, `agentText`, `askForTasks`), **Card** (`palette` with a
+sample of each, `animation`, and a preview of the card) and **General** (`language`, `icons`).
+Each value is a button with a line on what it does; a press saves it as `/config` would and the
+pane says `✓ Saved`. An option your organization sets (managed settings) shows its value and why
+it does not change. `defaults` asks first, then puts the others back to their defaults. In
+launchpad's panel, the plain-view button opens this pane.
 
 ## Bar colors
 
@@ -132,7 +143,8 @@ Its `agent.spawn` hook only observes: the spawn goes on whatever happens after i
 default), its `prompt.compose` hook adds one line to the system prompt while the mod is on. Under
 `agentText` it hides the agent's messages from the drawing only; the session keeps them. Its `tool.call` hook only observes: if it fails, the call goes on, and
 nothing after the call can make it run twice. The only thing it writes is its own options
-(`enabled`, `palette`) through `$.config.set`, when you run `on`, `off` or `palette`. It keeps
+through `$.config.set`, when you run `on`, `off` or `palette`, or press a value or `defaults`
+in the settings pane (`defaults` asks first, in the engine's own question dialog). It keeps
 its values in the session's plugin state and nothing across sessions.
 
 While the agent works, or one of its agents runs, the card redraws 10 times a second for the
