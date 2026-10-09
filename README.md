@@ -336,7 +336,6 @@ Need a mod, skill or agent built for your own workflow or team? I take on custom
 panes, status lines, slash commands, skills and subagents for Claude Code.
 
 - Email: [lucas.rj.fernandes@gmail.com](mailto:lucas.rj.fernandes@gmail.com)
-- LinkedIn: [linkedin.com/in/lucasdfernandes](https://www.linkedin.com/in/lucasdfernandes)
 
 ## YouTube
 
