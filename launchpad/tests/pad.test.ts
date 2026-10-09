@@ -3,6 +3,8 @@ import { expect, test } from 'claude-code/testing'
 import type { ModInfo, Target } from '../types'
 import {
   activeModel,
+  ASK_HEADER,
+  dressQuestion,
   effortOf,
   fiveHourOf,
   installText,
@@ -333,4 +335,25 @@ test('5-hour warning: opus and max from 70%', async () => {
 test('panel shortcuts: the menu less /model', async () => {
   const list = defaults('pt-BR')
   expect(panelShortcuts(list).map(p => p.id)).toEqual(['compact', 'context', 'limits', 'resume', 'memory', 'explore', 'help'])
+})
+
+test('the dialog for place: each place with what it is and a sketch, labels unchanged', async () => {
+  const q = dressQuestion({ question: 'Onde o menu deve ficar?', header: ASK_HEADER, multiSelect: false, options: [{ label: 'Sob o cabeçalho (atual)' }, { label: 'Acima do prompt' }, { label: 'Num painel' }] }, 'pt-BR')
+  const options = q.options as { label: string; description?: string; preview?: string }[]
+  expect(options.map(o => o.label)).toEqual(['Sob o cabeçalho (atual)', 'Acima do prompt', 'Num painel'])
+  expect(options[0]!.description).toContain('Um cartão sob o cabeçalho')
+  expect(options[1]!.description).toBe('Uma linha logo acima da caixa do prompt, sempre à mão.')
+  expect(options[1]!.preview).toContain('✻ Compactar  Ver contexto')
+  expect(options[2]!.preview).toContain('Esc fecha')
+  const en = dressQuestion({ header: ASK_HEADER, options: [{ label: 'In a pane' }] }, 'en')
+  expect((en.options as { preview?: string }[])[0]!.preview).toContain('Esc closes')
+})
+
+test('the dialog for reset says what each answer does; anyone else\'s question is left alone', async () => {
+  const q = dressQuestion({ header: ASK_HEADER, options: [{ label: 'Voltar aos padrões' }, { label: 'Cancelar' }] }, 'pt-BR')
+  expect((q.options as { description?: string }[]).map(o => o.description)).toEqual(['Volta aos 8 atalhos padrão. Os que você adicionou somem; os do projeto ficam.', 'Nada muda.'])
+  const theirs = { question: 'Qual banco?', header: 'DB', options: [{ label: 'Cancelar' }] }
+  expect(dressQuestion(theirs, 'pt-BR')).toBe(theirs)
+  const unknown = dressQuestion({ header: ASK_HEADER, options: [{ label: 'outra coisa' }] }, 'pt-BR')
+  expect(unknown.options).toEqual([{ label: 'outra coisa' }])
 })

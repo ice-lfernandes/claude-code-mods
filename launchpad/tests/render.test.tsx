@@ -111,8 +111,11 @@ test('the terminal card frames bordered tiles in columns that fit', async ($, on
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('"borderColor":"claude"')
   expect(drawn).toContain('"key":"box:pad:compact"')
-  // The frame is text, so it fills with the label under the pointer: every cell inverse in the accent.
-  expect(drawn).toContain('╭───────────────────────╮')
+  // The frame is half blocks of text: under the pointer they turn the accent and the label row
+  // fills inverse, one orange rectangle that ends where the frame does.
+  expect(drawn).toContain('▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖')
+  expect(drawn).toContain('▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘')
+  expect(drawn).toContain('"hover":{"color":"claude","dimColor":false},"children":["▐"]')
   expect(drawn).toContain('"hover":{"color":"claude","inverse":true,"dimColor":false,"bold":true}')
   expect(drawn).not.toContain('borderDimColor') // only the card's own frame is a Box border
   expect(drawn).toContain('"label":" 🗜️ Compactar conversa "') // 23 cells: 26 less the gap and the two borders
@@ -513,9 +516,9 @@ for (const place of ['header', 'prompt', 'pane'] as const) {
     const drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('auto mode on')
     expect(drawn).toContain('"label":" ◆ pad "')
-    expect(drawn).toContain('╭───────╮')
+    expect(drawn).toContain('▗▄▄▄▄▄▄▄▖')
     expect(drawn).toContain('"justifyContent":"space-between"')
-    expect(drawn).toContain('"alignItems":"center"')
+    expect(drawn).toContain('"paddingTop":1') // the hint on the button's label row
     expect(drawn.indexOf('auto mode on')).toBeLessThan(drawn.indexOf('◆ pad'))
     expect(w.opened).not.toContain('launchpad-panel')
     await ui.press({ key: 'pad:panel' })
@@ -589,7 +592,7 @@ test('panel: the bordered chips and the close button keep the tiles\' look and h
   expect(drawn).toContain('"key":"box:model:sonnet"')
   expect(drawn).toContain('"hover":{"color":"claude","inverse":true,"dimColor":false,"bold":true}')
   expect(drawn).toContain('"label":" Fechar "')
-  expect(drawn).toContain('╭────────╮') // the close button is as wide as its label
+  expect(drawn).toContain('▗▄▄▄▄▄▄▄▄▖') // the close button is as wide as its label
   expect(drawn).toContain('"alignItems":"flex-start"')
   await ui.unmount()
 })
@@ -675,13 +678,36 @@ test('a mod button opens the mod\'s pane by its command', async ($, on) => {
   await ui.unmount()
 })
 
-test('no mods: the section says none is installed and where to look', async ($, on) => {
-  world(on)
+test('no mods: the section says none is installed, with a button to install each', async ($, on) => {
+  const w = world(on)
+  await start($)
+  const ui = await panel($)
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('Nenhum mod desta coleção instalado.')
+  for (const m of ['limits-meter', 'allowlist-coach', 'agent-watch']) expect(drawn).toContain(`"key":"install:${m}"`)
+  expect(drawn).not.toContain('Controles') // no /model nor /effort in this session
+  await ui.press({ key: 'install:agent-watch' })
+  expect(w.fills.map(f => f.text)).toEqual(['/plugin install agent-watch --marketplace ice-lfernandes/claude-code-mods'])
+  await ui.unmount()
+})
+
+test('panel: some mods missing, their install buttons after the installed ones; all installed, a line says so', async ($, on) => {
+  world(on, files, undefined, [...COMMANDS, MOD_COMMANDS[0]!])
+  await start($)
+  let drawn = JSON.stringify(await (await panel($)).drawn())
+  expect(drawn).toContain('Faltam (o comando vai para o prompt; Enter instala):')
+  expect(drawn.indexOf('"key":"mod:limits-meter"')).toBeLessThan(drawn.indexOf('"key":"install:allowlist-coach"'))
+  expect(drawn).not.toContain('"key":"install:limits-meter"')
+})
+
+test('panel and /pad configuration: every mod installed, a line says so', async ($, on) => {
+  world(on, files, undefined, [...COMMANDS, ...MOD_COMMANDS])
   await start($)
   const drawn = JSON.stringify(await (await panel($)).drawn())
-  expect(drawn).toContain('Nenhum mod desta coleção instalado.')
-  expect(drawn).toContain('/pad configuration mostra como instalar.')
-  expect(drawn).not.toContain('Controles') // no /model nor /effort in this session
+  expect(drawn).toContain('Todos os mods desta coleção já estão instalados.')
+  expect(drawn).not.toContain('install:')
+  await pad($, 'configuration')
+  expect(JSON.stringify(await (await pane($)).drawn())).toContain('Todos os mods desta coleção já estão instalados.')
 })
 
 test('a command of the same name from another plugin is not the mod', async ($, on) => {
@@ -791,3 +817,4 @@ test('reset from the /pad row asks first; only "Voltar aos padrões" resets', as
   expect(w.fills).toEqual([])
   await ui.unmount()
 })
+

@@ -27,7 +27,8 @@ session's model and effort in one click, this collection's mods, and the shortcu
 - **A row of /pad's own arguments** under the buttons: `configuration · list · add · remove ·
   reset · place · off · help`. Nothing there leaves a command in the prompt for you to type:
   `configuration` opens the pane, and so do `add` and `remove`, which are a press there; `place`
-  asks where the menu goes and `reset` asks before it resets, in Claude Code's own dialog; `list`
+  asks where the menu goes and `reset` asks before it resets, in Claude Code's own dialog, where
+  each choice says what it does and each place shows a sketch of itself; `list`
   and `help` print as a dim line in the conversation (Claude does not read it); `off` turns the
   menu off, and the row then offers `on`.
 - **Where it shows is your choice** (`/pad place`, or the `placement` option):
@@ -46,11 +47,12 @@ session's model and effort in one click, this collection's mods, and the shortcu
     at 70% or more, `opus` and `max` get a yellow border and a line says so; a press still
     switches at once.
   - **Mods:** a button for each mod of this collection installed (limits-meter, allowlist-coach,
-    agent-watch) that opens its pane. test-hud is left out: it is a tool for developers. A mod whose command takes `on` and `off` also
+    agent-watch) that opens its pane, then one for each missing, which puts its
+    `/plugin install` command in the prompt, or a line saying all are installed. test-hud is left
+    out: it is a tool for developers. A mod whose command takes `on` and `off` also
     gets its switch, its state read from its `enabled` option.
   - **Shortcuts:** the menu's tiles, less `Trocar modelo`, which the controls replace.
-  `/pad configuration` lists the mods missing, each with a button that puts its
-  `/plugin install` command in the prompt for you to send.
+  `/pad configuration` lists the mods installed and missing the same way.
 - **Up to 8 buttons** that work here. The defaults: compact the chat, see context, see limits,
   resume a chat, edit memory, switch model, explore the code, help.
 
@@ -130,8 +132,9 @@ to `auto` yourself to get the new behaviour.
 ## Known limits
 
 - **Hover needs a terminal that reports mouse motion.** Over a tile or any framed button, the
-  whole button, frame included, fills with the accent color and its label turns dark. The frame
-  is drawn as text so that it fills too. VS Code's terminal reports the pointer as it moves; a JetBrains
+  whole button, frame included, turns one orange rectangle with its label dark. The frame is
+  drawn with half blocks (`▗▄▖ ▐ ▌ ▝▀▘`), which sit against the label, so the orange ends where
+  the frame does. VS Code's terminal reports the pointer as it moves; a JetBrains
   IDE's terminal reports clicks but not motion, so there the tiles do not light up. Clicks work in
   both.
 - **The border rows of a tile do not take a click.** Only a button takes a press, and a terminal

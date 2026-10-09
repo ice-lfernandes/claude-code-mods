@@ -72,10 +72,14 @@ type Words = {
   ask2: {
     place: string
     places: Record<Placement, string>
+    /** What each place is, and a sketch of it, for the engine's dialog. */
+    placeNotes: Record<Placement, { description: string; preview: string }>
     current: string
     reset: string
     resetYes: string
+    resetNote: string
     cancel: string
+    cancelNote: string
   }
   /** The control panel: `◆ pad` on the hint line, or /pad panel. */
   panel: {
@@ -89,7 +93,6 @@ type Words = {
     warn: (percent: number) => string
     mods: string
     noMods: string
-    noModsNext: string
     isOn: string
     isOff: string
     turnOn: string
@@ -102,6 +105,7 @@ type Words = {
     title: string
     missing: string
     install: (plugin: string) => string
+    allInstalled: string
     back: string
   }
   pane: {
@@ -184,10 +188,26 @@ export const WORDS: Record<Lang, Words> = {
     ask2: {
       place: 'Onde o menu deve ficar?',
       places: { header: 'Sob o cabeçalho', prompt: 'Acima do prompt', pane: 'Num painel' },
+      placeNotes: {
+        header: {
+          description: 'Um cartão sob o cabeçalho, ao abrir a sessão e depois do /clear. Sobe com a conversa.',
+          preview: ['╭ ✻ O que você quer fazer? ──────╮', '│ ▐ Compactar ▌  ▐ Ver contexto ▌ │', '│ ▐ Ver limites ▌ ▐ Retomar ▌     │', '╰────────────────────────────────╯', '', '  ... a conversa segue aqui ...', '', '╭────────────────────────────────╮', '│ >                              │', '╰────────────────────────────────╯'].join('\n'),
+        },
+        prompt: {
+          description: 'Uma linha logo acima da caixa do prompt, sempre à mão.',
+          preview: ['  ... a conversa ...', '', '  5h ██░░░ 12%   (faixas de outros mods)', '  ✻ Compactar  Ver contexto  Retomar  ⋯', '╭────────────────────────────────╮', '│ >                              │', '╰────────────────────────────────╯'].join('\n'),
+        },
+        pane: {
+          description: 'Um painel ao lado da conversa, uma aba como /limits e /watch. Esc fecha.',
+          preview: ['  ... a conversa ...   │ Atalhos', '                       │ ✻ O que você quer', '                       │   fazer?', '                       │ ▐ Compactar ▌', '                       │ ▐ Ver contexto ▌', '╭─────────────────────╮│ ▐ Retomar ▌', '│ >                   ││', '╰─────────────────────╯│ Esc fecha'].join('\n'),
+        },
+      },
       current: '(atual)',
       reset: 'Voltar aos atalhos padrão? Os que você adicionou somem.',
       resetYes: 'Voltar aos padrões',
+      resetNote: 'Volta aos 8 atalhos padrão. Os que você adicionou somem; os do projeto ficam.',
       cancel: 'Cancelar',
+      cancelNote: 'Nada muda.',
     },
     panel: {
       entry: '◆ pad',
@@ -199,8 +219,7 @@ export const WORDS: Record<Lang, Words> = {
       effortUnknown: 'esforço: o do modelo, até o 1º pedido',
       warn: p => `! 5h em ${p}%: opus e max gastam a janela mais rápido`,
       mods: 'Mods',
-      noMods: 'Nenhum mod desta coleção instalado.',
-      noModsNext: '/pad configuration mostra como instalar.',
+      noMods: 'Nenhum mod desta coleção instalado. Para instalar (o comando vai para o prompt; Enter instala):',
       isOn: '● ligado',
       isOff: '○ desligado',
       turnOn: 'ligar',
@@ -212,6 +231,7 @@ export const WORDS: Record<Lang, Words> = {
       title: 'Mods',
       missing: 'Faltam (o comando vai para o prompt; Enter instala):',
       install: plugin => `instalar ${plugin}`,
+      allInstalled: 'Todos os mods desta coleção já estão instalados.',
       back: 'voltar ao painel',
     },
     pane: {
@@ -292,10 +312,26 @@ export const WORDS: Record<Lang, Words> = {
     ask2: {
       place: 'Where should the menu go?',
       places: { header: 'Under the header', prompt: 'Above the prompt', pane: 'In a pane' },
+      placeNotes: {
+        header: {
+          description: 'A card under the header, when a session starts and after /clear. It scrolls up with the chat.',
+          preview: ['╭ ✻ What do you want to do? ─────╮', '│ ▐ Compact chat ▌ ▐ See context ▌│', '│ ▐ See limits ▌ ▐ Resume ▌       │', '╰────────────────────────────────╯', '', '  ... the chat goes on here ...', '', '╭────────────────────────────────╮', '│ >                              │', '╰────────────────────────────────╯'].join('\n'),
+        },
+        prompt: {
+          description: 'A row right above the prompt box, always at hand.',
+          preview: ['  ... the chat ...', '', '  5h ██░░░ 12%   (other mods\' bands)', '  ✻ Compact  See context  Resume  ⋯', '╭────────────────────────────────╮', '│ >                              │', '╰────────────────────────────────╯'].join('\n'),
+        },
+        pane: {
+          description: 'A pane beside the chat, a tab like /limits and /watch. Esc closes it.',
+          preview: ['  ... the chat ...     │ Shortcuts', '                       │ ✻ What do you want', '                       │   to do?', '                       │ ▐ Compact chat ▌', '                       │ ▐ See context ▌', '╭─────────────────────╮│ ▐ Resume ▌', '│ >                   ││', '╰─────────────────────╯│ Esc closes'].join('\n'),
+        },
+      },
       current: '(current)',
       reset: 'Back to the default shortcuts? The ones you added go.',
       resetYes: 'Back to the defaults',
+      resetNote: "Back to the 8 default shortcuts. The ones you added go; the project's stay.",
       cancel: 'Cancel',
+      cancelNote: 'Nothing changes.',
     },
     panel: {
       entry: '◆ pad',
@@ -307,8 +343,7 @@ export const WORDS: Record<Lang, Words> = {
       effortUnknown: "effort: the model's own, until the first request",
       warn: p => `! 5h at ${p}%: opus and max use the window faster`,
       mods: 'Mods',
-      noMods: 'No mod from this collection installed.',
-      noModsNext: '/pad configuration shows how to install them.',
+      noMods: 'No mod from this collection installed. To install (the command goes into the prompt; Enter installs):',
       isOn: '● on',
       isOff: '○ off',
       turnOn: 'turn on',
@@ -320,6 +355,7 @@ export const WORDS: Record<Lang, Words> = {
       title: 'Mods',
       missing: 'Missing (the command goes into the prompt; Enter installs):',
       install: plugin => `install ${plugin}`,
+      allInstalled: 'Every mod of this collection is installed.',
       back: 'back to the panel',
     },
     pane: {
@@ -703,3 +739,27 @@ export const modLabel = (m: ModInfo, lang: Lang, style: IconStyle) => `${glyph(m
 
 /** The shortcuts the panel shows: the menu's, less `/model`, which the chips replace. */
 export const panelShortcuts = (pads: readonly Pad[]) => pads.filter(p => !(p.kind === 'command' && commandOf(p.text).command === 'model'))
+
+/** The chip on the launchpad's own questions in the engine's dialog: how its render hook knows them. */
+export const ASK_HEADER = '◆ pad'
+
+type AskQuestion = { question?: unknown; header?: unknown; multiSelect?: unknown; options?: { label?: unknown; description?: unknown; preview?: unknown }[] }
+
+/**
+ * One of the launchpad's questions with more to go on: what each choice does and, for a place, a
+ * sketch of it. The labels stay as asked, so the answer still matches them. Any other question,
+ * and an option the launchpad does not know, as it is.
+ */
+export const dressQuestion = (q: AskQuestion, lang: Lang): AskQuestion => {
+  if (q.header !== ASK_HEADER || !Array.isArray(q.options)) return q
+  const w = WORDS[lang].ask2
+  const notes = new Map<string, { description: string; preview?: string }>([
+    ...(['header', 'prompt', 'pane'] as const).flatMap(p => [
+      [w.places[p], w.placeNotes[p]] as const,
+      [`${w.places[p]} ${w.current}`, w.placeNotes[p]] as const,
+    ]),
+    [w.resetYes, { description: w.resetNote }],
+    [w.cancel, { description: w.cancelNote }],
+  ])
+  return { ...q, options: q.options.map(o => ({ ...o, ...(typeof o.label === 'string' ? notes.get(o.label) : undefined) })) }
+}

@@ -41,6 +41,7 @@ import {
   asPads,
   available,
   activeModel,
+  ASK_HEADER,
   BUILTIN_AGENTS,
   blankIn,
   blanksOf,
@@ -48,6 +49,7 @@ import {
   cells,
   commandOf,
   defaults,
+  dressQuestion,
   EFFORTS,
   effortOf,
   fiveHourOf,
@@ -228,12 +230,17 @@ async function add($: EngineInterface, p: Pad): Promise<string | null> {
 }
 
 /**
- * Every framed button under the pointer: each of its cells, frame and label, drawn inverse in the
- * accent, so the whole button fills orange with the label in the background's color. Inverse,
- * not a background color: the terminal inverts the Button under the pointer, and an inverse label
- * stays the same there, so the frame and the label never show two different colors.
+ * A framed button's label under the pointer: inverse in the accent, so the row fills orange with
+ * the label in the background's color. Inverse, not a background color: the terminal inverts the
+ * Button under the pointer, and an inverse label stays the same there.
  */
 const FILL_HOVER = { color: 'claude', inverse: true, dimColor: false, bold: true } as const
+/**
+ * A framed button's frame under the pointer: its half blocks in the accent. Each covers the half
+ * of its cell next to the label, so with the label row they make one orange rectangle that ends
+ * where the frame does, with nothing spilling past it.
+ */
+const FRAME_HOVER = { color: 'claude', dimColor: false } as const
 
 /**
  * /pad's arguments in the row under the menu. None waits in the prompt for typing: `add` and
@@ -282,11 +289,11 @@ async function askVerb($: EngineInterface, verb: string): Promise<string | null>
   if (verb === 'place') {
     const now = await read($, placement)
     const places = (['header', 'prompt', 'pane'] as const).map(p => ({ p, label: p === now ? `${w.ask2.places[p]} ${w.ask2.current}` : w.ask2.places[p] }))
-    const answer = await $.ui.ask(w.ask2.place, { options: places.map(x => x.label), header: 'launchpad' }).catch(() => null)
+    const answer = await $.ui.ask(w.ask2.place, { options: places.map(x => x.label), header: ASK_HEADER }).catch(() => null)
     const hit = places.find(x => x.label === answer)
     return hit ? `place ${hit.p}` : null
   }
-  const answer = await $.ui.ask(w.ask2.reset, { options: [w.ask2.resetYes, w.ask2.cancel], header: 'launchpad' }).catch(() => null)
+  const answer = await $.ui.ask(w.ask2.reset, { options: [w.ask2.resetYes, w.ask2.cancel], header: ASK_HEADER }).catch(() => null)
   return answer === w.ask2.resetYes ? 'reset' : null
 }
 
@@ -368,11 +375,12 @@ function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[],
 }
 
 /**
- * A framed button, the tiles' look: a dim frame at rest; under the pointer the whole button, frame
- * and label, fills with the accent (FILL_HOVER). The frame is drawn as text, not as the Box's
- * border, so it fills too. Only the label row takes a press: a Button is one row. `isOn` draws the
- * current choice in the accent, not pressable; `isWarned` draws the frame in the warning color.
- * `width` pads the label to that many cells inside the frame.
+ * A framed button, the tiles' look: a dim frame of half blocks at rest (▗▄▖ ▐ ▌ ▝▀▘); under the
+ * pointer the whole button, frame and label, is one orange rectangle (FRAME_HOVER, FILL_HOVER).
+ * Half blocks, not box-drawing lines: a line sits mid-cell, so a filled cell spills half a cell
+ * past it. Only the label row takes a press: a Button is one row. `isOn` draws the current choice
+ * in the accent, not pressable; `isWarned` draws the frame in the warning color. `width` pads the
+ * label to that many cells inside the frame.
  */
 function framed(
   ui: Elements['terminal'],
@@ -385,13 +393,13 @@ function framed(
   const inner = Math.max(cells(label) + 2, opts.width ?? 0)
   const text = tileLabel(label, inner)
   const edge = opts.isWarned ? { color: 'warning' } : opts.isOn ? { color: 'claude' } : { dimColor: true }
-  const hover = opts.isOn ? undefined : FILL_HOVER
+  const hover = opts.isOn ? undefined : FRAME_HOVER
   return (
     <Box key={`box:${key}`} flexDirection="column">
-      <Text {...edge} hover={hover}>{`╭${'─'.repeat(inner)}╮`}</Text>
+      <Text {...edge} hover={hover}>{`▗${'▄'.repeat(inner)}▖`}</Text>
       <Box flexDirection="row">
         <Text {...edge} hover={hover}>
-          │
+          ▐
         </Text>
         {opts.isOn ? (
           <Text color="claude" bold>
@@ -401,10 +409,10 @@ function framed(
           <Button key={key} plain label={text} hover={FILL_HOVER} onPress={onPress} />
         )}
         <Text {...edge} hover={hover}>
-          │
+          ▌
         </Text>
       </Box>
-      <Text {...edge} hover={hover}>{`╰${'─'.repeat(inner)}╯`}</Text>
+      <Text {...edge} hover={hover}>{`▝${'▀'.repeat(inner)}▘`}</Text>
     </Box>
   )
 }
@@ -657,8 +665,11 @@ export const register: Register = (on, options) => {
     const theirs = await next(e)
     const { Box } = $.ui.resolve(e)
     return (
-      <Box flexDirection="row" alignItems="center" justifyContent="space-between" flexGrow={1}>
-        <Box flexGrow={1}>{theirs}</Box>
+      <Box flexDirection="row" alignItems="flex-start" justifyContent="space-between" flexGrow={1}>
+        {/* One row down: the hint on the button's label row, whatever height the engine's line has. */}
+        <Box flexGrow={1} paddingTop={1}>
+          {theirs}
+        </Box>
         {control($, e, 'pad:panel', w.panel.entry, () => openPanel($))}
       </Box>
     )
@@ -694,6 +705,14 @@ export const register: Register = (on, options) => {
     )
   })
 
+  // The /pad row's questions (place, reset) in the engine's dialog, with a line on what each choice
+  // does and a sketch of each place. The engine draws them; only the launchpad's own are touched.
+  on('ui.render', { component: 'AskUserQuestion' }, async ($, e, next) => {
+    const questions = e.props.questions as Parameters<typeof dressQuestion>[0][]
+    if (questions.length !== 1 || questions[0]?.header !== ASK_HEADER) return next(e)
+    return next({ ...e, props: { ...e.props, questions: [dressQuestion(questions[0], lang)] } })
+  }).catch(($, e, next) => next(e))
+
   // The control panel: the session's model and effort, this collection's mods, the shortcuts.
   on('ui.render', { component: 'Pane', requestId: PANEL }, async ($, e) => {
     const ui = $.ui.resolve(e)
@@ -708,7 +727,7 @@ export const register: Register = (on, options) => {
     const usage = await $.session.usage().catch(() => null)
     const fiveHour = fiveHourOf(usage?.rateLimits)
     const warned = chips.some(c => isWarned(c, fiveHour)) || EFFORTS.some(x => isWarned(x, fiveHour))
-    const { installed } = modsOf(all)
+    const { installed, missing } = modsOf(all)
     const icons = e.surface === 'terminal' ? style : 'emoji'
     const shortcuts = panelShortcuts(await shown($)).slice(0, MAX_SHOWN)
     const columns = Math.max(20, (e.props.bodyColumns || e.viewport?.columns || 80) - 2)
@@ -740,12 +759,7 @@ export const register: Register = (on, options) => {
 
         <Box flexDirection="column">
           <Text bold>{p.mods}</Text>
-          {installed.length === 0 ? (
-            <Box flexDirection="column">
-              <Text dimColor>{p.noMods}</Text>
-              <Text dimColor>{p.noModsNext}</Text>
-            </Box>
-          ) : (
+          {installed.length > 0 && (
             <Box flexDirection="column">
               <Box flexDirection="row" flexWrap="wrap" gap={1}>
                 {installed.map(m => control($, e, `mod:${m.plugin}`, modLabel(m, lang, icons), () => runMod($, m), { width: 17 }))}
@@ -763,6 +777,17 @@ export const register: Register = (on, options) => {
                     </Box>
                   )
                 })}
+            </Box>
+          )}
+          {/* What is missing, each with a button that puts its install command in the prompt. */}
+          {missing.length === 0 ? (
+            <Text dimColor>{w.modsSection.allInstalled}</Text>
+          ) : (
+            <Box flexDirection="column">
+              <Text dimColor>{installed.length === 0 ? p.noMods : w.modsSection.missing}</Text>
+              <Box flexDirection="row" flexWrap="wrap" gap={1}>
+                {missing.map(m => control($, e, `install:${m.plugin}`, w.modsSection.install(m.plugin), () => fill($, installText(m.plugin))))}
+              </Box>
             </Box>
           )}
         </Box>
@@ -967,6 +992,7 @@ export const register: Register = (on, options) => {
               ))}
             </Box>
           )}
+          {mods.missing.length === 0 && <Text dimColor>{w.modsSection.allInstalled}</Text>}
           {mods.missing.length > 0 && (
             <Box flexDirection="column">
               <Text dimColor>{w.modsSection.missing}</Text>
