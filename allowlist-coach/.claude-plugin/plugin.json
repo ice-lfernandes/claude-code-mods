@@ -1,6 +1,6 @@
 {
   "name": "allowlist-coach",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Counts permission dialogs per rule and, after repeated approvals, offers to add the rule to permissions.allow, asking before it writes",
   "types": "./types/index.d.ts",
   "userConfig": {

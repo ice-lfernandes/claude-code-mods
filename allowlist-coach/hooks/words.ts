@@ -59,6 +59,8 @@ type Words = {
   zeroOpt: string
   zeroed: (key: string) => string
   noRule: (key: string) => string
+  /** Why /allowlist allow refuses a rule: its status, and for a risky one the reason. */
+  notOffered: (key: string, why: string) => string
   nothingChanged: string
   neverAgain: (what: string) => string
   added: (what: string, file: string) => string
@@ -86,7 +88,7 @@ export const WORDS: Record<Lang, Words> = {
     range: (from, to, of) => `${from}–${to} de ${of}`,
     up: '▲ acima',
     down: '▼ abaixo',
-    risk: r => (r.kind === 'tool' ? 'a ferramenta inteira' : r.kind === 'wildcard' ? 'curinga solto' : r.kind === 'command' ? `roda ${r.what}` : 'regra ilegível'),
+    risk: r => (r.kind === 'tool' ? 'a ferramenta inteira' : r.kind === 'wildcard' ? 'curinga amplo' : r.kind === 'command' ? `roda ${r.what}` : 'regra ilegível'),
     allow: 'liberar',
     dismiss: 'dispensar',
     close: 'Fechar',
@@ -125,6 +127,7 @@ export const WORDS: Record<Lang, Words> = {
     zeroOpt: 'Zerar',
     zeroed: key => `allowlist-coach: contagem de ${key} zerada.`,
     noRule: key => `allowlist-coach: nenhuma regra ${key} contada neste projeto. /allowlist mostra os números.`,
+    notOffered: (key, why) => `allowlist-coach: ${key} está ${why}; o coach não a adiciona. Se quiser mesmo, adicione-a ao permissions.allow à mão.`,
     nothingChanged: 'allowlist-coach: nada mudou.',
     neverAgain: what => `allowlist-coach: ${what} não será mais oferecida.`,
     added: (what, file) => `allowlist-coach: ${what} adicionada ao permissions.allow em ${file}.`,
@@ -156,7 +159,7 @@ export const WORDS: Record<Lang, Words> = {
     range: (from, to, of) => `${from}–${to} of ${of}`,
     up: '▲ up',
     down: '▼ down',
-    risk: r => (r.kind === 'tool' ? 'the whole tool' : r.kind === 'wildcard' ? 'a bare wildcard' : r.kind === 'command' ? `runs ${r.what}` : 'unreadable rule'),
+    risk: r => (r.kind === 'tool' ? 'the whole tool' : r.kind === 'wildcard' ? 'a broad wildcard' : r.kind === 'command' ? `runs ${r.what}` : 'unreadable rule'),
     allow: 'allow',
     dismiss: 'dismiss',
     close: 'Close',
@@ -195,6 +198,7 @@ export const WORDS: Record<Lang, Words> = {
     zeroOpt: 'Reset',
     zeroed: key => `allowlist-coach: count of ${key} reset.`,
     noRule: key => `allowlist-coach: no rule ${key} counted in this project. /allowlist shows the numbers.`,
+    notOffered: (key, why) => `allowlist-coach: ${key} is ${why}; the coach does not add it. Add it to permissions.allow by hand if you mean it.`,
     nothingChanged: 'allowlist-coach: nothing changed.',
     neverAgain: what => `allowlist-coach: ${what} will not be offered again.`,
     added: (what, file) => `allowlist-coach: added ${what} to permissions.allow in ${file}.`,

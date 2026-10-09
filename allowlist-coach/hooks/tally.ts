@@ -60,15 +60,17 @@ export const exampleOf = (tool: string, input: unknown) => {
 }
 
 const BROAD_TOOLS = new Set(['Bash', 'PowerShell', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'WebFetch'])
+const PATH_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep'])
 
-/** Why a rule is never offered: the whole tool, a bare wildcard, a risky command, or a rule it cannot read. */
+/** Why a rule is never offered: the whole tool, a broad wildcard, a risky command, or a rule it cannot read. */
 export type Risk = { kind: 'tool' } | { kind: 'wildcard' } | { kind: 'command'; what: string } | { kind: 'unreadable' }
 
 const RISKY_COMMAND = [
   /^(sudo|su|doas)\b/,
   /^(rm|rmdir|dd|mkfs\S*|shred|truncate|chmod|chown|kill|pkill|killall|shutdown|reboot)\b/,
   /^(curl|wget|ssh|scp|rsync|nc|eval|exec|source)\b/,
-  /^(bash|sh|zsh|fish|python\d*|node|deno|bun|ruby|perl)(\s+-[ce]\b|\s*$|\s*:\*)/,
+  // An interpreter alone, with -c or -e, or with only flags before a wildcard (`node *`, `python3 -m :*`).
+  /^(bash|sh|zsh|fish|python\d*|node|deno|bun|ruby|perl)(\s+-[ce]\b|\s*$|(\s+-\S+)*\s*:?\*)/,
   /^git\s+(push|reset|clean|rebase|filter-branch|update-ref)\b/,
   /^git\s+(checkout|restore)\s+(--\s+)?\.\s*$/,
   /^git\s+branch\s+-D\b/,
@@ -80,7 +82,7 @@ const RISKY_COMMAND = [
 
 /**
  * Why a rule lets through more than one familiar command, or null when it does not: a whole
- * tool, a bare wildcard, or a command that deletes, escalates, reaches the network or runs
+ * tool, a broad wildcard, or a command that deletes, escalates, reaches the network or runs
  * arbitrary code (`what` is the part that matched). Such a rule is counted and shown, never
  * offered.
  */
@@ -91,11 +93,16 @@ export const riskOf = (rule: string): Risk | null => {
   if (content === undefined) return BROAD_TOOLS.has(toolName!) ? { kind: 'tool' } : null
   const body = content.trim()
   if (body === '' || body === '*' || body === ':*' || body === '**' || body.startsWith('/**')) return { kind: 'wildcard' }
+  // A path wildcard that starts outside the project: the filesystem root, home, a parent, or any folder.
+  if (PATH_TOOLS.has(toolName!)) return body.includes('*') && /^(\/\/|~|\.\.|\*\*)/.test(body) ? { kind: 'wildcard' } : null
   if (toolName !== 'Bash' && toolName !== 'PowerShell') return null
   for (const re of RISKY_COMMAND) {
     const hit = re.exec(body)
     if (hit) return { kind: 'command', what: clip(hit[0].replace(/\s+/g, ' ').trim(), 24) }
   }
+  // A command takes one wildcard only, at the end after a space or a colon (`npm run test:*`).
+  const star = body.indexOf('*')
+  if (star !== -1 && !(star === body.length - 1 && /[\s:]\*$/.test(body))) return { kind: 'wildcard' }
   return null
 }
 
