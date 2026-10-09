@@ -1,7 +1,7 @@
 {
   "name": "limits-meter",
-  "version": "0.3.1",
-  "description": "Plan limits and context above the prompt: 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn",
+  "version": "0.4.0",
+  "description": "Plan limits and context above the prompt: model and effort, 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn, and a toast on a costly model switch near the limit",
   "types": "./types/index.d.ts",
   "userConfig": {
     "language": {
@@ -15,10 +15,20 @@
       ],
       "default": "auto"
     },
+    "format": {
+      "type": "string",
+      "title": "Band format",
+      "description": "full draws the band with bars; compact draws one line of numbers: model · effort · ctx · 5h · wk",
+      "options": [
+        "full",
+        "compact"
+      ],
+      "default": "full"
+    },
     "cells": {
       "type": "string",
       "title": "Cells on the band",
-      "description": "Which cells the band above the prompt shows, comma-separated, from 5h, wk, spend, ctx and cache. all, or nothing known, shows them all",
+      "description": "Which cells the band above the prompt shows, comma-separated, from model, 5h, wk, spend, ctx and cache. all, or nothing known, shows them all",
       "default": "all"
     },
     "density": {
