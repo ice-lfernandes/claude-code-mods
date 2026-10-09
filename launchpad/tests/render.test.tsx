@@ -110,14 +110,9 @@ test('the terminal card frames bordered tiles in columns that fit', async ($, on
   const ui = await row($)
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('"borderColor":"claude"')
-  expect(drawn).toContain('"key":"box:pad:compact"')
-  // The frame is half blocks of text: under the pointer they turn the accent and the label row
-  // fills inverse, one orange rectangle that ends where the frame does.
-  expect(drawn).toContain('▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖')
-  expect(drawn).toContain('▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘')
-  expect(drawn).toContain('"hover":{"color":"claude","dimColor":false},"children":["▐"]')
-  expect(drawn).toContain('"hover":{"color":"claude","inverse":true,"dimColor":false,"bold":true}')
-  expect(drawn).not.toContain('borderDimColor') // only the card's own frame is a Box border
+  expect(drawn).toContain('"key":"tile:compact"')
+  expect(drawn).toContain('"hover":{"borderColor":"claude","borderDimColor":false,"backgroundColor":"claude"}')
+  expect(drawn).toContain('"hover":{"color":"inverseText","bold":true}')
   expect(drawn).toContain('"label":" 🗜️ Compactar conversa "') // 23 cells: 26 less the gap and the two borders
   expect(drawn).toContain('"key":"row:0"')
   expect(drawn).not.toContain('"key":"row:1"') // 3 tiles of 26 cells fit in 98
@@ -466,7 +461,7 @@ test('/pad place prompt: the menu in a row right above the prompt, kept across s
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('"key":"pad:compact"')
   expect(drawn).toContain('⋯ configurar')
-  expect(drawn).toContain('"hover":{"color":"claude","inverse":true,"dimColor":false,"bold":true}')
+  expect(drawn).toContain('"hover":{"backgroundColor":"claude","color":"inverseText","bold":true}')
   expect(drawn).toContain('"key":"cell:compact"') // each button its own hover scope
   await ui.press({ key: 'pad:compact' })
   expect(w.commands).toEqual(['compact'])
@@ -508,7 +503,7 @@ test('no row above the prompt unless the menu is placed there, nor over a survey
 // Prototype notes/prototypes/launchpad-0.5.0.html, approved 2026-10-09: one test per state and interaction.
 
 for (const place of ['header', 'prompt', 'pane'] as const) {
-  test(`start: a framed ◆ pad at the right end of the engine's hint line opens the panel, under place ${place}`, async ($, on) => {
+  test(`start: a bordered ◆ pad at the right end of the engine's hint line opens the panel, under place ${place}`, async ($, on) => {
     const w = world(on, files, undefined, COMMANDS, 'auto mode on')
     await start($)
     await pad($, `place ${place}`)
@@ -516,7 +511,8 @@ for (const place of ['header', 'prompt', 'pane'] as const) {
     const drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('auto mode on')
     expect(drawn).toContain('"label":" ◆ pad "')
-    expect(drawn).toContain('▗▄▄▄▄▄▄▄▖')
+    expect(drawn).toContain('"borderStyle":"round"')
+    expect(drawn).toContain('"hover":{"borderColor":"claude","borderDimColor":false,"backgroundColor":"claude"}')
     expect(drawn).toContain('"justifyContent":"space-between"')
     expect(drawn).toContain('"paddingTop":1') // the hint on the button's label row
     expect(drawn.indexOf('auto mode on')).toBeLessThan(drawn.indexOf('◆ pad'))
@@ -590,9 +586,8 @@ test('panel: the bordered chips and the close button keep the tiles\' look and h
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('"label":" ○ sonnet "')
   expect(drawn).toContain('"key":"box:model:sonnet"')
-  expect(drawn).toContain('"hover":{"color":"claude","inverse":true,"dimColor":false,"bold":true}')
+  expect(drawn).toContain('"hover":{"color":"inverseText","bold":true}')
   expect(drawn).toContain('"label":" Fechar "')
-  expect(drawn).toContain('▗▄▄▄▄▄▄▄▄▖') // the close button is as wide as its label
   expect(drawn).toContain('"alignItems":"flex-start"')
   await ui.unmount()
 })
@@ -643,10 +638,9 @@ test('5h at 74%: opus and max get a warning border and a warning line, and still
   const ui = await panel($)
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('! 5h em 74%: opus e max gastam a janela mais rápido')
-  const frameOf = (key: string) => /"color":"(\w+)"/.exec(drawn.slice(drawn.indexOf(`"key":"box:${key}"`)))?.[1]
-  expect(frameOf('model:opus')).toBe('warning')
-  expect(frameOf('effort:max')).toBe('warning')
-  expect(frameOf('model:haiku')).not.toBe('warning')
+  expect(drawn).toMatch(/"key":"box:model:opus"[^}]*"borderColor":"warning"/)
+  expect(drawn).toMatch(/"key":"box:effort:max"[^}]*"borderColor":"warning"/)
+  expect(drawn).not.toMatch(/"key":"box:model:haiku"[^}]*"borderColor":"warning"/)
   await ui.press({ key: 'model:opus' })
   expect(w.commands).toEqual(['model opus']) // no confirmation
   await ui.unmount()
@@ -657,7 +651,7 @@ test('below 70% there is no warning', async ($, on) => {
   await start($)
   const drawn = JSON.stringify(await (await panel($)).drawn())
   expect(drawn).not.toContain('5h em')
-  expect(drawn).not.toContain('"color":"warning"')
+  expect(drawn).not.toContain('"borderColor":"warning"')
 })
 
 test('the model chips come from the /config model row when it lists them', async ($, on) => {
@@ -758,8 +752,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(drawn).toContain('O que você quer fazer?')
     expect(drawn).toContain('"key":"cmd:place"')
     // The header card's look: bordered tiles on the terminal, native buttons elsewhere.
-    if (surface === 'terminal') expect(drawn).toContain('"key":"box:pad:compact"')
-    else expect(drawn).not.toContain('box:')
+    if (surface === 'terminal') expect(drawn).toContain('"key":"tile:compact"')
+    else expect(drawn).not.toContain('tile:')
     await ui.press({ key: 'pad:compact' })
     expect(w.commands).toEqual(['compact'])
     await ui.press({ key: 'close' })

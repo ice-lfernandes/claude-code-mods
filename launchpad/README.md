@@ -38,7 +38,7 @@ session's model and effort in one click, this collection's mods, and the shortcu
   - `pane`: a pane of its own, a tab like those of `/limits` and `/watch`, with the card's
     bordered tiles. It opens when a session starts and after `/clear`, and on `/pad`. Claude
     Code opens a pane only with the keyboard on it: `Esc` closes it and gives the prompt back.
-- **`◆ pad`, the control panel.** A framed button at the right end of Claude Code's hint line
+- **`◆ pad`, the control panel.** A bordered button at the right end of Claude Code's hint line
   under the prompt, in every placement, and while the menu is off too. It opens a pane with:
   - **Controls:** the models (`haiku · sonnet · opus`, or the plain names the `/config` model row
     lists) and the effort levels (`low` to `max`) as buttons, the current ones marked `●`. A press
@@ -131,10 +131,9 @@ to `auto` yourself to get the new behaviour.
 
 ## Known limits
 
-- **Hover needs a terminal that reports mouse motion.** Over a tile or any framed button, the
-  whole button, frame included, turns one orange rectangle with its label dark. The frame is
-  drawn with half blocks (`▗▄▖ ▐ ▌ ▝▀▘`), which sit against the label, so the orange ends where
-  the frame does. VS Code's terminal reports the pointer as it moves; a JetBrains
+- **Hover needs a terminal that reports mouse motion.** Over a tile or any bordered button, the
+  border turns the accent color and the button fills with it, its label dark. With the pointer
+  right on the label, the terminal inverts the label as it does every button. VS Code's terminal reports the pointer as it moves; a JetBrains
   IDE's terminal reports clicks but not motion, so there the tiles do not light up. Clicks work in
   both.
 - **The border rows of a tile do not take a click.** Only a button takes a press, and a terminal
@@ -151,8 +150,8 @@ to `auto` yourself to get the new behaviour.
 - **Argument hints come from the `/` menu.** The pane gives a command its argument as a blank
   from the hint Claude Code shows in the `/` menu. The mod learns the hints as that menu lists the
   commands, and forgets them when it reloads.
-- **`◆ pad` adds two rows under the prompt.** A framed button is three rows tall: the hint sits
-  on its middle row, with a row above and one below.
+- **`◆ pad` adds two rows under the prompt.** A bordered button is three rows tall: the hint
+  sits on its middle row, with a row above and one below.
 - **The effort shows after the first request.** Claude Code tells a mod the effort only as each
   request goes out.
 - **The menu is a row of the conversation.** It scrolls away with the conversation, and `/pad`

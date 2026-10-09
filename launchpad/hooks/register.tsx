@@ -230,17 +230,11 @@ async function add($: EngineInterface, p: Pad): Promise<string | null> {
 }
 
 /**
- * A framed button's label under the pointer: inverse in the accent, so the row fills orange with
- * the label in the background's color. Inverse, not a background color: the terminal inverts the
- * Button under the pointer, and an inverse label stays the same there.
+ * Every bordered button under the pointer: the whole box in the accent, its label in the theme's
+ * text for a filled background, so it reads on dark and light.
  */
-const FILL_HOVER = { color: 'claude', inverse: true, dimColor: false, bold: true } as const
-/**
- * A framed button's frame under the pointer: its half blocks in the accent. Each covers the half
- * of its cell next to the label, so with the label row they make one orange rectangle that ends
- * where the frame does, with nothing spilling past it.
- */
-const FRAME_HOVER = { color: 'claude', dimColor: false } as const
+const BOX_HOVER = { borderColor: 'claude', borderDimColor: false, backgroundColor: 'claude' } as const
+const LABEL_HOVER = { color: 'inverseText', bold: true } as const
 
 /**
  * /pad's arguments in the row under the menu. None waits in the prompt for typing: `add` and
@@ -340,7 +334,7 @@ function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | '
  * cells to its label (border and padding on both sides, one cell of gap).
  */
 function tiles($: EngineInterface, ui: Elements['terminal'], visible: Pad[], columns: number) {
-  const { Box } = ui
+  const { Box, Button } = ui
   const { width, rows } = layout(visible, style, Math.max(1, columns), 5)
   return (
     <Box flexDirection="column">
@@ -348,7 +342,24 @@ function tiles($: EngineInterface, ui: Elements['terminal'], visible: Pad[], col
         <Box key={`row:${r}`} flexDirection="row">
           {row.map(p => (
             <Box key={`cell:${p.id}`} width={width} paddingRight={1}>
-              {framed(ui, `pad:${p.id}`, buttonLabel(p, style), () => press($, p), { width: width - 3 })}
+              {/* The border is the Box's: a Button there would show inverted under the pointer.
+                  The label fills the row inside it, so a press anywhere on that row counts.
+                  Over the tile, the whole tile turns the accent color. */}
+              <Box
+                key={`tile:${p.id}`}
+                flexGrow={1}
+                borderStyle="round"
+                borderDimColor
+                hover={BOX_HOVER}
+              >
+                <Button
+                  key={`pad:${p.id}`}
+                  plain
+                  label={tileLabel(buttonLabel(p, style), width - 3)}
+                  hover={LABEL_HOVER}
+                  onPress={() => press($, p)}
+                />
+              </Box>
             </Box>
           ))}
         </Box>
@@ -375,14 +386,11 @@ function terminalCard($: EngineInterface, ui: Elements['terminal'], list: Pad[],
 }
 
 /**
- * A framed button, the tiles' look: a dim frame of half blocks at rest (▗▄▖ ▐ ▌ ▝▀▘); under the
- * pointer the whole button, frame and label, is one orange rectangle (FRAME_HOVER, FILL_HOVER).
- * Half blocks, not box-drawing lines: a line sits mid-cell, so a filled cell spills half a cell
- * past it. Only the label row takes a press: a Button is one row. `isOn` draws the current choice
- * in the accent, not pressable; `isWarned` draws the frame in the warning color. `width` pads the
- * label to that many cells inside the frame.
+ * A bordered button, the tiles' look: a dim border at rest, the whole box in the accent under
+ * the pointer. `isOn` draws the current choice, in the accent and not pressable; `isWarned` gives
+ * the border the warning color. `width` pads the label to that many cells inside the border.
  */
-function framed(
+function boxButton(
   ui: Elements['terminal'],
   key: string,
   label: string,
@@ -390,29 +398,19 @@ function framed(
   opts: { isOn?: boolean; isWarned?: boolean; width?: number } = {},
 ) {
   const { Box, Button, Text } = ui
-  const inner = Math.max(cells(label) + 2, opts.width ?? 0)
-  const text = tileLabel(label, inner)
-  const edge = opts.isWarned ? { color: 'warning' } : opts.isOn ? { color: 'claude' } : { dimColor: true }
-  const hover = opts.isOn ? undefined : FRAME_HOVER
-  return (
-    <Box key={`box:${key}`} flexDirection="column">
-      <Text {...edge} hover={hover}>{`▗${'▄'.repeat(inner)}▖`}</Text>
-      <Box flexDirection="row">
-        <Text {...edge} hover={hover}>
-          ▐
-        </Text>
-        {opts.isOn ? (
-          <Text color="claude" bold>
-            {text}
-          </Text>
-        ) : (
-          <Button key={key} plain label={text} hover={FILL_HOVER} onPress={onPress} />
-        )}
-        <Text {...edge} hover={hover}>
-          ▌
+  const text = opts.width ? tileLabel(label, opts.width) : ` ${label} `
+  if (opts.isOn) {
+    return (
+      <Box key={`box:${key}`} borderStyle="round" borderColor={opts.isWarned ? 'warning' : 'claude'}>
+        <Text color="claude" bold>
+          {text}
         </Text>
       </Box>
-      <Text {...edge} hover={hover}>{`▝${'▀'.repeat(inner)}▘`}</Text>
+    )
+  }
+  return (
+    <Box key={`box:${key}`} borderStyle="round" {...(opts.isWarned ? { borderColor: 'warning' } : { borderDimColor: true })} hover={BOX_HOVER}>
+      <Button key={key} plain label={text} hover={LABEL_HOVER} onPress={onPress} />
     </Box>
   )
 }
@@ -429,7 +427,7 @@ function control(
   onPress: () => unknown,
   opts: { isOn?: boolean; isWarned?: boolean; width?: number } = {},
 ) {
-  if (e.surface === 'terminal') return framed($.ui.resolve({ ...e, surface: 'terminal' } as never) as Elements['terminal'], key, label, onPress, opts)
+  if (e.surface === 'terminal') return boxButton($.ui.resolve({ ...e, surface: 'terminal' } as never) as Elements['terminal'], key, label, onPress, opts)
   const { Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
   if (opts.isOn) {
     return (
@@ -689,7 +687,7 @@ export const register: Register = (on, options) => {
         <Text color="claude">✻</Text>
         {list.slice(0, MAX_SHOWN).map(p => (
           <Box key={`cell:${p.id}`}>
-            <Button key={`pad:${p.id}`} plain label={buttonLabel(p, icons)} hover={FILL_HOVER} onPress={() => press($, p)} />
+            <Button key={`pad:${p.id}`} plain label={buttonLabel(p, icons)} hover={{ backgroundColor: 'claude', ...LABEL_HOVER }} onPress={() => press($, p)} />
           </Box>
         ))}
         <Button key="band:settings" plain dimColor label={w.settings} onPress={() => pressVerb($, PAD_ACTIONS[0]!)} />
