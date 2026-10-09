@@ -339,6 +339,38 @@ test('allow by number refuses a risky, refused or pinned rule, and asks nothing'
   expect(JSON.parse(world.files[FILE]!).permissions.allow).toBeUndefined()
 })
 
+test('a call that carries a credential is not counted, so it is never stored', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: 'curl -H "Authorization: Bearer abcdefgh123" https://api.x' } as never)
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: 'PGPASSWORD=hunter2 psql -c "select 1"' } as never)
+
+  expect(world.notices).toHaveLength(0)
+  expect(world.toasts).toHaveLength(0)
+  expect((await run($, '')).text).toContain('no permission dialogs')
+  expect(JSON.stringify(world.store)).not.toContain('hunter2')
+  expect(JSON.stringify(world.store)).not.toContain('abcdefgh123')
+})
+
+test('allow writes no settings file that is a link', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  // The project's settings.local.json is a link to the person's own settings.
+  on('fs.stat', ($, e) => {
+    if (e.path === ROOT) return { value: { kind: 'dir', size: 0, mtimeMs: NOW, isLink: false, realPath: ROOT } } as never
+    if (e.path === `${ROOT}/.claude`) return { value: { kind: 'dir', size: 0, mtimeMs: NOW, isLink: false, realPath: `${ROOT}/.claude` } } as never
+    if (e.path === FILE) return { value: { kind: 'file', size: 2, mtimeMs: NOW, isLink: true, realPath: '/home/u/.claude/settings.json' } } as never
+    throw new Error('ENOENT')
+  })
+  await start($)
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
+
+  const answer = await run($, `allow ${RULE}`)
+  expect(answer.text).toBe('allowlist-coach: .claude/settings.local.json left as it was: .claude/settings.local.json is a link or not a file; the coach writes only a plain file')
+  expect(FILE in world.files).toBe(false)
+})
+
 test('the threshold option sets how many approvals an offer takes', { options: { threshold: 3 } }, async ($, on) => {
   const world = fresh()
   engine($, on, world, () => true)

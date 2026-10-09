@@ -250,3 +250,29 @@ test('without keepHistory nothing is stored', async ($, on) => {
   expect(writes).toBe(0)
   expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
 })
+
+test('a saved copy named in the output is read only from tool-results under the config folder', async ($, on) => {
+  const { w } = world(on, { HOME: '/home/u' })
+  // Each file the stub holds, by where it really lands: the second one a test reached with `..`.
+  const files: Record<string, string> = { '/home/u/.claude/projects/p/s/tool-results/b1.txt': RED, '/home/u/.ssh/id_ed25519': GREEN }
+  const fold = (path: string) => path.split('/').reduce<string[]>((acc, part) => (part === '..' ? acc.slice(0, -1) : part === '.' || part === '' ? acc : [...acc, part]), []).join('/')
+  const read: string[] = []
+  on('fs.stat', (_$, e: any) => {
+    const real = `/${fold(e.path)}`
+    if (real === '/home/u/.claude') return { value: { kind: 'dir', size: 0, mtimeMs: NOW, isLink: false, realPath: real } } as never
+    if (!(real in files)) throw new Error('ENOENT')
+    return { value: { kind: 'file', size: files[real]!.length, mtimeMs: NOW, isLink: false, realPath: real } } as never
+  })
+  on('fs.read', (_$, e: any) => (read.push(e.path), { value: files[`/${fold(e.path)}`] }) as never)
+  await start($)
+
+  w.output = 'Output too large. Full output saved to: /repo/tool-results/../../home/u/.ssh/id_ed25519'
+  await vitest($, 'tu1')
+  expect(read).toEqual([])
+  expect(w.statuses).toEqual([])
+
+  w.output = 'Output too large. Full output saved to: /home/u/.claude/projects/p/s/tool-results/b1.txt'
+  await vitest($, 'tu2')
+  expect(read).toEqual(['/home/u/.claude/projects/p/s/tool-results/b1.txt'])
+  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+})

@@ -17,7 +17,8 @@
 //            store, so the next session starts with them.
 //
 // Reads one file: Bash's saved copy of an output too long to show whole, so the summary at its
-// end is not lost. Runs no process, calls no model.
+// end is not lost. A copy named only in the output's text is read when it lands in the Claude
+// config folder's tool-results, since a test can print any path. Runs no process, calls no model.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
@@ -65,10 +66,27 @@ type BashRecord = { stdout?: string; stderr?: string; interrupted?: boolean; bac
 // The engine's own note when an output is too long to show whole.
 const SAVED = /Full output saved to: (\S+\/tool-results\/\S+)/
 
+const where = ($: EngineInterface, path: string) => $.fs.stat(path, { resolve: true }).then(s => s, () => null)
+
+/**
+ * A saved copy's path named in the output's text, or undefined unless it is a file in a
+ * tool-results folder under the Claude config folder (CLAUDE_CONFIG_DIR, else ~/.claude).
+ * The text is the tests' own output, so a test could name any file there.
+ */
+const savedCopy = async ($: EngineInterface, path: string | undefined) => {
+  if (!path) return undefined
+  const home = await $.env.get('HOME').catch(() => undefined)
+  const config = (await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined)) || (home ? `${home}/.claude` : '')
+  if (!config) return undefined
+  const [base, at] = await Promise.all([where($, config), where($, path)])
+  if (!base?.realPath || !at?.realPath || at.kind !== 'file') return undefined
+  return at.realPath.startsWith(`${base.realPath}/`) && at.realPath.includes('/tool-results/') ? at.realPath : undefined
+}
+
 /** The whole output: the engine's saved copy when Bash cut it short, else what the model read. */
 const outputOf = async ($: EngineInterface, ran: ToolCallResult<'Bash'>) => {
   const rec = (ran.isError ? undefined : ran.result) as BashRecord | undefined
-  const saved = rec?.persistedOutputPath ?? SAVED.exec(ran.text ?? '')?.[1]
+  const saved = rec?.persistedOutputPath ?? (await savedCopy($, SAVED.exec(ran.text ?? '')?.[1]))
   if (saved) {
     const full = await $.fs.read(saved).catch(() => null)
     if (typeof full === 'string') return full

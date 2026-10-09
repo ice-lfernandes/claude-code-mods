@@ -57,6 +57,8 @@ engine suggests none, the rule is the exact command, or `WebFetch(domain:<host>)
   `… | sh`, `--force`, and the like. These are counted and shown as `risky`.
 - A rule you already put under `permissions.ask` or `permissions.deny`.
 - A rule you dismissed.
+- A call that carries a credential (`PGPASSWORD=…`, `--password …`, an `Authorization` header,
+  a URL with a password, a known key prefix): it is not counted, so its command is never stored.
 
 Dialogs that a settings hook answered, and decisions made in `auto`, `dontAsk` or
 `bypassPermissions` mode, are not counted: they are not your answer.
@@ -77,4 +79,5 @@ Or for one session: `claude --plugin-dir ./allowlist-coach`
 
 It keeps the counts in its plugin store, per project root, across sessions: the rule, approvals,
 refusals, the last command or path that asked, and when. Up to 200 rules per project. It reads
-`LANG` for the `auto` language.
+`LANG` for the `auto` language. It writes only a plain file in the project's own `.claude/`
+folder: when the settings file or that folder is a symbolic link, it leaves it as it was.

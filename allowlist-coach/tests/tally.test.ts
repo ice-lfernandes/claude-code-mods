@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Entry } from '../types'
-import { addAllow, exampleOf, isRisky, keyAt, noticeFor, progress, record, removeAllow, riskOf, rulesFor, setThreshold, shows, stable, status, summary, THRESHOLD, zero } from '../hooks/tally'
+import { addAllow, exampleOf, holdsSecret, isRisky, keyAt, noticeFor, progress, record, removeAllow, riskOf, rulesFor, setThreshold, shows, stable, status, summary, THRESHOLD, zero } from '../hooks/tally'
 import { WORDS } from '../hooks/words'
 
 const NONE = { allow: [], ask: [], deny: [] }
@@ -41,6 +41,23 @@ describe('rules', () => {
     expect(riskOf('Bash(node *.mjs)')).toEqual({ kind: 'command', what: 'node *' })
     expect(riskOf('Bash(ls *.txt)')).toEqual({ kind: 'wildcard' })
     expect(riskOf('Read(~/**)')).toEqual({ kind: 'wildcard' })
+  })
+
+  test('a call that carries a credential is spotted', async () => {
+    for (const text of [
+      'PGPASSWORD=hunter2 psql -h db',
+      'export GITHUB_TOKEN=abc',
+      'curl -H "Authorization: Bearer abcdefgh123" https://api.x',
+      'mysql --password s3cret',
+      'git clone https://me:pw@github.com/a/b',
+      'aws s3 ls # AKIAABCDEFGHIJKLMNOP',
+      '{"command":"OPENAI_API_KEY=sk-abc npm start"}',
+    ]) {
+      expect(holdsSecret(text)).toBe(true)
+    }
+    for (const text of ['./mvnw test', 'npm run test:tokens', 'git log --oneline', 'curl https://api.x/health', 'cat docs/passwords.md']) {
+      expect(holdsSecret(text)).toBe(false)
+    }
   })
 
   test('examples are one short line', async () => {
