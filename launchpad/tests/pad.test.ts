@@ -9,6 +9,7 @@ import {
   available,
   blankIn,
   blanksOf,
+  argChoices,
   isOptionalHint,
   placementOf,
   unblank,
@@ -239,7 +240,7 @@ test('list shows number, what it runs, kind and origin', async () => {
 })
 
 test('a hint of optional arguments only: no blanks, and a saved button runs bare', async () => {
-  for (const hint of ['[name]', '[auto|<tokens>]', '[a] [b]', ' [UC-NNN-slug | empty to list] ']) expect(isOptionalHint(hint)).toBe(true)
+  for (const hint of ['[name]', '[auto|<tokens>]', '[a] [b]', ' [UC-NNN-slug | empty to list] ', '<optional custom summarization instructions>']) expect(isOptionalHint(hint)).toBe(true)
   for (const hint of ['<level>', 'message', '[feature] | UC-NNN | empty', '', undefined]) expect(isOptionalHint(hint)).toBe(false)
   const clear = { kind: 'command' as const, name: 'clear', description: '', source: 'builtin' }
   expect(padFor(clear, 'x', '[name]').text).toBe('/clear')
@@ -253,4 +254,12 @@ test('a hint of optional arguments only: no blanks, and a saved button runs bare
 
 test('placement: the three places, header otherwise', async () => {
   expect(['header', 'prompt', 'pane', 'tab', undefined].map(placementOf)).toEqual(['header', 'prompt', 'pane', 'header', 'header'])
+})
+
+test("argChoices: the alternatives a hint names, and room for text of one's own", async () => {
+  expect(argChoices('[auto|<tokens>]')).toEqual({ literals: ['auto'], isFree: true })
+  expect(argChoices('[low|medium|high]')).toEqual({ literals: ['low', 'medium', 'high'], isFree: false })
+  expect(argChoices('[name]')).toEqual({ literals: [], isFree: true })
+  expect(argChoices('<file> [line]')).toEqual({ literals: [], isFree: true })
+  expect(argChoices(undefined)).toEqual({ literals: [], isFree: false })
 })

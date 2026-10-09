@@ -11,11 +11,13 @@ that this session has installed.
   window. The card is the output of `/pad`, which the mod runs for you, so it sits in the
   conversation and scrolls up as the conversation grows. `/pad` draws a fresh one at any time.
 - **Two kinds of button,** told from the text:
-  - `/name` runs that command or skill: `🗜️ Compactar conversa` runs `/compact`.
-  - `/name [blank]` puts the command in the prompt with the blank marked, for you to fill in and
-    send: `/code-review [level]` waits for the level. Arguments with no brackets
-    (`/code-review high`) run as written. A command whose arguments are all optional runs bare:
-    `/clear [name]` runs `/clear`.
+  - `/name` runs that command or skill when it takes no argument: `📊 Ver contexto` runs `/context`.
+  - A command that takes an argument (a `[blank]` in its text, or a hint Claude Code shows for
+    it in the `/` menu) asks which first, in Claude Code's question dialog: the hint's
+    alternatives (`/autocompact [auto|<tokens>]` offers `auto`), `No argument` when the argument
+    is optional (`/clear [name]`), `Write it in the prompt`, and "Other" to type your own. The
+    answer runs; `Write it in the prompt` (or closing the dialog) leaves the command in the
+    prompt with the blank marked. Arguments written out (`/code-review high`) run as written.
   - `@name` calls that agent: `🔍 Explorar código` puts `Use o agente Explore para [tarefa]` in
     the prompt with the blank marked, for you to say what to explore.
 - **Only what is installed.** A button shows, and can be added, only when this session has its
@@ -60,7 +62,7 @@ command that takes an argument comes in with it as a blank (`/code-review [level
 Claude Code shows for it in the `/` menu. The mod learns the hints as that menu lists the
 commands, so one you have not yet seen there in this session comes in bare: add the blank with
 `/pad add`. A hint of optional arguments only (`[name]`, `[auto|<tokens>]`) gives no blank: the
-button runs the command bare. A button saved with such blanks by an earlier version
+button asks with `No argument` first. A button saved with such blanks by an earlier version
 (`/clear [name]`) is saved back bare once Claude Code lists the command. Once 8 buttons work, the
 pane says the menu is full until you remove one.
 

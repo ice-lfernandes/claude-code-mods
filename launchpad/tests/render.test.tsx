@@ -18,7 +18,7 @@ const PROJECT = JSON.stringify({
 })
 const AGENT_FILE = '---\nname: revisor\ndescription: Revisa textos\n---\nVocê revisa.'
 
-type World = { fills: { text: string; decorations?: unknown }[]; commands: string[]; opened: string[]; closed: string[]; toasts: string[]; logs: string[] }
+type World = { fills: { text: string; decorations?: unknown }[]; commands: string[]; opened: string[]; closed: string[]; toasts: string[]; logs: string[]; asked: { question: string; options: string[] }[]; answer?: string; clock: ReturnType<typeof mock.clock> }
 
 const world = (
   on: On,
@@ -26,9 +26,14 @@ const world = (
   env: Record<string, string> = { HOME: '/home/ana', LANG: 'pt_BR.UTF-8' },
   commands: object[] = COMMANDS,
 ): World => {
-  const w: World = { fills: [], commands: [], opened: [], closed: [], toasts: [], logs: [] }
+  const w: World = { fills: [], commands: [], opened: [], closed: [], toasts: [], logs: [], asked: [], clock: mock.clock(on, { now: Date.parse('2026-10-08T12:00:00Z') }) }
   mock.store(on)
-  mock.clock(on, { now: Date.parse('2026-10-08T12:00:00Z') })
+  // The engine's question dialog: the test's answer, or dismissed when it gives none.
+  on('tool.call', ($, e: any) => {
+    const q = e.questions[0]
+    w.asked.push({ question: String(q.question), options: q.options.map((o: { label: string }) => o.label) })
+    return (w.answer === undefined ? { deny: 'dismissed' } : { result: { questions: e.questions, answers: { [q.question]: w.answer } } }) as never
+  })
   // The engine's own drawing beneath the plugin: empty, as when nothing else draws there.
   on('ui.render', () => ({ type: 'Box', children: [] }) as never)
   on('session.start', ($, e) => ({ cwd: e.cwd }) as never)
@@ -40,7 +45,7 @@ const world = (
   on('fs.list', ($, e: any) => (e.path === '/repo/.claude/agents' ? { value: [{ name: 'revisor.md', kind: 'file', size: 1, mtimeMs: 0 }] } : { deny: 'ENOENT' }) as never)
   on('fs.read', ($, e: any) => (e.path in files ? { value: files[e.path] } : { deny: 'ENOENT' }) as never)
   on('prompt.fill', ($, e: any) => (w.fills.push({ text: e.text, decorations: e.decorations }), { isFilled: true, text: e.text, cursor: e.text.length }) as never)
-  on('command.run', ($, e: any) => (w.commands.push(e.command), { text: '' }) as never)
+  on('command.run', ($, e: any) => (w.commands.push(e.args ? `${e.command} ${e.args}` : e.command), { text: '' }) as never)
   on('ui.open', ($, e: any) => (w.opened.push(e.id), { value: { isPlaced: true } }) as never)
   on('ui.close', ($, e: any) => (w.closed.push(e.id), { value: undefined }) as never)
   on('ui.toast', ($, e: any) => (w.toasts.push(e.text), { value: undefined }) as never)
@@ -361,7 +366,7 @@ const band = ($: any, surface = 'terminal') =>
 const menuPane = ($: any, surface = 'terminal') =>
   $.ui.mount({ plugin: 'launchpad', surface, component: 'Pane', requestId: 'launchpad-menu', props: { title: 'Atalhos', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} }, viewport: { columns: 102, rows: 40 } } as never)
 
-test('a command whose hint is optional runs bare: /clear [name] is /clear', async ($, on) => {
+test('a command that takes an optional argument asks which, No argument first', async ($, on) => {
   const w = world(on, files, undefined, [...COMMANDS, CLEAR])
   await start($)
   await ($ as any).command.describe({ command: 'clear', description: 'Start a new conversation', argumentHint: '[name]', isHidden: false })
@@ -374,10 +379,53 @@ test('a command whose hint is optional runs bare: /clear [name] is /clear', asyn
   const card = await row($)
   const drawn = JSON.stringify(await card.drawn())
   const id = new RegExp(`"key":"pad:([^"]+)","label":"[^"]*clear`).exec(drawn)?.[1]
+  w.answer = 'Sem argumento'
   await card.press({ key: `pad:${id}` })
+  expect(w.asked[0]).toEqual({ question: 'Rodar /clear com qual argumento? Dica: [name]. Em "Other", escreva o seu.', options: ['Sem argumento', 'Escrever no prompt'] })
   expect(w.commands).toEqual(['clear'])
+  // Text typed under "Other" runs as the argument.
+  w.answer = 'refactor'
+  await card.press({ key: `pad:${id}` })
+  expect(w.commands).toEqual(['clear', 'clear refactor'])
   expect(w.fills).toEqual([])
   await card.unmount()
+})
+
+test('a hint with alternatives offers them; Write it in the prompt fills the blank', async ($, on) => {
+  const w = world(on, files, undefined, [...COMMANDS, { name: 'autocompact', description: 'Auto-compact', source: 'builtin' }])
+  await start($)
+  await ($ as any).command.describe({ command: 'autocompact', description: 'Auto-compact', argumentHint: '[auto|<tokens>]', isHidden: false })
+  await pad($, 'add Auto | /autocompact')
+  const card = await row($)
+  const drawn = JSON.stringify(await card.drawn())
+  const id = new RegExp(`"key":"pad:([^"]+)","label":"[^"]*Auto`).exec(drawn)?.[1]
+  w.answer = 'auto'
+  await card.press({ key: `pad:${id}` })
+  expect(w.asked[0]!.options).toEqual(['Sem argumento', 'auto', 'Escrever no prompt'])
+  expect(w.commands).toEqual(['autocompact auto'])
+  w.answer = 'Escrever no prompt'
+  await card.press({ key: `pad:${id}` })
+  expect(w.fills.map(f => f.text)).toEqual(['/autocompact [auto|<tokens>]'])
+  // Dismissed: the command waits in the prompt, as before the dialog.
+  w.answer = undefined
+  await card.press({ key: `pad:${id}` })
+  expect(w.fills).toHaveLength(2)
+  expect(w.commands).toEqual(['autocompact auto'])
+  await card.unmount()
+})
+
+test('a menu button the catalog lacks reads it again: a mod that registered its command later', async ($, on) => {
+  const commands = [...COMMANDS]
+  const w = world(on, files, undefined, commands)
+  await start($)
+  await pad($, 'place prompt')
+  const ui = await band($)
+  expect(JSON.stringify(await ui.drawn())).not.toContain('pad:limits')
+  commands.push({ name: 'limits', description: 'Plan limits', source: 'plugin' })
+  await w.clock.advance(20_000)
+  await pad($, 'list') // anything that draws the row again
+  expect(JSON.stringify(await ui.drawn())).toContain('pad:limits')
+  await ui.unmount()
 })
 
 test('a button saved as /clear [name] is saved back bare once the hint is known', async ($, on) => {
@@ -391,6 +439,7 @@ test('a button saved as /clear [name] is saved back bare once the hint is known'
   const card = await row($)
   const drawn = JSON.stringify(await card.drawn())
   const id = new RegExp(`"key":"pad:([^"]+)","label":"[^"]*Limpar`).exec(drawn)?.[1]
+  w.answer = 'Sem argumento'
   await card.press({ key: `pad:${id}` })
   expect(w.commands).toEqual(['clear'])
   await card.unmount()

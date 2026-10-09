@@ -67,6 +67,11 @@ type Words = {
   menuPane: string
   /** The band's button that opens /pad configuration. */
   settings: string
+  /** The question a command's argument asks before it runs, and its fixed answers. */
+  askArg: (command: string, hint: string) => string
+  noArg: string
+  writeIt: string
+  cancel: string
   /** What an agent button puts in the prompt, its `[blank]` for the task. */
   useAgent: (name: string, task?: string) => string
   pane: {
@@ -147,6 +152,10 @@ export const WORDS: Record<Lang, Words> = {
     inBand: 'O menu está na linha abaixo do prompt. /pad place header volta ao cartão.',
     menuPane: 'Atalhos',
     settings: '⋯ configurar',
+    askArg: (command, hint) => `Rodar ${command} com qual argumento? Dica: ${hint}. Em "Other", escreva o seu.`,
+    noArg: 'Sem argumento',
+    writeIt: 'Escrever no prompt',
+    cancel: 'Cancelar',
     useAgent: (name, task) => `Use o agente ${name} para ${task || '[tarefa]'}`,
     pane: {
       title: 'Launchpad',
@@ -224,6 +233,10 @@ export const WORDS: Record<Lang, Words> = {
     inBand: 'The menu is in the row below the prompt. /pad place header brings the card back.',
     menuPane: 'Shortcuts',
     settings: '⋯ configure',
+    askArg: (command, hint) => `Run ${command} with which argument? Hint: ${hint}. Under "Other", type your own.`,
+    noArg: 'No argument',
+    writeIt: 'Write it in the prompt',
+    cancel: 'Cancel',
     useAgent: (name, task) => `Use the ${name} agent to ${task || '[task]'}`,
     pane: {
       title: 'Launchpad',
@@ -305,9 +318,27 @@ export const iconFor = (t: Target) => (t.kind === 'agent' ? 'agent' : t.source =
 
 /**
  * Whether a command's argument hint names only optional arguments: every part in square
- * brackets, as `/clear [name]` or `/autocompact [auto|<tokens>]`. Such a command runs bare.
+ * brackets, as `/clear [name]` or `/autocompact [auto|<tokens>]`, or a hint that says so
+ * (`<optional custom summarization instructions>`). Such a command can run bare.
  */
-export const isOptionalHint = (hint: string | undefined) => /^\s*(\[[^\]]*\]\s*)+$/.test(hint ?? '')
+export const isOptionalHint = (hint: string | undefined) => /^\s*(\[[^\]]*\]\s*)+$/.test(hint ?? '') || /\boptional\b/i.test(hint ?? '')
+
+/**
+ * What a command's argument hint offers to pick: the alternatives of a single group
+ * (`[auto|<tokens>]` gives `auto`), and whether it leaves room for text of one's own (a
+ * `<placeholder>`, a bare name as `[name]`, or more than one argument).
+ */
+export const argChoices = (hint: string | undefined): { literals: string[]; isFree: boolean } => {
+  const h = (hint ?? '').trim()
+  if (!h) return { literals: [], isFree: false }
+  const groups = h.match(/\[[^\]]*\]|<[^>]*>|[^\s[\]<>]+/g) ?? []
+  if (groups.length !== 1) return { literals: [], isFree: true }
+  const inner = groups[0]!.replace(/^[[<]|[\]>]$/g, '')
+  const parts = inner.split('|').map(x => x.trim()).filter(Boolean)
+  if (parts.length < 2) return { literals: [], isFree: true }
+  const literals = parts.filter(x => /^[\w.:@/-]+$/.test(x))
+  return { literals, isFree: literals.length < parts.length }
+}
 
 /** Where the menu shows: the option or /pad place when it names one, else under the header. */
 export const placementOf = (v: unknown): Placement => (v === 'prompt' || v === 'pane' || v === 'header' ? v : 'header')

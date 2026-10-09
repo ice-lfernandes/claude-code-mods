@@ -31,6 +31,7 @@ import {
   agentName,
   agentOf,
   agentTask,
+  argChoices,
   asPads,
   available,
   BUILTIN_AGENTS,
@@ -40,6 +41,7 @@ import {
   commandOf,
   defaults,
   keyOf,
+  isOptionalHint,
   langOf,
   layout,
   listText,
@@ -88,6 +90,9 @@ const hints = new Map<string, string>()
 
 /** The last first row the pane's catalog list can start at, as last drawn: where the wheel stops. */
 let lastStart = 0
+/** When the catalog was last read: a button it lacks reads it again, at most this often. */
+let catalogAt = 0
+const CATALOG_STALE_MS = 15_000
 
 // Set by register from the options, and by session.start for the folder.
 let lang: Lang = 'pt-BR'
@@ -148,6 +153,7 @@ async function load($: EngineInterface, fresh = false) {
   if (fresh || (await read($, catalog)).length === 0) {
     const list = await readCatalog($)
     await update($, catalog, () => list)
+    catalogAt = await $.clock.now()
   }
 }
 
@@ -163,7 +169,17 @@ async function saveMenu($: EngineInterface, list: Pad[]) {
 
 /** The buttons as shown and numbered: the person's that work here, then the project's. */
 async function shown($: EngineInterface) {
-  return shownOf(await read($, menu), await read($, project), await read($, catalog))
+  const pads = [...(await read($, menu)), ...(await read($, project))]
+  const list = shownOf(await read($, menu), await read($, project), await read($, catalog))
+  // A mod that registers its command after this one read the catalog (/limits, at the start of
+  // a session) is missing from it: read it again, at most every CATALOG_STALE_MS.
+  if (list.length < Math.min(pads.length, MAX_SHOWN) && (await $.clock.now()) - catalogAt > CATALOG_STALE_MS) {
+    const fresh = await readCatalog($)
+    await update($, catalog, () => fresh)
+    catalogAt = await $.clock.now()
+    return shownOf(await read($, menu), await read($, project), fresh)
+  }
+  return list
 }
 
 /** Puts a text in the prompt, its `[blank]` marked for the person to replace. */
@@ -172,16 +188,40 @@ async function fill($: EngineInterface, text: string) {
   await $.prompt.fill(blank ? { text, decorations: [{ ...blank, bold: true, underline: true }] } : { text })
 }
 
+/**
+ * Asks which argument a command runs with, in the engine's question dialog: the hint's
+ * alternatives, `No argument` when every argument is optional, `Write it in the prompt`, and
+ * "Other" for text of one's own. Runs the answer; on `Write it in the prompt`, or when no dialog
+ * can show (dismissed, a `-p` run), the command waits in the prompt with its blank marked.
+ */
+async function askArgument($: EngineInterface, command: string, hint: string, isOptional: boolean) {
+  const w = WORDS[lang]
+  const { literals } = argChoices(hint)
+  const fixed = [...(isOptional ? [w.noArg] : []), w.writeIt]
+  const options = [...(isOptional ? [w.noArg] : []), ...literals.slice(0, 4 - fixed.length), w.writeIt]
+  if (options.length < 2) options.push(w.cancel)
+  const blanks = blanksOf(hint)
+  const answer = await $.ui.ask(w.askArg(`/${command}`, hint), { header: `/${command}`.slice(0, 12), options }).catch(() => null)
+  if (answer === null || answer === w.writeIt) return fill($, `/${command} ${blanks}`)
+  if (answer === w.cancel) return
+  await $.command.run({ command, args: answer === w.noArg ? '' : answer.trim() })
+}
+
+/**
+ * A button pressed. An agent puts its request in the prompt; a project button puts its text
+ * there (it comes from the repository). A command with its arguments written out runs as it
+ * is; one that takes an argument (a blank in its text, or a hint Claude Code lists for it) asks
+ * which first.
+ */
 async function press($: EngineInterface, p: Pad) {
   try {
     if (p.kind === 'agent') return await fill($, WORDS[lang].useAgent(agentOf(p.text), agentTask(p.text)))
-    // A command with a [blank] waits in the prompt for the person to fill in; so does any
-    // project button, whose text comes from the repository.
-    // A command whose blanks came from an optional hint (`/clear [name]`) runs bare.
-    const text = p.origin === 'project' ? p.text : unblank(p.text, hints.get(commandOf(p.text).command))
-    if (p.origin === 'project' || blankIn(text)) return await fill($, text)
-    const { command, args } = commandOf(text)
-    await $.command.run({ command, args })
+    if (p.origin === 'project') return await fill($, p.text)
+    const { command, args } = commandOf(p.text)
+    const hint = hints.get(command)
+    const hasBlank = blankIn(p.text) !== null
+    if (!hasBlank && (args !== '' || !hint)) return await $.command.run({ command, args })
+    await askArgument($, command, hasBlank ? args : hint!, hint !== undefined && isOptionalHint(hint))
   } catch {
     $.ui.toast(WORDS[lang].failed(p.label))
   }
