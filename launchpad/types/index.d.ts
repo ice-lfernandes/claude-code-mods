@@ -43,9 +43,6 @@ export type ModInfo = {
   plugin: string
   /** Its command, without the slash: what opens its pane. */
   command: string
-  /** A key of ICONS. */
-  icon: string
-  label: { 'pt-BR': string; en: string }
   /** Whether its command takes `on` and `off`, its state in the `<plugin>.enabled` option. */
   toggles: boolean
 }

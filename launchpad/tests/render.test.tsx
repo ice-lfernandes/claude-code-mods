@@ -89,7 +89,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await row($, surface)
     const drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('O que você quer fazer?')
-    expect(drawn).toContain('🗜️ Compactar conversa')
+    expect(drawn).toContain('📦 Compactar conversa')
     expect(drawn).toContain('📊 Ver contexto')
     expect(drawn).toContain('🔍 Explorar código')
     expect(drawn).not.toContain('Ver limites') // /limits is not installed in this session
@@ -113,7 +113,7 @@ test('the terminal card frames bordered tiles in columns that fit', async ($, on
   expect(drawn).toContain('"key":"tile:compact"')
   expect(drawn).toContain('"hover":{"borderColor":"claude","borderDimColor":false,"backgroundColor":"claude"}')
   expect(drawn).toContain('"hover":{"color":"inverseText","bold":true}')
-  expect(drawn).toContain('"label":" 🗜️ Compactar conversa "') // 23 cells: 26 less the gap and the two borders
+  expect(drawn).toContain('"label":" 📦 Compactar conversa "') // 23 cells: 26 less the gap and the two borders
   expect(drawn).toContain('"key":"row:0"')
   expect(drawn).not.toContain('"key":"row:1"') // 3 tiles of 26 cells fit in 98
   await ui.unmount()
@@ -143,12 +143,12 @@ test('/pad add takes only installed commands, skills and agents, up to 8 that wo
   expect((await pad($, 'add Foco | /compact focus')).text).toBe('O menu já tem 8 atalhos. Tire um com /pad remove ou no painel.')
 
   const list = (await pad($, 'list')).text ?? ''
-  expect(list).toContain('1. 🗜️ Compactar conversa  /compact  (comando, padrão)')
+  expect(list).toContain('1. 📦 Compactar conversa  /compact  (comando, padrão)')
   expect(list).toContain('5. 🤖 Revisor  @revisor  (agente, seu)')
   expect((await pad($, 'remove 1')).text).toBe('Atalho removido: Compactar conversa.')
   expect((await pad($, 'remove 9')).text).toContain('Não existe atalho 9')
   expect((await pad($, 'reset')).text).toBe('Atalhos de volta aos padrões.')
-  expect((await pad($, 'list')).text).toContain('1. 🗜️ Compactar conversa')
+  expect((await pad($, 'list')).text).toContain('1. 📦 Compactar conversa')
   expect((await pad($, 'ajuda')).text).toContain('/pad configuration')
 })
 
@@ -325,7 +325,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(w.opened).toEqual(['launchpad'])
     await ui.press({ key: 'cmd:list' })
     await ui.press({ key: 'cmd:help' })
-    expect(w.logs[0]).toBe('1. 🗜️ Compactar conversa  /compact  (comando, padrão)') // one row a line
+    expect(w.logs[0]).toBe('1. 📦 Compactar conversa  /compact  (comando, padrão)') // one row a line
     expect(w.logs[1]).toBe('2. 📊 Ver contexto  /context  (comando, padrão)')
     expect(w.logs.some(l => l.includes('\n'))).toBe(false)
     expect(w.logs).toContain('/pad configuration     abre o painel para escolher e ordenar os atalhos')
@@ -574,6 +574,13 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(drawn).not.toContain('"key":"model:opus"') // the current one is not a button
     for (const m of ['limits-meter', 'allowlist-coach', 'agent-watch']) expect(drawn).toContain(`"key":"mod:${m}"`)
     expect(drawn).not.toContain('"key":"mod:test-hud"')
+    // each mod by its plugin's name, the same in every language, with its command's icon
+    for (const l of ['⏳ limits-meter', '🔐 allowlist-coach', '👀 agent-watch', '📜 plain-view']) expect(drawn).toContain(l)
+    for (const l of ['⏱️ limites', '🛡️ permissões', '🛰️ agentes', 'transcript limpo']) expect(drawn).not.toContain(l)
+    if (surface === 'terminal') {
+      expect(drawn).toContain('"label":" 🔐 allowlist-coach "') // the longest fills the 20-column tile
+      expect(drawn).toContain('"label":" ⏳ limits-meter    "')
+    }
     expect(drawn).toContain('Atalhos')
     expect(drawn).toContain('"key":"pad:compact"')
     expect(drawn).not.toContain('"key":"pad:model"')

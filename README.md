@@ -135,8 +135,8 @@ Or for one session, from a clone: `claude --plugin-dir ./test-hud`.
 The menu shows on its own when a session starts and after `/clear`, until the first prompt.
 `◆ pad`, under the hint line below the prompt, opens the control panel: the session's
 model and effort as buttons (a press runs `/model` or `/effort`; `opus` and `max` turn yellow
-when the 5-hour window passes 70%), a button for each mod of this collection installed, and the
-shortcuts. Commands:
+when the 5-hour window passes 70%), a button for each mod of this collection installed, by its
+name, and the shortcuts. Commands:
 
 ```
 /pad                                        show the menu again

@@ -46,8 +46,8 @@ session's model and effort in one click, this collection's mods, and the shortcu
     effort from the last request, so before the first one none is marked. With the 5-hour window
     at 70% or more, `opus` and `max` get a yellow border and a line says so; a press still
     switches at once.
-  - **Mods:** a button for each mod of this collection installed (limits-meter, allowlist-coach,
-    agent-watch, plain-view) that opens its pane, then one for each missing, which puts its
+  - **Mods:** a button for each mod of this collection installed, named as the plugin in every
+    language (`⏳ limits-meter`, `🔐 allowlist-coach`, `👀 agent-watch`, `📜 plain-view`), that opens its pane, then one for each missing, which puts its
     `/plugin install` command in the prompt, or a line saying all are installed. test-hud is left
     out: it is a tool for developers. A mod whose command takes `on` and `off` (plain-view) also
     gets its switch, its state read from its `enabled` option.
@@ -89,8 +89,13 @@ other commands and the pane go on working, so you can set the menu up before `/p
 
 The icon in `/pad add` is optional. It can be any emoji or symbol, or a built-in name between
 colons (`/pad add :chart: Vendas | /cost`): `folder`, `doc`, `pen`, `search`, `compress`, `gauge`,
-`chart`, `table`, `mail`, `undo`, `spark`, `brain`, `sliders`, `help`, `agent`, `tool`, `plug`. A
-plain first word stays in the label. An agent button can carry its task (`@revisor revise
+`chart`, `table`, `mail`, `undo`, `spark`, `brain`, `sliders`, `help`, `agent`, `tool`, `plug`,
+`shield`, `agents`, `scroll`, `broom`, `reload`, `puzzle`, `money`, `doctor`. A plain first word
+stays in the label. With no icon, a button gets its command's own when the launchpad knows it
+(`/clear` 🧹, `/compact` 📦, `/reload-plugins` 🔄, ...), else one for where the command comes
+from: 🔧 built-in, 🧩 plugin, 🔌 MCP, ✨ skill, 🤖 agent. A button saved with one of those last
+icons takes its command's own when it has one. The table lives in `hooks/icons.ts`; it is not
+an option. An agent button can carry its task (`@revisor revise
 [arquivo]`); without one, the prompt waits with `[tarefa]`. Your list is kept across sessions.
 
 ## Buttons for a whole team
@@ -139,8 +144,9 @@ to `auto` yourself to get the new behaviour.
 - **The border rows of a tile do not take a click.** Only a button takes a press, and a terminal
   inverts the button under the pointer, which turns a border into a solid bar. The whole row
   inside the border is the button.
-- **Emoji widths depend on the terminal.** Claude Code counts an emoji as two columns. A terminal
-  that gives it one (a JetBrains IDE, VS Code with `terminal.integrated.gpuAcceleration` set to
+- **Emoji widths depend on the terminal.** Claude Code counts an emoji as two columns. The built-in
+  icons are all emoji drawn as emoji by default (📦, not 🗜️ with its U+FE0F), which most terminals
+  draw two columns wide; one of your own may not be. A terminal that gives an emoji one (a JetBrains IDE, VS Code with `terminal.integrated.gpuAcceleration` set to
   `off`) shifts the rest of the row and bends the borders. `icons: auto` covers JetBrains; in
   VS Code, turn GPU acceleration on, or set `icons` to `symbol`.
 - **Agents: the built-in ones and your files.** The catalog holds `general-purpose`, `Explore`,

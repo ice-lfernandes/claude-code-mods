@@ -11,6 +11,8 @@ import {
   isWarned,
   modelsOf,
   modLabel,
+  iconFor,
+  iconOf,
   MODS,
   modsOf,
   panelShortcuts,
@@ -112,7 +114,8 @@ test('/pad add takes an optional icon, a name and a /command or @agent', async (
     id: 'u1', icon: '📊', label: 'Revisão', text: '/code-review high', kind: 'command', origin: 'user',
   })
   expect(parseAdd('Explorar | @Explore', 'u2')).toMatchObject({ icon: 'agent', kind: 'agent' })
-  expect(parseAdd('Contexto | /context', 'u3')).toMatchObject({ icon: 'tool', kind: 'command' })
+  expect(parseAdd('Contexto | /context', 'u3')).toMatchObject({ icon: 'chart', kind: 'command' }) // its own, from COMMAND_ICONS
+  expect(parseAdd('Fechamento | /fechamento março', 'u7')).toMatchObject({ icon: 'tool', kind: 'command' }) // none of its own
   expect(parseAdd('Planilha | Converta [arquivo] em xlsx', 'u4')).toBe(null)
   expect(parseAdd('Sem barra', 'u5')).toBe(null)
   expect(parseAdd('📊 | /context', 'u6')).toBe(null)
@@ -157,7 +160,7 @@ test('the pane lists what is not in the menu, filtered, commands first', async (
   expect(matches(catalog, menu, '').map(t => t.name)).toEqual(['code-review', 'cost', 'Plan'])
   expect(matches(catalog, menu, '/co').map(t => t.name)).toEqual(['code-review', 'cost'])
   expect(matches(catalog, menu, 'session').map(t => t.name)).toEqual(['cost'])
-  expect(padFor(command('code-review', 'plugin'), 'u2')).toMatchObject({ icon: 'spark', label: 'code-review', text: '/code-review' })
+  expect(padFor(command('code-review', 'plugin'), 'u2')).toMatchObject({ icon: 'puzzle', label: 'code-review', text: '/code-review' })
   expect(padFor(agent('Plan'), 'u3')).toMatchObject({ icon: 'agent', text: '@Plan', kind: 'agent' })
 })
 
@@ -181,11 +184,36 @@ test('the list window stays inside the list', async () => {
   expect(windowOf(3, 2, 12)).toEqual({ start: 0, end: 3 })
 })
 
+test('a command gets its own icon, else its origin\'s', async () => {
+  expect(iconFor(command('clear'))).toBe('broom')
+  expect(iconFor(command('reload-plugins'))).toBe('reload')
+  expect(iconFor(command('watch', 'plugin'))).toBe('agents')
+  expect(iconFor(command('code-review', 'plugin'))).toBe('puzzle')
+  expect(iconFor(command('fetch', 'mcp'))).toBe('plug')
+  expect(iconFor(command('fechamento', 'user'))).toBe('spark')
+  expect(iconFor(command('estranho', 'other'))).toBe('spark')
+  expect(iconFor(command('constructor', 'toString'))).toBe('spark') // own keys only
+  expect(iconFor(agent('Plan'))).toBe('agent')
+})
+
+test('a saved command button with its origin\'s icon draws its command\'s own; one picked stays', async () => {
+  const saved = (icon: string, text: string, kind: 'command' | 'agent' = 'command') => ({ id: 'x', icon, label: 'X', text, kind, origin: 'user' as const })
+  expect(iconOf(saved('tool', '/clear'))).toBe('broom') // added before 0.5.6
+  expect(iconOf(saved('spark', '/watch'))).toBe('agents')
+  expect(iconOf(saved('tool', '/clear [name]'))).toBe('broom')
+  expect(iconOf(saved('tool', '/fechamento'))).toBe('tool')
+  expect(iconOf(saved('chart', '/clear'))).toBe('chart')
+  expect(iconOf(saved('🧾', '/clear'))).toBe('🧾')
+  expect(iconOf(saved('agent', '@Plan', 'agent'))).toBe('agent')
+  expect(buttonLabel(saved('tool', '/clear'), 'emoji')).toBe('🧹 X')
+  expect(buttonLabel(saved('tool', '/clear'), 'symbol')).toBe('⌫ X')
+})
+
 test('a named icon is written :name:, so a first word of the label stays in the label', async () => {
   expect(parseAdd(':chart: Vendas | /cost', 'u1')).toMatchObject({ icon: 'chart', label: 'Vendas' })
-  expect(parseAdd('search docs | /cost', 'u2')).toMatchObject({ icon: 'tool', label: 'search docs' })
-  expect(parseAdd('constructor Foo | /cost', 'u3')).toMatchObject({ icon: 'tool', label: 'constructor Foo' })
-  expect(parseAdd(':nada: Foo | /cost', 'u4')).toMatchObject({ icon: 'tool', label: ':nada: Foo' })
+  expect(parseAdd('search docs | /cost', 'u2')).toMatchObject({ icon: 'money', label: 'search docs' })
+  expect(parseAdd('constructor Foo | /cost', 'u3')).toMatchObject({ icon: 'money', label: 'constructor Foo' })
+  expect(parseAdd(':nada: Foo | /cost', 'u4')).toMatchObject({ icon: 'money', label: ':nada: Foo' })
   expect(glyph('constructor', 'emoji')).toBe('constructor')
   expect(glyph('toString', 'symbol')).toBe('toString')
 })
@@ -286,16 +314,18 @@ test('mods: the install command for the prompt', async () => {
   expect(installText('agent-watch')).toBe('/plugin install agent-watch --marketplace ice-lfernandes/claude-code-mods')
 })
 
-test('mods: a label in each language and icon style', async () => {
-  expect(modLabel(MODS[0]!, 'pt-BR', 'emoji')).toBe('⏱️ limites')
-  expect(modLabel(MODS[2]!, 'en', 'symbol')).toBe('◈ agents')
+test('mods: the plugin name in every language, with its command\'s icon in each style', async () => {
+  expect(MODS.map(m => modLabel(m, 'emoji'))).toEqual(['⏳ limits-meter', '🔐 allowlist-coach', '👀 agent-watch', '📜 plain-view'])
+  expect(MODS.map(m => modLabel(m, 'symbol'))).toEqual(['◔ limits-meter', '⊘ allowlist-coach', '◈ agent-watch', '§ plain-view'])
+  expect(Math.max(...MODS.map(m => cells(modLabel(m, 'emoji'))))).toBe(18) // the panel's 20-column tile holds it with a space each side
+  expect(modLabel({ plugin: 'new-mod', command: 'new', toggles: false }, 'emoji')).toBe('🧩 new-mod') // no row yet: a plugin's icon
 })
 
 const PLAIN = MODS.find(m => m.plugin === 'plain-view')!
 
 test('on and off: the state of a mod that toggles, from its enabled row', async () => {
   expect(PLAIN.toggles).toBe(true)
-  expect(modLabel(PLAIN, 'pt-BR', 'symbol')).toBe('✦ transcript limpo')
+  expect(modLabel(PLAIN, 'symbol')).toBe('§ plain-view')
   expect(toggleOf(PLAIN, [{ key: 'plain-view.enabled', value: true }])).toBe(true)
   expect(toggleOf(PLAIN, [{ key: 'plain-view.enabled', value: false }])).toBe(false)
   expect(toggleOf(PLAIN, [])).toBeNull()
