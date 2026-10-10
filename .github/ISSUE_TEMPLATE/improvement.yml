@@ -1,0 +1,42 @@
+name: Improvement
+description: Suggest an improvement to a mod or a new feature
+title: "[Improvement] "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: mod
+    attributes:
+      label: Mod
+      options:
+        - limits-meter
+        - allowlist-coach
+        - agent-watch
+        - test-hud
+        - launchpad
+        - plain-view
+        - New mod
+        - Other / whole collection
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What is hard or missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? Include commands or a sketch of the UI if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
