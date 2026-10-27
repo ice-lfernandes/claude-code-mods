@@ -256,6 +256,7 @@ export const WORDS: Record<Lang, Words> = {
         'allowlist-coach': 'Sugere regras para o que você sempre aprova',
         'agent-watch': 'Um cartão por subagente, com progresso',
         'plain-view': 'Recolhe o ruído das ferramentas num resumo',
+        'test-hud': 'Testes: contagem, falhas por arquivo, instáveis',
       },
       on: '● on',
       off: '○ off',
@@ -411,6 +412,7 @@ export const WORDS: Record<Lang, Words> = {
         'allowlist-coach': 'Suggests rules for what you keep approving',
         'agent-watch': 'A card per subagent, with progress',
         'plain-view': 'Folds tool noise into a short summary',
+        'test-hud': 'Test runs: counts, failures by file, flaky ones',
       },
       on: '● on',
       off: '○ off',
@@ -756,21 +758,22 @@ export const WARN_AT = 70
 
 /**
  * This collection's mods besides the launchpad: what the panel's Mods tab looks for. Every one has
- * the `enabled` option since A1, so the panel toggles them all. test-hud is left out on purpose: it
- * is for developers, and it leaves this collection after plan v2.
+ * the `enabled` option since A1, so the panel toggles them all. test-hud is back in since 0.10.0
+ * (2026-10-27): it stays in this collection, so the panel lists it with the rest.
  */
 export const MODS: readonly ModInfo[] = [
   { plugin: 'limits-meter', command: 'limits', toggles: true },
   { plugin: 'allowlist-coach', command: 'allowlist', toggles: true },
   { plugin: 'agent-watch', command: 'watch', toggles: true },
   { plugin: 'plain-view', command: 'plain-view', toggles: true },
+  { plugin: 'test-hud', command: 'test-hud', toggles: true },
 ]
 
 /**
- * The plugins `/pad quiet` sets the `quiet` option of: the collection's, test-hud and the launchpad
- * itself, last, since its reload follows.
+ * The plugins `/pad quiet` sets the `quiet` option of: the collection's (test-hud among them) and the
+ * launchpad itself, last, since its reload follows.
  */
-export const QUIET_PLUGINS: readonly string[] = [...MODS.map(m => m.plugin), 'test-hud', 'launchpad']
+export const QUIET_PLUGINS: readonly string[] = [...MODS.map(m => m.plugin), 'launchpad']
 
 /** The `<plugin>.quiet` rows of the /config list, and the plugins that have options but no such row (an older version). */
 export const quietPlan = (rows: readonly { key: string }[]): { keys: string[]; old: string[] } => {
