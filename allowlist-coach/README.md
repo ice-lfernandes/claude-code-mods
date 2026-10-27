@@ -33,6 +33,12 @@ It writes nothing until you pick a file to add the rule to in a dialog.
   them. `/allowlist hide` keeps counting but stops the toast and the note in the dialog, until
   `/allowlist show`. `/allowlist off` and `on` turn the coach off or on in every conversation (the
   `enabled` option). `/allowlist help` lists them.
+- **`/allowlist demo`** opens the pane with six sample rules, one for each status, so you can see
+  it before any dialog has been counted. Nothing is read or written: `allow`, `dismiss`,
+  `remove` and `reset` change only the sample list, and calls made during the demo are not
+  counted. `exit demo`, `Close` or `/allowlist demo off` bring your own counts back. The demo's
+  messages are in English in every language. Pressing `Esc` closes the pane but leaves the
+  demo on until one of those.
 - **The pane's footer** has the same verbs as buttons. `allow`, `dismiss`, `remove` and `reset`
   put the command in the prompt for you to finish and send; `help` answers at once.
 

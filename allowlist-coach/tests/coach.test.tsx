@@ -489,3 +489,148 @@ test('quiet: it keeps counting, with no toast and no note in the dialog, and sho
   await $.tool.call({ tool: 'Bash', command: './mvnw test -Dtest=T7' } as never)
   expect(world.notices).toHaveLength(0)
 })
+
+// /allowlist demo: the approved prototype notes/prototypes/allowlist-coach-demo-0.7.0.html, variant A.
+
+test('demo: the pane opens with six sample rules, one for each status, and says nothing is written', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+
+  const answered = await run($, 'demo')
+  expect(answered.text).toContain('demo on · sample rules, nothing is read or written')
+  for (const status of ['ready', 'counting', 'refused', 'risky', 'allowed']) expect(answered.text).toContain(status)
+
+  const pane = await mount($)
+  const shown = JSON.stringify(await pane.drawn())
+  expect(shown).toContain('DEMO · sample rules; nothing is read or written')
+  expect(shown).toContain('Bash(git status:*)')
+  expect(shown).toContain('Bash(rm:*)')
+  expect(shown).toContain('runs rm')
+  expect(shown).toContain('exit demo')
+  expect(shown).toContain('▸ all 6')
+  expect(world.store).toEqual({})
+  expect(world.files).toEqual({})
+})
+
+test('demo: allow, dismiss, remove and reset change the sample list only', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  await run($, 'demo')
+  const pane = await mount($)
+
+  await pane.press({ key: 'allow-1' })
+  expect(world.asked[0]!.question.startsWith('[demo] Add ')).toBe(true)
+  expect(world.toasts.at(-1)).toMatch(/\[demo\] .* added to the sample list only; no file was touched\./)
+
+  await pane.press({ key: 'dismiss-2' })
+  expect(world.toasts.at(-1)).toContain('[demo] allowlist-coach:')
+
+  world.answer = 'Remove'
+  expect((await run($, 'remove Bash(ls:*)')).text).toContain('[demo] Bash(ls:*) removed from the sample list only; no file was touched.')
+  expect(world.asked.at(-1)!.question.startsWith('[demo] Remove ')).toBe(true)
+
+  world.answer = 'Clear'
+  expect((await run($, 'reset')).text).toContain('[demo] allowlist-coach: this project\'s counts cleared.')
+
+  expect(world.files).toEqual({})
+  expect(world.store).toEqual({})
+})
+
+test('demo: real calls are not counted, and demo off brings the stored counts back', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  for (let i = 0; i < 2; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
+  const stored = JSON.stringify(world.store)
+
+  await run($, 'demo')
+  await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
+  expect(JSON.stringify(world.store)).toBe(stored)
+  expect((await run($, 'demo')).text).toContain('already on')
+
+  expect((await run($, 'demo off')).text).toContain('demo off · your counts are back')
+  const listed = (await run($, '')).text!
+  expect(listed).toContain(`✓2 ✗0  ${RULE}`)
+  expect(listed).not.toContain('git status')
+  expect((await run($, 'demo off')).text).toContain('already off')
+})
+
+test('demo: exit demo ends it', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  await run($, 'demo')
+  const pane = await mount($)
+  await pane.press({ key: 'demo:exit' })
+  expect(world.toasts.at(-1)).toContain('demo off')
+  expect(JSON.stringify(await pane.drawn())).not.toContain('DEMO ·')
+  expect((await run($, 'demo off')).text).toContain('already off')
+})
+
+test('demo: Close in the pane ends it and closes the pane', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  await run($, 'demo')
+  const pane = await mount($)
+  await pane.press({ key: 'close' })
+  expect(world.closed).toEqual(['allowlist'])
+  expect((await run($, 'demo off')).text).toContain('already off')
+})
+
+test('demo: the empty pane offers see demo, and the pane has a demo verb', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  const pane = await mount($)
+  const shown = JSON.stringify(await pane.drawn())
+  expect(shown).toContain('Want to see how it looks?')
+  expect(shown).toContain('see demo')
+
+  await pane.press({ key: 'demo:see' })
+  expect(JSON.stringify(await pane.drawn())).toContain('DEMO ·')
+  await run($, 'demo off')
+
+  await pane.press({ key: 'verb:demo' })
+  expect(JSON.stringify(await pane.drawn())).toContain('DEMO ·')
+})
+
+test('demo: the messages are English whatever the language', { options: { language: 'pt-BR' } }, async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  const answered = await run($, 'demo')
+  expect(answered.text).toContain('demo on · sample rules, nothing is read or written')
+  world.answer = 'Adicionar ao settings.local.json (só você)'
+  const pane = await mount($)
+  await pane.press({ key: 'allow-1' })
+  expect(world.asked[0]!.question.startsWith('[demo] Adicionar ')).toBe(true)
+  expect(world.toasts.at(-1)).toContain('added to the sample list only')
+})
+
+test('demo: off, the mod says to turn it on first', { options: { enabled: false } }, async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  expect((await run($, 'demo')).text).toContain('the demo needs the mod on')
+})
+
+// Project hover standard (2026-10-27): a bracketed button fills with the accent, a link underlines.
+for (const surface of ['terminal', 'desktop']) {
+  test(`hover: boxed buttons fill with the accent and links underline on ${surface}`, async ($, on) => {
+    const world = fresh()
+    engine($, on, world, () => true)
+    await start($, surface)
+    await run($, 'demo')
+    const drawn = JSON.stringify(await (await mount($, surface)).drawn())
+    const hovers = [...drawn.matchAll(/"key":"([^"]+)"[^{}]*\},"press":\{[^{}]*\},"hover":(\{[^{}]*\})/g)].map(m => ({ key: m[1]!, hover: JSON.parse(m[2]!) as Record<string, unknown> }))
+    for (const key of ['allow-1', 'dismiss-1', 'demo:exit', 'close']) {
+      expect(hovers.find(h => h.key === key)?.hover).toEqual({ scope: `hover:${key}`, backgroundColor: 'claude', color: 'inverseText' })
+    }
+    for (const key of ['tab:all', 'tab:ready']) {
+      expect(hovers.find(h => h.key === key)?.hover).toEqual({ scope: `hover:${key}`, underline: true, inverse: false })
+    }
+  })
+}

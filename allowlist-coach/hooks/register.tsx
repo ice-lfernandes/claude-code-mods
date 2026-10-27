@@ -10,7 +10,10 @@
 //   /allowlist  pane with every rule, numbered, ready ones first, each with the last call that
 //             asked and when, and its actions: allow, dismiss, reset count, remove from allow.
 //             Tabs and a filter narrow the list; it scrolls. /allowlist allow <n> | dismiss <n>
-//             | remove <n> | reset [<n>] | help, where <n> is the pane's number or the rule.
+//             | remove <n> | reset [<n>] | demo | help, where <n> is the pane's number or the rule.
+//
+//   /allowlist demo  the pane with sample rules, kept in memory: nothing is counted, read or written
+//             until `exit demo` (or /allowlist demo off) brings the real counts back.
 //
 // It writes the project's .claude/settings.local.json, or its .claude/settings.json when the
 // person picks that file, and only after the person picks one in a dialog. It takes a rule
@@ -25,6 +28,8 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Configured, Entry, Tab } from '../types'
 import {
   addAllow,
+  DEMO_CONFIGURED,
+  demoEntries,
   exampleOf,
   holdsSecret,
   keyAt,
@@ -56,6 +61,10 @@ import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'allowlist'
+/** A link only underlines under the pointer; the engine would otherwise invert it. */
+const hoverLink = (key: string) => ({ scope: `hover:${key}`, underline: true, inverse: false }) as const
+/** A bracketed button fills with the accent under the pointer. */
+const hoverFill = (key: string) => ({ scope: `hover:${key}`, backgroundColor: 'claude', color: 'inverseText' }) as const
 /** Modes where a dialog is not the person's answer, or is not shown at all. */
 const NOT_THE_PERSON = new Set(['auto', 'dontAsk', 'bypassPermissions'])
 
@@ -74,6 +83,8 @@ let isOn = true
 let isHidden = false
 /** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
 let isQuiet = false
+/** `/allowlist demo`: the pane shows sample rules, and nothing reaches the store or a settings file. */
+let isDemo = false
 const KEY_HIDDEN = 'hidden'
 // The last first row the list can start at, from the last render: the wheel stops there.
 let lastStart = 0
@@ -84,10 +95,11 @@ const storeKey = () => `entries:${root}`
 
 const save = async ($: EngineInterface, change: (list: Record<string, Entry>) => Record<string, Entry>) => {
   await update($, entries, change)
-  await $.store.set(storeKey(), await read($, entries))
+  if (!isDemo) await $.store.set(storeKey(), await read($, entries))
 }
 
 const refresh = async ($: EngineInterface) => {
+  if (isDemo) return
   try {
     const settings = await $.settings.read()
     await update($, configured, () => toConfigured(settings as never))
@@ -109,6 +121,9 @@ const confirm = async ($: EngineInterface, question: string, yes: string) => {
     return false
   }
 }
+
+/** A demo's answers start with the demo tag, so none reads as real. */
+const say = (text: string) => (isDemo ? `${WORDS[lang].demo.tag}${text}` : text)
 
 const where = ($: EngineInterface, path: string) => $.fs.stat(path, { resolve: true }).then(s => s, () => null)
 
@@ -150,16 +165,20 @@ const allow = async ($: EngineInterface, key: string): Promise<string> => {
   let answer: string
   try {
     // Not now first, so a stray Enter writes nothing.
-    answer = await $.ui.ask(`${w.askAdd(what, entry.approved)}\n${w.preview(entry.rules)}`, { header: 'allowlist', options: [w.notNow, w.addLocal, w.addShared, w.never] })
+    answer = await $.ui.ask(say(`${w.askAdd(what, entry.approved)}\n${w.preview(entry.rules)}`), { header: 'allowlist', options: [w.notNow, w.addLocal, w.addShared, w.never] })
   } catch {
     return w.nothingChanged
   }
   if (answer === w.never) {
     await save($, list => setState(list, key, 'dismissed'))
-    return w.neverAgain(what)
+    return say(w.neverAgain(what))
   }
   const file = answer === w.addLocal ? SETTINGS_FILE : answer === w.addShared ? SHARED_FILE : null
   if (!file) return w.nothingChanged
+  if (isDemo) {
+    await save($, list => setState(list, key, 'added', file))
+    return w.demo.added(what)
+  }
   try {
     await edit($, file, text => addAllow(text, entry.rules, file))
   } catch (error) {
@@ -178,7 +197,11 @@ const remove = async ($: EngineInterface, key: string): Promise<string> => {
   if (entry.state !== 'added') return w.notAdded(key)
   const what = entry.rules.join(' and ')
   const file = entry.file ?? SETTINGS_FILE
-  if (!(await confirm($, w.askRemove(what, file), w.removeOpt))) return w.nothingChanged
+  if (!(await confirm($, say(w.askRemove(what, file)), w.removeOpt))) return w.nothingChanged
+  if (isDemo) {
+    await save($, list => setState(list, key, 'dismissed'))
+    return w.demo.removed(what)
+  }
   let changed: boolean
   try {
     changed = await edit($, file, text => removeAllow(text, entry.rules, file))
@@ -196,16 +219,16 @@ const zeroOne = async ($: EngineInterface, key: string): Promise<string> => {
   const w = WORDS[lang]
   const entry = (await read($, entries))[key]
   if (!entry) return w.noRule(key)
-  if (!(await confirm($, w.askZero(key, entry.approved, entry.denied), w.zeroOpt))) return w.nothingChanged
+  if (!(await confirm($, say(w.askZero(key, entry.approved, entry.denied)), w.zeroOpt))) return w.nothingChanged
   await save($, list => zero(list, key))
-  return w.zeroed(key)
+  return say(w.zeroed(key))
 }
 
 const dismiss = async ($: EngineInterface, key: string) => {
   const w = WORDS[lang]
   if (!(await read($, entries))[key]) return w.noRule(key)
   await save($, list => setState(list, key, 'dismissed'))
-  return w.neverAgain(key)
+  return say(w.neverAgain(key))
 }
 
 /** Asks, with Cancel first so a stray Enter keeps the counts, then clears them. */
@@ -213,9 +236,42 @@ const reset = async ($: EngineInterface) => {
   const w = WORDS[lang]
   const n = Object.keys(await read($, entries)).length
   if (n === 0) return w.noDialogs
-  if (!(await confirm($, w.askReset(n), w.clear))) return w.nothingChanged
+  if (!(await confirm($, say(w.askReset(n)), w.clear))) return w.nothingChanged
   await save($, () => ({}))
-  return w.cleared
+  return say(w.cleared)
+}
+
+/** Opens the pane. Returns false when this host has no pane to place it in. */
+const openPane = async ($: EngineInterface) => {
+  const opened = await $.ui.open({ id: PANE, title: WORDS[lang].pane, focus: true, closeOnEscape: true }).catch(() => null)
+  return opened?.isPlaced === true
+}
+
+/** The demo's sample rules go into the atoms; the stored counts and the settings files stay as they are. */
+const startDemo = async ($: EngineInterface): Promise<{ text?: string }> => {
+  const w = WORDS[lang]
+  if (!isOn) return { text: w.demo.modOff }
+  if (isDemo) return { text: w.demo.alreadyOn }
+  isDemo = true
+  const now = await $.clock.now()
+  await update($, entries, () => demoEntries(now))
+  await update($, configured, () => DEMO_CONFIGURED)
+  await update($, offset, () => 0)
+  await update($, tab, () => 'all')
+  await update($, filter, () => '')
+  if (await openPane($)) return {}
+  return { text: `${w.demo.started}\n${summary(await read($, entries), await read($, configured), lang)}` }
+}
+
+/** Brings the stored counts and the settings lists back; the pane, if open, draws them. */
+const stopDemo = async ($: EngineInterface): Promise<{ text?: string }> => {
+  const w = WORDS[lang]
+  if (!isDemo) return { text: w.demo.alreadyOff }
+  isDemo = false
+  const stored = (await $.store.get(storeKey())) as Record<string, Entry> | undefined
+  await update($, entries, () => stored ?? {})
+  await refresh($)
+  return { text: w.demo.stopped }
 }
 
 /** Changes the mod's `enabled` option as /config would; the engine reloads the mod with it. */
@@ -241,10 +297,11 @@ const runSwitch = async ($: EngineInterface, choice: Switch): Promise<{ text?: s
 /** /allowlist and its arguments: what the command answers, and what the pane's verbs run. */
 const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
   const w = WORDS[lang]
-  const choice = switchOf(args)
-  if (choice) return runSwitch($, choice)
   const [verb = '', ...rest] = args.trim().split(/\s+/)
   const arg = rest.join(' ')
+  if (verb.toLowerCase() === 'demo') return arg.toLowerCase() === 'off' ? stopDemo($) : startDemo($)
+  const choice = switchOf(args)
+  if (choice) return runSwitch($, choice)
   const key = async () => keyAt(await read($, entries), await read($, configured), arg)
   switch (verb.toLowerCase()) {
     case 'allow':
@@ -262,8 +319,7 @@ const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: st
       return { text: w.help }
     case '': {
       await refresh($)
-      const opened = await $.ui.open({ id: PANE, title: w.pane, focus: true, closeOnEscape: true }).catch(() => null)
-      if (opened?.isPlaced) return {}
+      if (await openPane($)) return {}
       return { text: summary(await read($, entries), await read($, configured), lang) }
     }
   }
@@ -283,6 +339,7 @@ const verbs = (l: Lang): readonly Verb[] => {
     { verb: 'dismiss', fill: `/${COMMAND} dismiss ${n}` },
     { verb: 'remove', fill: `/${COMMAND} remove ${n}` },
     { verb: 'reset', fill: `/${COMMAND} reset` },
+    { verb: 'demo' },
     { verb: 'help' },
   ]
 }
@@ -310,7 +367,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[on|off|hide|show|allow <n>|dismiss <n>|remove <n>|reset [<n>]|help]',
+      argumentHint: '[on|off|hide|show|allow <n>|dismiss <n>|remove <n>|reset [<n>]|demo [off]|help]',
       immediate: true,
     })
     isHidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
@@ -329,7 +386,7 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     const id = e.tool_use_id
-    if (!id) return next(e)
+    if (!id || isDemo) return next(e)
     const input = argsOf(e as never)
     open.set(id, { tool: e.tool, input: stable(input), agentId: e.agentId, rules: null, ran: false, example: exampleOf(e.tool, input) })
     let result
@@ -422,18 +479,27 @@ export const register: Register = (on, options) => {
       await update($, tab, () => t)
       await update($, offset, () => 0)
     }
-    const toast = (text: Promise<string>) => text.then(t => $.ui.toast(t))
+    const toast = (text: Promise<string>) => text.then(t => (t ? $.ui.toast(t) : undefined))
     const count = (t: Tab) => (t === 'all' ? rows.length : rows.filter(r => r.status === t).length)
 
     return (
       <Box flexDirection="column" paddingX={1} gap={1}>
+        {isDemo && <Text color="warning">{w.demo.banner}</Text>}
         <Text dimColor>{w.hint(root || '.', thresholdNow())}</Text>
-        {rows.length === 0 && <Text dimColor>{w.empty}</Text>}
+        {rows.length === 0 && (
+          <Box flexDirection="column">
+            <Text dimColor>{w.empty}</Text>
+            <Box flexDirection="row" gap={1}>
+              <Text dimColor>{w.demo.invite}</Text>
+              <Button key="demo:see" {...PRIMARY} hover={hoverFill('demo:see')} label={w.demo.see} onPress={() => toast(startDemo($).then(r => r.text ?? ''))} />
+            </Box>
+          </Box>
+        )}
         {rows.length > 0 && (
           <Box flexDirection="column">
             <Box flexDirection="row" flexWrap="wrap" gap={2}>
               {TABS.map(t => (
-                <Button key={`tab:${t}`} plain dimColor={t !== picked} label={`${t === picked ? '▸ ' : ''}${w.tabs[t]} ${count(t)}`} onPress={() => pickTab(t)} />
+                <Button key={`tab:${t}`} plain dimColor={t !== picked} hover={hoverLink(`tab:${t}`)} label={`${t === picked ? '▸ ' : ''}${w.tabs[t]} ${count(t)}`} onPress={() => pickTab(t)} />
               ))}
             </Box>
             {Input && (
@@ -475,21 +541,21 @@ export const register: Register = (on, options) => {
                     )}
                     <Text wrap="truncate-end">{r.key}</Text>
                     {risk && <Text color="warning" wrap="truncate-end">{`(${w.risk(risk)})`}</Text>}
-                    {r.status === 'ready' && <Button key={`allow-${r.n}`} label={w.allow} {...PRIMARY} onPress={() => toast(allow($, r.key))} />}
+                    {r.status === 'ready' && <Button key={`allow-${r.n}`} label={w.allow} {...PRIMARY} hover={hoverFill(`allow-${r.n}`)} onPress={() => toast(allow($, r.key))} />}
                   </Box>
                   <Box flexDirection="row" gap={2}>
                     <Text dimColor wrap="truncate-end">{`   ${clip(w.example(r.entry.example, w.ago(now - r.entry.lastAt)), Math.max(20, width - 44))}`}</Text>
-                    {canDismiss && <Button key={`dismiss-${r.n}`} label={w.dismiss} {...SECONDARY} onPress={() => toast(dismiss($, r.key))} />}
-                    {hasCounts && <Button key={`zero-${r.n}`} label={w.resetCount} {...SECONDARY} onPress={() => toast(zeroOne($, r.key))} />}
-                    {r.entry.state === 'added' && <Button key={`remove-${r.n}`} label={w.remove} {...SECONDARY} onPress={() => toast(remove($, r.key))} />}
+                    {canDismiss && <Button key={`dismiss-${r.n}`} label={w.dismiss} {...SECONDARY} hover={hoverFill(`dismiss-${r.n}`)} onPress={() => toast(dismiss($, r.key))} />}
+                    {hasCounts && <Button key={`zero-${r.n}`} label={w.resetCount} {...SECONDARY} hover={hoverFill(`zero-${r.n}`)} onPress={() => toast(zeroOne($, r.key))} />}
+                    {r.entry.state === 'added' && <Button key={`remove-${r.n}`} label={w.remove} {...SECONDARY} hover={hoverFill(`remove-${r.n}`)} onPress={() => toast(remove($, r.key))} />}
                   </Box>
                 </Box>
               )
             })}
             {found.length > listRows && (
               <Box flexDirection="row" gap={2}>
-                <Button key="list:up" plain dimColor={view.start === 0} label={w.up} onPress={() => scrollList(-listRows + 1)} />
-                <Button key="list:down" plain dimColor={view.end === found.length} label={w.down} onPress={() => scrollList(listRows - 1)} />
+                <Button key="list:up" plain dimColor={view.start === 0} hover={hoverLink('list:up')} label={w.up} onPress={() => scrollList(-listRows + 1)} />
+                <Button key="list:down" plain dimColor={view.end === found.length} hover={hoverLink('list:down')} label={w.down} onPress={() => scrollList(listRows - 1)} />
                 <Text dimColor>{w.range(view.start + 1, view.end, found.length)}</Text>
               </Box>
             )}
@@ -497,7 +563,8 @@ export const register: Register = (on, options) => {
         )}
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {verbRow({ Box, Text, Button }, COMMAND, verbs(lang), v => pressVerb($, v))}
-          <Button key="close" role="dismiss" {...SECONDARY} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
+          {isDemo && <Button key="demo:exit" {...SECONDARY} hover={hoverFill('demo:exit')} label={w.demo.exit} onPress={() => toast(stopDemo($).then(r => r.text ?? ''))} />}
+          <Button key="close" role="dismiss" {...SECONDARY} hover={hoverFill('close')} label={w.close} onPress={() => (isDemo ? stopDemo($).then(() => $.ui.close({ id: PANE })) : $.ui.close({ id: PANE }))} />
         </Box>
       </Box>
     )

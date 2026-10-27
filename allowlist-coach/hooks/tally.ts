@@ -290,3 +290,26 @@ export const summary = (entries: Record<string, Entry>, configured: Configured, 
     .concat(rows.some(r => r.status === 'ready') ? ['', w.addHint] : [])
     .join('\n')
 }
+
+/**
+ * The sample rules of `/allowlist demo`, one for each status the pane draws, built from the
+ * threshold so "ready" and "counting" hold whatever the option says. Never stored.
+ */
+export const demoEntries = (now: number): Record<string, Entry> => {
+  const at = (minutes: number) => now - minutes * 60_000
+  const make = (rule: string, approved: number, denied: number, example: string, minutes: number, state: Entry['state'] = 'counting'): [string, Entry] => [
+    rule,
+    { rules: [rule], approved, denied, example, lastAt: at(minutes), state, ...(state === 'added' ? { file: SETTINGS_FILE } : {}) },
+  ]
+  return Object.fromEntries([
+    make('Bash(git status:*)', threshold, 0, 'git status --short', 2),
+    make('Bash(npm test:*)', threshold + 2, 0, 'npm test', 14),
+    make('Bash(./mvnw test:*)', Math.max(1, threshold - 2), 0, './mvnw test -q', 60),
+    make('Edit(src/**)', threshold - 1, 1, 'Edit src/App.java', 26 * 60),
+    make('Bash(rm:*)', threshold + 1, 0, 'rm -rf build', 3 * 24 * 60),
+    make('Bash(ls:*)', threshold, 0, 'ls -la', 5 * 24 * 60, 'added'),
+  ])
+}
+
+/** What the demo's pane counts as already in the settings: only the rule marked `added`. */
+export const DEMO_CONFIGURED: Configured = { allow: [], ask: [], deny: [] }

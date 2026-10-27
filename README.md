@@ -96,6 +96,7 @@ It counts on its own each time you answer a permission dialog. Commands:
 /allowlist remove 1    take rule 1 back out of allow, when the coach added it (asks first)
 /allowlist reset 2     set rule 2's count back to zero (asks first)
 /allowlist reset       clear this project's counts (asks first)
+/allowlist demo        the pane with sample rules; nothing is read or written (demo off exits)
 /allowlist hide        keep counting, with no toast or note in the dialog
 /allowlist show        bring them back
 /allowlist off | on    turn the mod off or on in every conversation

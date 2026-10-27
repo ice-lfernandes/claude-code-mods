@@ -99,6 +99,7 @@ Ele conta sozinho cada vez que você responde a um diálogo de permissão. Coman
 /allowlist remove 1    tira a regra 1 de allow, quando foi o coach que a adicionou (pergunta antes)
 /allowlist reset 2     zera a contagem da regra 2 (pergunta antes)
 /allowlist reset       apaga as contagens deste projeto (pergunta antes)
+/allowlist demo        o painel com regras de exemplo; nada é lido nem gravado (demo off sai)
 /allowlist hide        segue contando, sem toast nem nota no diálogo
 /allowlist show        traz os avisos de volta
 /allowlist off | on    desliga ou liga o mod em todas as conversas
