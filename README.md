@@ -24,7 +24,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 | --- | --- | --- |
 | [limits-meter](limits-meter/) | `/limits` | Plan limits, cache clock and context above the prompt: model and effort, 5-hour and weekly windows with reset times, a countdown of the prompt cache with an opt-in keep-warm that spends plan, context split by group (system, MCP, messages), tokens per turn, and a toast on a costly model switch near the limit |
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
-| [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish |
+| [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: a card per agent with its mascot, step and tokens, a band above the prompt, a toast when one stalls, and a summary naming the heaviest agent when they finish |
 | [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
 | [launchpad](launchpad/) | `/pad` | A menu of one-click actions under the header, above the prompt or in a pane: each button runs an installed command, skill or agent. `◆ pad` opens a control panel: model and effort in one click, this collection's mods, the shortcuts. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
 | [plain-view](plain-view/) | `/plain-view` | A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends |
@@ -117,10 +117,10 @@ Or for one session, from a clone: `claude --plugin-dir ./allowlist-coach`.
 
 ### agent-watch
 
-The status line and the toasts show on their own while subagents run. Commands:
+The band above the prompt, the status line and the toasts show on their own while subagents run. Commands:
 
 ```
-/watch              open the pane: agent tree with tokens, tool calls and what each one is doing
+/watch              open the pane: a card per agent with step, latest actions and tokens
 /watch demo         add three fake agents, one of them stalled, to see the pane
 /watch clear        drop finished and demo agents
 /watch clear done   drop finished agents only
@@ -131,9 +131,11 @@ The status line and the toasts show on their own while subagents run. Commands:
 /watch help         list the commands
 ```
 
-Finished agents fold into one line in the pane; press it to open them. A bar shows each
-agent's share of the tokens, a name opens its last tool calls, and a stalled agent has an
-`investigate` button that asks about it in the prompt.
+Each agent has a card with its mascot and color, its step, the two calls before it, a bar of its
+tokens against the heaviest agent's, and an estimate of its share of the 5-hour window and of the
+week. The cards sit in two groups, Running and Finished; a bar across the pane folds its group. From
+five agents (the `compactAt` option) each is one boxed line, and its name opens the card. A stalled agent has
+an `investigate` button that asks about it in the prompt.
 
 ![agent-watch: the /watch pane, the status line and its toasts](screenshots/agent-watch.svg)
 
@@ -219,7 +221,8 @@ row per task of the agent's list with its own bar (`Done`, `~40%` for the curren
 When the turn ends the card turns green with the time it took and the files changed and read,
 or grey on Esc; the next request starts a fresh one, and `[-]` folds it.
 The agents the main turn hands work to show in one row of the card (`◇ 1 agent running ·
-code-review · 3m 12s`, with agent-watch's `/watch` when it is installed), and with no task list
+code-review · 3m 12s`, with agent-watch's `/watch` when it is installed, and agent-watch's band
+message under it: `└ Agents 0/3 ░░░░░░░░░░ · ▲ Pre-outline · Writing pre-outline.md`), and with no task list
 the card waits for them (`Waiting for 1 agent`). A turn with no list that called tools or agents
 ends in a small green card (`✓ Done`, the time, the files and the agents); a plain conversation
 leaves none.

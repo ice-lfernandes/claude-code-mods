@@ -9,21 +9,19 @@ type Words = {
   description: string
   pane: string
   hint: string
-  counts: (running: number, finished: number, tokens: string) => string
-  stalled: (n: number) => string
   lead: string
   leadLine: (tokens: string, output: string) => string
   empty: string
   emptyNext: string
   otherLoops: (tokens: string) => string
   lastRun: string
-  tools: (n: number, failed: number) => string
   thinking: string
   starting: string
   /** An agent's status once it ended, or while it waits: the engine's word, in this language. */
   statuses: Record<string, string>
-  /** The collapsed finished agents: a button that opens or closes them. */
-  finished: (n: number, isOpen: boolean) => string
+  /** The pane's group headers. */
+  groupRunning: (n: number) => string
+  groupFinished: (n: number) => string
   clearDone: string
   clearDemo: string
   demoBadge: string
@@ -39,12 +37,21 @@ type Words = {
   run: (count: number, tokens: string, span: string) => string
   heaviest: (label: string, tokens: string, share: number) => string
   windowUsed: (points: number) => string
-  /** The share bar's legend: the rest of the agents together. */
-  others: string
-  shareTitle: string
-  recentTitle: string
-  noRecent: string
   failedMark: string
+  /** The card: its step line, the end of a finished agent, and the child's parent. */
+  step: (n: number) => string
+  stepsDone: (n: number) => string
+  inParent: (name: string) => string
+  /** What the card says of the plan's windows, from the estimates `~1%` and `~0,1%`. */
+  windowShare: (five: string, week: string) => string
+  /** The summary row's labels. */
+  sum: { agents: string; tokens: string; time: string; five: string; week: string; stalled: string }
+  /** A compact row opened, and the button that closes it. */
+  closeCard: (name: string) => string
+  /** The mascot's description, for a reader that cannot see it. */
+  mascot: (name: string) => string
+  /** The band above the prompt. */
+  band: { agents: string; open: string; hide: string; now: (name: string, doing: string) => string; stalled: (name: string, span: string) => string; done: (n: number, tokens: string, span: string) => string }
   /** The button on a stalled agent, and the request it puts in the prompt. */
   investigate: string
   askInvestigate: (name: string, doing: string, span: string) => string
@@ -70,20 +77,18 @@ export const WORDS: Record<Lang, Words> = {
   'pt-BR': {
     description: 'Subagentes: /watch abre o painel; on, off, hide, show, clear [done|demo], demo, help',
     pane: 'Agentes',
-    hint: 'Subagentes desta sessão: tokens de cada requisição ao modelo, e um toast quando um deles trava.',
-    counts: (r, f, t) => `${r} rodando · ${plural(f, 'concluído', 'concluídos')} · ${t} tokens`,
-    stalled: n => plural(n, 'travado', 'travados'),
+    hint: 'Subagentes desta sessão: passo, últimas ações e tokens de cada um, e um toast quando um deles trava. Os percentuais das janelas são estimativas.',
     lead: 'principal',
     leadLine: (t, out) => `${t} tokens · saída ${out}`,
     empty: 'Nenhum subagente nesta sessão ainda.',
     emptyNext: '/watch demo mostra como fica.',
     otherLoops: t => `outros loops (compactação, memória)  ${t}`,
     lastRun: 'Última rodada',
-    tools: (n, failed) => `${plural(n, 'ferramenta', 'ferramentas')}${failed ? ` (${failed} com erro)` : ''}`,
     thinking: 'pensando',
     starting: 'iniciando',
     statuses: { completed: 'concluído', failed: 'falhou', killed: 'interrompido', idle: 'ocioso', waiting: 'aguardando', pending: 'pendente', running: 'rodando' },
-    finished: (n, isOpen) => `${plural(n, 'concluído', 'concluídos')} ${isOpen ? '▾' : '▸'}`,
+    groupRunning: n => `Rodando · ${n}`,
+    groupFinished: n => `${n === 1 ? 'Concluído' : 'Concluídos'} · ${n}`,
     clearDone: 'limpar concluídos',
     clearDemo: 'limpar demo',
     demoBadge: 'demo',
@@ -98,11 +103,22 @@ export const WORDS: Record<Lang, Words> = {
     run: (count, t, span) => `${plural(count, 'agente', 'agentes')}, ${t} tokens em ${span}`,
     heaviest: (label, t, share) => `. Mais pesado: ${label} ${t} (${share}%)`,
     windowUsed: p => `. Usou ~${p}% da janela de 5h`,
-    others: 'outros',
-    shareTitle: 'Tokens por agente',
-    recentTitle: 'últimas ferramentas',
-    noRecent: 'nenhuma chamada de ferramenta ainda',
     failedMark: 'erro',
+    step: n => `Passo ${n}`,
+    stepsDone: n => `Concluído · ${n} ${n === 1 ? 'passo' : 'passos'}`,
+    inParent: name => `em ${name}`,
+    windowShare: (five, week) => `${five} da janela 5h · ${week} da semana`,
+    sum: { agents: 'agentes', tokens: 'tokens', time: 'tempo', five: 'janela 5h', week: 'semana', stalled: 'travado' },
+    closeCard: name => `▾ fechar ${name}`,
+    mascot: name => `Mascote do agente ${name}`,
+    band: {
+      agents: 'Agentes',
+      open: 'abrir',
+      hide: 'ocultar',
+      now: (name, doing) => `${name} · ${doing}`,
+      stalled: (name, span) => `${name} parado há ${span}`,
+      done: (n, t, span) => `${plural(n, 'agente pronto', 'agentes prontos')} · ${t} · ${span}`,
+    },
     investigate: 'investigar',
     askInvestigate: (name, doing, span) => `O agente "${name}" parece travado: ${doing}, há ${span}. Verifique o que aconteceu e diga o que fazer.`,
     sortStart: 'por início',
@@ -118,7 +134,7 @@ export const WORDS: Record<Lang, Words> = {
     lastRunAnswer: run => `Última rodada: ${run}.`,
     demoLabels: ['Mapear as rotas da API', 'Corrigir o teste instável', 'Conferir as fontes'],
     help: [
-      '/watch              abre o painel: árvore de agentes com tokens, ferramentas e o que cada um faz',
+      '/watch              abre o painel: um cartão por agente com passo, últimas ações e tokens',
       '/watch demo         adiciona três agentes falsos, um deles travado',
       '/watch clear        remove os agentes concluídos e os de demo',
       '/watch clear done   remove só os concluídos',
@@ -132,20 +148,18 @@ export const WORDS: Record<Lang, Words> = {
   en: {
     description: 'Subagents: /watch opens the pane; on, off, hide, show, clear [done|demo], demo, help',
     pane: 'Agents',
-    hint: "This session's subagents: tokens from each model request, and a toast when one stalls.",
-    counts: (r, f, t) => `${r} running · ${f} finished · ${t} tokens`,
-    stalled: n => `${n} stalled`,
+    hint: "This session's subagents: step, latest actions and tokens of each, and a toast when one stalls. The window percentages are estimates.",
     lead: 'lead',
     leadLine: (t, out) => `${t} tokens · out ${out}`,
     empty: 'No subagents yet this session.',
     emptyNext: '/watch demo shows what this looks like.',
     otherLoops: t => `other loops (compaction, memory)  ${t}`,
     lastRun: 'Last run',
-    tools: (n, failed) => `${n} tool${n === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`,
     thinking: 'thinking',
     starting: 'starting',
     statuses: { completed: 'done' },
-    finished: (n, isOpen) => `${n} finished ${isOpen ? '▾' : '▸'}`,
+    groupRunning: n => `Running · ${n}`,
+    groupFinished: n => `Finished · ${n}`,
     clearDone: 'clear finished',
     clearDemo: 'clear demo',
     demoBadge: 'demo',
@@ -160,11 +174,22 @@ export const WORDS: Record<Lang, Words> = {
     run: (count, t, span) => `${count} agent${count === 1 ? '' : 's'}, ${t} tokens in ${span}`,
     heaviest: (label, t, share) => `. Heaviest: ${label} ${t} (${share}%)`,
     windowUsed: p => `. Used ~${p}% of the 5h window`,
-    others: 'others',
-    shareTitle: 'Tokens by agent',
-    recentTitle: 'recent tools',
-    noRecent: 'no tool calls yet',
     failedMark: 'failed',
+    step: n => `Step ${n}`,
+    stepsDone: n => `Done · ${n} ${n === 1 ? 'step' : 'steps'}`,
+    inParent: name => `in ${name}`,
+    windowShare: (five, week) => `${five} of the 5h window · ${week} of the week`,
+    sum: { agents: 'agents', tokens: 'tokens', time: 'time', five: '5h window', week: 'week', stalled: 'stalled' },
+    closeCard: name => `▾ close ${name}`,
+    mascot: name => `Mascot of the agent ${name}`,
+    band: {
+      agents: 'Agents',
+      open: 'open',
+      hide: 'hide',
+      now: (name, doing) => `${name} · ${doing}`,
+      stalled: (name, span) => `${name} quiet for ${span}`,
+      done: (n, t, span) => `${plural(n, 'agent done', 'agents done')} · ${t} · ${span}`,
+    },
     investigate: 'investigate',
     askInvestigate: (name, doing, span) => `The agent "${name}" looks stalled: ${doing}, for ${span}. Check what happened and tell me what to do.`,
     sortStart: 'by start',
@@ -180,7 +205,7 @@ export const WORDS: Record<Lang, Words> = {
     lastRunAnswer: run => `Last run: ${run}.`,
     demoLabels: ['Map the API routes', 'Fix the flaky test', 'Check sources'],
     help: [
-      '/watch              open the pane: agent tree with tokens, tool calls and what each one is doing',
+      '/watch              open the pane: a card per agent with step, latest actions and tokens',
       '/watch demo         add three fake agents, one of them stalled',
       '/watch clear        drop finished and demo agents',
       '/watch clear done   drop finished agents only',

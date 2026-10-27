@@ -1,7 +1,7 @@
 {
   "name": "agent-watch",
-  "version": "0.6.0",
-  "description": "Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish",
+  "version": "0.7.2",
+  "description": "Subagents at a glance: a card per agent with its mascot, step and tokens, a band above the prompt, a toast when one stalls, and a summary naming the heaviest agent when they finish",
   "types": "./types/index.d.ts",
   "userConfig": {
     "enabled": {
@@ -20,6 +20,12 @@
       "type": "number",
       "title": "Stall after (minutes)",
       "description": "A running agent with no model request or tool call for this long is flagged as stalled",
+      "default": 5
+    },
+    "compactAt": {
+      "type": "number",
+      "title": "One line an agent from (agents)",
+      "description": "With this many agents or more the pane draws one line each; pressing a name opens its card",
       "default": 5
     },
     "language": {
