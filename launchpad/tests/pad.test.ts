@@ -341,7 +341,10 @@ test('P3: a row\'s state: off from the enabled option, hidden from the eye, unkn
   expect(modState(lm, rows(true), [])).toBe('on')
   expect(modState(lm, rows(true), ['limits-meter'])).toBe('hidden')
   expect(modState(lm, rows(false), ['limits-meter'])).toBe('off') // off wins over hidden
-  expect(modState(lm, [], [])).toBe('unknown')
+  // no `enabled` row (a surface that does not list it): the launchpad's own memory, on by default
+  expect(modState(lm, [], [])).toBe('on')
+  expect(modState(lm, [], [], ['limits-meter'])).toBe('off')
+  expect(modState(lm, [], ['limits-meter'])).toBe('hidden')
   expect(modState({ plugin: 'x', command: 'x', toggles: false }, rows(true), [])).toBe('unknown')
 })
 

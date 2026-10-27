@@ -1006,9 +1006,10 @@ for (const surface of ['terminal', 'desktop'] as const) {
       expect(variantOf(tree, 'toggle:limits-meter')).toBe('secondary')
       expect(variantOf(tree, 'eye:limits-meter')).toBe('secondary')
     } else {
-      // the green block with a knob: a Button whose child is a Text on the success color; off is inactive
-      expect(drawn).toMatch(/"key":"toggle:limits-meter".*?"backgroundColor":"success"/)
-      expect(drawn).toMatch(/"key":"toggle:agent-watch".*?"backgroundColor":"inactive"/)
+      // a knob Button with the state word beside it, colored (success on, inactive off): the desktop
+      // flattens a Button's children to its label, so a color inside it never showed
+      expect(drawn).toMatch(/"key":"box:toggle:limits-meter"[^]*?"color":"success"/)
+      expect(drawn).toMatch(/"key":"box:toggle:agent-watch"[^]*?"color":"inactive"/)
     }
     await ui.unmount()
   })
@@ -1053,13 +1054,13 @@ test('switchboard: the eye hides and shows a mod with /<mod> hide and show, and 
   await ui.unmount()
 })
 
-test('switchboard: a mod with no enabled option (an older one) shows no toggle and no eye, only its button', async ($, on) => {
+test('switchboard: a mod with no enabled row in /config still gets its eye and toggle, on by default', async ($, on) => {
   world(on, files, undefined, SB_COMMANDS, undefined, { rows: [] })
   await start($)
   const drawn = JSON.stringify(await (await panel($)).drawn())
   expect(drawn).toContain('"key":"mod:limits-meter"')
-  expect(drawn).not.toContain('"key":"toggle:limits-meter"')
-  expect(drawn).not.toContain('"key":"eye:limits-meter"')
+  expect(drawn).toContain('"key":"toggle:limits-meter"')
+  expect(drawn).toContain('"key":"eye:limits-meter"')
 })
 
 test('tabs: Mods and Shortcuts swap the body, and model and effort stay on top', async ($, on) => {
@@ -1171,18 +1172,15 @@ test('state color: on is green and off is dim in the label, the hidden eye is am
   await ui.unmount()
 })
 
-test('desktop toggle: a green block with a knob, drawn from the children only (a label beside them would win)', async ($, on) => {
+test('desktop toggle: a knob Button with the state word beside it in the state color', async ($, on) => {
   sbWorld(on)
   await start($)
   const ui = await panel($, 'desktop')
-  const tree = await ui.drawn()
-  const on1 = button(tree, 'toggle:limits-meter')
-  const off1 = button(tree, 'toggle:agent-watch')
-  expect(nodes(on1, 'Text')[0]?.props).toEqual({ backgroundColor: 'success', color: 'inverseText' })
-  expect(nodes(off1, 'Text')[0]?.props).toEqual({ backgroundColor: 'inactive', color: 'inverseText' })
-  // the engine names the control by its children's text: the knob, not `● on`, so no explicit label was passed
-  expect(on1?.props?.label).toBe('   ● ')
-  expect(off1?.props?.label).toBe(' ●   ')
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toMatch(/"key":"box:toggle:limits-meter"[^]*?"color":"success"/)
+  expect(drawn).toMatch(/"key":"box:toggle:agent-watch"[^]*?"color":"inactive"/)
+  expect(button(await ui.drawn(), 'toggle:limits-meter')?.props?.label).toBe('━━ ●')
+  expect(button(await ui.drawn(), 'toggle:agent-watch')?.props?.label).toBe('● ━━')
   await ui.unmount()
 })
 
@@ -1213,6 +1211,35 @@ test('a toggle press redraws the panel from the mod\'s new option', async ($, on
   expect(textColor(tree, 'toggle:limits-meter')).toBe('inactive') // now off
   expect(button(tree, 'mod:limits-meter')).toBeUndefined() // off: its name is text
   expect(button(tree, 'eye:limits-meter')).toBeUndefined() // and it has no eye
+  await ui.unmount()
+})
+
+test('desktop toggle: on is the primary button, off the secondary one', async ($, on) => {
+  sbWorld(on)
+  await start($)
+  const tree = await (await panel($, 'desktop')).drawn()
+  expect(variantOf(tree, 'toggle:limits-meter')).toBe('primary')
+  expect(variantOf(tree, 'toggle:agent-watch')).toBe('secondary') // sbWorld has it off
+  expect(variantOf(tree, 'toggle:quiet')).toBe('secondary') // quiet is off
+})
+
+test('a mod with no enabled row: the toggle shows on, a press turns it off and a second turns it on', async ($, on) => {
+  const w = world(on, files, undefined, SB_COMMANDS, undefined, { rows: [] })
+  await start($)
+  const ui = await panel($, 'desktop')
+  const word = async (mod: string) => {
+    const drawn = JSON.stringify(await ui.drawn())
+    return new RegExp(`"key":"box:toggle:${mod}"[^]*?"color":"(success|inactive)"`).exec(drawn)?.[1]
+  }
+  expect(await word('limits-meter')).toBe('success')
+  await ui.press({ key: 'toggle:limits-meter' })
+  expect(w.commands).toEqual(['limits off'])
+  expect(await word('limits-meter')).toBe('inactive')
+  expect(await word('agent-watch')).toBe('success') // only the one pressed
+  expect(button(await ui.drawn(), 'eye:limits-meter')).toBeUndefined() // off: no eye
+  await ui.press({ key: 'toggle:limits-meter' })
+  expect(w.commands).toEqual(['limits off', 'limits on'])
+  expect(await word('limits-meter')).toBe('success')
   await ui.unmount()
 })
 

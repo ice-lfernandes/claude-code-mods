@@ -100,6 +100,7 @@ const KEY_OFF = 'off'
 const KEY_PLACE = 'placement'
 // The mods the eye hid from this panel: their names. Each mod keeps its own hide flag.
 const KEY_EYES = 'eyes'
+const KEY_OFFS = 'offs'
 
 const menu = atom({ plugin: 'launchpad', key: 'menu' } as const, [] as Pad[])
 const project = atom({ plugin: 'launchpad', key: 'project' } as const, [] as Pad[])
@@ -112,6 +113,8 @@ const model = atom({ plugin: 'launchpad', key: 'model' } as const, '')
 const effort = atom({ plugin: 'launchpad', key: 'effort' } as const, null as Effort | null)
 const tab = atom({ plugin: 'launchpad', key: 'tab' } as const, 'mods' as 'mods' | 'shortcuts')
 const eyes = atom({ plugin: 'launchpad', key: 'eyes' } as const, [] as string[])
+/** The mods the launchpad switched off: the switch's state where /config lists no `enabled` row. */
+const offs = atom({ plugin: 'launchpad', key: 'offs' } as const, [] as string[])
 const rev = atom({ plugin: 'launchpad', key: 'rev' } as const, 0)
 
 /**
@@ -182,6 +185,8 @@ async function load($: EngineInterface, fresh = false) {
   await update($, project, () => parseProject(typeof raw === 'string' ? raw : null))
   const hid = await $.store.get(KEY_EYES).catch(() => undefined)
   await update($, eyes, () => (Array.isArray(hid) ? hid.filter((x): x is string => typeof x === 'string') : []))
+  const sw = await $.store.get(KEY_OFFS).catch(() => undefined)
+  await update($, offs, () => (Array.isArray(sw) ? sw.filter((x): x is string => typeof x === 'string') : []))
   if (fresh || (await read($, catalog)).length === 0) {
     const list = await readCatalog($)
     await update($, catalog, () => list)
@@ -516,21 +521,22 @@ function flat(
 }
 
 /**
- * A mod's toggle. The terminal draws `[ ● on ]`; a desktop a green block with a knob, the closest a
- * pressable gets to the switchboard's pill: `Svg` draws a rounded one but takes no press, and a Button's
- * children are text and `Text` only.
+ * A mod's toggle. The terminal draws `[ ● on ]`; a desktop a native button with a knob and, beside it, the
+ * state in a `Text` colored by it. A Button's children are flattened to its label there, so a color inside
+ * the Button is lost (the knob came out white on dark, black on light), and a filled Box around it did not
+ * draw: the state word next to the button is what carries green (`success`) on, `inactive` off.
  */
 function toggle($: EngineInterface, e: { surface: string }, key: string, isOn: boolean, onPress: () => unknown) {
   const sb = WORDS[lang].switchboard
   if (e.surface === 'terminal') return flat($, e, key, isOn ? sb.on : sb.off, onPress, { color: isOn ? 'success' : 'inactive' })
-  const { Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
-  // No `label`: beside the children it wins on a desktop and the block is not drawn.
+  const { Box, Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
   return (
-    <Button key={key} onPress={onPress}>
-      <Text backgroundColor={isOn ? 'success' : 'inactive'} color="inverseText">
-        {isOn ? '   ● ' : ' ●   '}
+    <Box key={`box:${key}`} flexDirection="row" alignItems="center" gap={1}>
+      <Button key={key} {...(isOn ? { variant: 'primary' } : SECONDARY)} label={isOn ? '━━ ●' : '● ━━'} onPress={onPress} />
+      <Text color={isOn ? 'success' : 'inactive'} bold>
+        {isOn ? sb.on.replace('● ', '') : sb.off.replace('○ ', '')}
       </Text>
-    </Button>
+    </Box>
   )
 }
 
@@ -546,6 +552,10 @@ async function pressEye($: EngineInterface, m: ModInfo, wasHidden: boolean) {
 /** The toggle: `/x on` or `/x off` (the mod's `enabled` option), then the panel redraws from the new rows. */
 async function pressToggle($: EngineInterface, m: ModInfo, wasOn: boolean) {
   await runMod($, m, wasOn ? 'off' : 'on')
+  const list = (await read($, offs)).filter(x => x !== m.plugin)
+  const next = wasOn ? [...list, m.plugin] : list
+  await $.store.set(KEY_OFFS, next)
+  await update($, offs, () => next)
   await update($, rev, n => n + 1)
 }
 
@@ -922,9 +932,10 @@ export const register: Register = (on, options) => {
     const sb = w.switchboard
     const tabNow = await read($, tab)
     const hidden = await read($, eyes)
+    const switchedOff = await read($, offs)
     await read($, rev)
     const modRow = (m: ModInfo) => {
-      const state = modState(m, rows, hidden)
+      const state = modState(m, rows, hidden, switchedOff)
       const isOff = state === 'off'
       const note = isOff ? sb.offNote(m.command) : state === 'hidden' ? sb.hiddenNote(m.command) : sb.opens(m.command)
       return (
