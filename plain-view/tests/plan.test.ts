@@ -887,3 +887,11 @@ test('a sleeping checklist wakes only on a whole list, not on a lone line', () =
   const asleep = listed([], 3)
   expect(wake([], asleep, '- [x] Ler o código')).toEqual({ items: [], dormant: asleep })
 })
+
+test('a tick with a note after the step still ticks it; a longer step name does not', () => {
+  const plan = applyAnswer([], "- [ ] Clone the fork's PR branch and apply the change\n- [ ] Run tests, commit, push")
+  const ticked = applyAnswer(plan, "- [x] Clone the fork's PR branch and apply the change (diff is only the new fix; 195 tests pass)")
+  expect(ticked.map(i => i.status)).toEqual(['completed', 'pending'])
+  expect(applyAnswer(plan, '- [x] Run tests, commit, push: done').map(i => i.status)).toEqual(['pending', 'completed'])
+  expect(applyAnswer(plan, '- [x] Run tests, commit, push to main and tag').map(i => i.status)).toEqual(['pending', 'pending'])
+})

@@ -260,8 +260,15 @@ export const checklistOf = (text: string, min = 2): Item[] | null => {
   return items.length >= min ? items : null
 }
 
-/** Whether two task subjects name the same task: equal once markdown, spaces and case are gone. */
-const sameTask = (a: string, b: string) => normalize(a).toLowerCase() === normalize(b).toLowerCase()
+/**
+ * Whether a line names a task: equal once markdown, spaces and case are gone, or the task and then
+ * a note after punctuation (`- [x] Run the tests (195 pass)`), as the agent often ticks a step.
+ */
+const sameTask = (task: string, line: string) => {
+  const t = normalize(task).toLowerCase()
+  const l = normalize(line).toLowerCase()
+  return l === t || (l.startsWith(t) && /^\s*[(\[:;,.·—–-]/.test(l.slice(t.length)))
+}
 
 /**
  * The list after an answer of the agent, unless a task tool keeps the list. A checklist shorter
@@ -278,7 +285,7 @@ export const applyAnswer = (items: Item[], answer: string): Item[] => {
   if (list.length === 1 && !isPart) return items
   if (!isPart) return keepCalls(items, list)
   return items.map(o => {
-    const n = list.find(x => sameTask(x.subject, o.subject))
+    const n = list.find(x => sameTask(o.subject, x.subject))
     return n ? { ...o, status: n.status } : o
   })
 }
