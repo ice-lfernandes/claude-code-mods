@@ -13,13 +13,25 @@ The serious cousin of boss-fight: same idea, no boss.
 - **Status line:** `✗ tests 41/43 ▃▅█▅▂`. That is the last run, passing over total (skipped
   left out), and a sparkline of failures over the runner's last 8 runs. `▁` is a green run;
   `▂` to `█` scale to the most failures in the line.
-- **Toast when the suite turns green** after red runs, once: `Tests green: 43/43 (vitest)
-  after 4 red runs in 12m 05s.` With the `regressionToast` option, also a toast when a runner
+- **Toast when the suite turns green** after red runs, once: `✓ Tests green: 43/43
+  (vitest) after 4 red runs in 12m 05s.` With the `regressionToast` option, also a toast when a runner
   turns red right after a green run.
+- **Toast when a test turns flaky:** `! Flaky test: totals > rounds half up (3 runs)`. It failed, passed
+  and failed again in the command's last 10 runs. One toast per run, each test named once per
+  session (`+N` when several turn at once). It takes the place of the red toast on that run. The
+  `flakyToast` option turns it off. Toasts open with a glyph for the state, since a toast cannot be
+  colored: `✓` green, `!` flaky, `✗` red.
 - **`/test-hud`** opens the pane: the last run with its failing tests by name, the tests
   fixed since the run before, sparklines of failures and duration, and the last 10 runs. The
   command runs mid-turn. The name is not `/tests`, which a user's own skill or command often
   takes.
+  - Failing tests are grouped by file: `▾ src/auth.test.ts  2 ✗  show · run`. The first group is
+    open; press a header to open or close one, which shows `new` or `flaky?` when closed. `show`
+    puts the file in the prompt (`@src/auth.test.ts`) and appears only when the group is a real
+    path: vitest and pytest. Other runners group by what the name carries (Maven and Gradle by
+    class, jest and bun by suite, cargo by module); the mod never searches the disk for a file.
+    go and rspec names carry no group, so that list stays flat. `run` asks for only that group's
+    tests, with the same runner as the command that ran.
   - A test that was not failing in the run before is marked `new`. A test that failed, then
     passed, then failed again in the command's last 10 runs is marked `flaky?`.
   - Press a run in the list to see it in the pane; `↩ latest run` goes back.
@@ -42,6 +54,7 @@ In `/config`:
 | `enabled` | on | Off keeps only the mod's command, which turns it back on. `/test-hud on` and `off` change it too |
 | `language` | `auto` | `pt-BR` or `en` for the pane, the status line and the toasts. `auto` follows `LANG`: Portuguese for `pt_*`, English otherwise |
 | `regressionToast` | off | A toast when a runner turns red right after a green run |
+| `flakyToast` | on | One toast when a run leaves a test flaky; each test is named once per session |
 | `keepHistory` | off | Keep the last runs per project, so the next session in the same project starts with them. Demo runs are not kept |
 
 Counts come from the runner's own summary line. Failing test names come from the runner's

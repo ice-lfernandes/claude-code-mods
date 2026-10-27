@@ -24,12 +24,18 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { Parsed, Run } from '../types'
-import { commandLine, durationSpark, fixed, flaky, fresh, greenText, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, statusText, trail, wholeCommand } from './hud'
+import { commandLine, durationSpark, fixed, flaky, flakyToast, fresh, greenText, groupsOf, kindOf, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, statusText, trail, wholeCommand } from './hud'
 import type { Lang, Verb } from './ui'
 import { PRIMARY, SECONDARY, clip, elapsed, fillArgs, langOf, figLead, linesOf, verbRow } from './ui'
 import { switchOf, switchWords } from './switch'
 import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
+
+/** A plain link under the pointer: underlined and nothing else (project standard). */
+const hoverLink = (key: string) => ({ scope: `hover:${key}`, underline: true, inverse: false }) as const
+
+/** A bracketed button under the pointer: the accent behind the label, the label inverse (project standard). */
+const hoverFill = (key: string) => ({ scope: `hover:${key}`, backgroundColor: 'claude', color: 'inverseText' }) as const
 
 const PANE = 'test-hud'
 const PANE_SPARK = 24
@@ -39,12 +45,18 @@ const KEY_HIDDEN = 'hidden'
 const runs = atom({ plugin: 'test-hud', key: 'runs' } as const, [] as Run[])
 const selected = atom({ plugin: 'test-hud', key: 'selected' } as const, null as number | null)
 const tab = atom({ plugin: 'test-hud', key: 'tab' } as const, null as string | null)
+/** The groups the person opened or closed in the pane; null until they press one, when the first group shows open. */
+const opened = atom({ plugin: 'test-hud', key: 'opened' } as const, null as string[] | null)
 
 let shownStatus: string | undefined
 // Set by register from the options, and by session.start from the system's LANG.
 let lang: Lang = 'en'
 let regressionToast = false
 let keepHistory = false
+/** The `flakyToast` option: one toast when a run leaves tests flaky. */
+let flakyOn = true
+/** Tests the flaky toast already named this session, so each is announced once. */
+const told = new Set<string>()
 /** The `enabled` option; off, only the command answers. */
 let isOn = true
 /** On but silent: no status line and no toast. The pane still opens. Kept in the store. */
@@ -116,8 +128,15 @@ const add = async ($: EngineInterface, parsed: Parsed, meta: Omit<Run, keyof Par
   if (!run.isDemo) await save($, list)
   const green = greenText(list, run, lang)
   if (green && !isHidden && !isQuiet) $.ui.toast(`${green} /${COMMAND}`, { timeoutMs: 8000 })
-  const red = regressionToast ? redText(list, run, lang) : null
-  if (red && !isHidden && !isQuiet) $.ui.toast(`${red} /${COMMAND}`, { timeoutMs: 8000 })
+  const quiet = isHidden || isQuiet
+  // Flaky says more than red: it failed here before, so it takes the red toast's place.
+  const flakes = flakyOn && !quiet ? flakyToast(list, run, told, lang) : null
+  if (flakes) {
+    for (const n of flakes.names) told.add(n)
+    $.ui.toast(`${flakes.text} /${COMMAND}`, { timeoutMs: 8000 })
+  }
+  const red = regressionToast && !flakes ? redText(list, run, lang) : null
+  if (red && !quiet) $.ui.toast(`${red} /${COMMAND}`, { timeoutMs: 8000 })
 }
 
 const DEMO_NAMES = [
@@ -183,6 +202,8 @@ const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: st
       await update($, runs, () => [])
       await update($, selected, () => null)
       await update($, tab, () => null)
+      await update($, opened, () => null)
+      told.clear()
       show($, [])
       await save($, [])
       return { text: w.cleared }
@@ -228,6 +249,7 @@ export const register: Register = (on, options) => {
   lang = langOf(options.language)
   regressionToast = options.regressionToast === true
   keepHistory = options.keepHistory === true
+  flakyOn = options.flakyToast !== false
   isOn = options.enabled !== false
   isQuiet = options.quiet === true
 
@@ -288,7 +310,7 @@ export const register: Register = (on, options) => {
     const footer = (
       <Box flexDirection="row" flexWrap="wrap" gap={2}>
         {verbRow({ Box, Text, Button }, COMMAND, VERBS, v => pressVerb($, v))}
-        <Button key="close" role="dismiss" {...SECONDARY} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
+        <Button key="close" role="dismiss" {...SECONDARY} hover={hoverFill('close')} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
       </Box>
     )
 
@@ -329,6 +351,22 @@ export const register: Register = (on, options) => {
     const gone = fixed(list, r)
     const recent = mine.slice(-PANE_RUNS).reverse()
     const tone = isRed ? 'error' : 'success'
+    const grouped = isRed ? groupsOf(r.runner, r.failures) : null
+    // Until the person presses a group, the first one shows open.
+    const openKeys = (await read($, opened)) ?? (grouped ? [grouped.groups[0]!.key] : [])
+    const fold = (key: string) => update($, opened, cur => {
+      const now = cur ?? openKeys
+      return now.includes(key) ? now.filter(k => k !== key) : [...now, key]
+    })
+    const failRow = (f: string, label: string, lead: string, room: number) => (
+      <Box key={`fail:${f}`} flexDirection="row">
+        <Text color="error">{lead}</Text>
+        <Button key={`fix:${f}`} plain hover={hoverLink(`fix:${f}`)} label={clip(label, width - room)} onPress={() => fill($, w.askFix(f, r.fullCommand))} />
+        {isNew.has(f) && !isFlaky.has(f) && <Text color="warning">{`  ${w.isNew}`}</Text>}
+        {/* flaky says more than new: it failed here before. */}
+        {isFlaky.has(f) && <Text color="warning">{`  ${w.flaky}`}</Text>}
+      </Box>
+    )
     const pickTab = async (name: string) => {
       await update($, tab, () => name)
       await update($, selected, () => null)
@@ -341,7 +379,7 @@ export const register: Register = (on, options) => {
         {runners.length > 1 && (
           <Box flexDirection="row" flexWrap="wrap" gap={2}>
             {runners.map(name => (
-              <Button key={`tab:${name}`} plain dimColor={name !== runner} label={name === runner ? `▸ ${name}` : name} onPress={() => pickTab(name)} />
+              <Button key={`tab:${name}`} plain dimColor={name !== runner} hover={hoverLink(`tab:${name}`)} label={name === runner ? `▸ ${name}` : name} onPress={() => pickTab(name)} />
             ))}
           </Box>
         )}
@@ -358,12 +396,12 @@ export const register: Register = (on, options) => {
           </Text>
           <Box flexDirection="row" flexWrap="wrap" gap={2}>
             <Text dimColor>{clip(`${r.runner} · #${r.n} · ${elapsed(r.durationMs)}${r.agentId ? ` · ${w.subagent}` : ''} · ${r.command}`, width - w.runAgain.length - 6)}</Text>
-            <Button key="rerun" {...(isRed ? PRIMARY : SECONDARY)} label={w.runAgain} onPress={() => fill($, w.rerun(r.fullCommand))} />
+            <Button key="rerun" {...(isRed ? PRIMARY : SECONDARY)} hover={hoverFill('rerun')} label={w.runAgain} onPress={() => fill($, w.rerun(r.fullCommand))} />
           </Box>
           {isEarlier && (
             <Box flexDirection="row" gap={2}>
               <Text color="warning">{w.earlier(r.n)}</Text>
-              <Button key="latest" plain label={w.latest} onPress={() => update($, selected, () => null)} />
+              <Button key="latest" plain hover={hoverLink('latest')} label={w.latest} onPress={() => update($, selected, () => null)} />
             </Box>
           )}
         </Box>
@@ -383,17 +421,28 @@ export const register: Register = (on, options) => {
 
         {isRed && (
           <Box flexDirection="column">
-            <Text bold>{w.failing(r.failures.length, r.failed)}</Text>
+            <Text bold>{grouped ? w.failingIn(r.failures.length, r.failed, grouped.groups.length, kindOf(r.runner, grouped.groups)) : w.failing(r.failures.length, r.failed)}</Text>
             {r.failures.length === 0 && <Text dimColor>{`  ${w.noNames}`}</Text>}
-            {r.failures.map(f => (
-              <Box key={`fail:${f}`} flexDirection="row">
-                <Text color="error">{'  ✗ '}</Text>
-                <Button key={`fix:${f}`} plain label={clip(f, width - 22)} onPress={() => fill($, w.askFix(f, r.fullCommand))} />
-                {isNew.has(f) && !isFlaky.has(f) && <Text color="warning">{`  ${w.isNew}`}</Text>}
-                {/* flaky says more than new: it failed here before. */}
-                {isFlaky.has(f) && <Text color="warning">{`  ${w.flaky}`}</Text>}
-              </Box>
-            ))}
+            {grouped?.groups.map(g => {
+              const isOpen = openKeys.includes(g.key)
+              // A closed group still shows what is in it: flaky says more than new.
+              const badge = isOpen ? '' : g.tests.some(x => isFlaky.has(x.name)) ? w.flaky : g.tests.some(x => isNew.has(x.name)) ? w.isNew : ''
+              return (
+                <Box key={`group:${g.key}`} flexDirection="column">
+                  <Box flexDirection="row">
+                    <Button key={`fold:${g.key}`} plain hover={hoverLink(`fold:${g.key}`)} label={`${isOpen ? '▾' : '▸'} ${clip(g.key, width - 36)}`} onPress={() => fold(g.key)} />
+                    <Text color="error">{`  ${g.tests.length} ✗`}</Text>
+                    {badge !== '' && <Text color="warning">{`  ${badge}`}</Text>}
+                    <Text>{'  '}</Text>
+                    {g.isFile && <Button key={`view:${g.key}`} plain hover={hoverLink(`view:${g.key}`)} label={w.viewFile} onPress={() => fill($, w.askShow(g.key))} />}
+                    {g.isFile && <Text dimColor> · </Text>}
+                    <Button key={`only:${g.key}`} plain hover={hoverLink(`only:${g.key}`)} label={w.runGroup} onPress={() => fill($, w.askRunGroup(g.key, r.fullCommand))} />
+                  </Box>
+                  {isOpen && g.tests.map(x => failRow(x.name, x.test, '    ✗ ', 26))}
+                </Box>
+              )
+            })}
+            {(grouped ? grouped.rest : r.failures).map(f => failRow(f, f, '  ✗ ', 22))}
           </Box>
         )}
 
@@ -417,7 +466,7 @@ export const register: Register = (on, options) => {
           {recent.map(x => (
             <Box key={`run:${x.n}`} flexDirection="row">
               <Text color={x === r ? 'claude' : undefined}>{x === r ? '▸ ' : '  '}</Text>
-              <Button key={`run:${x.n}`} plain dimColor={x !== r} label={`#${String(x.n).padEnd(4)}`} onPress={() => update($, selected, () => x.n)} />
+              <Button key={`run:${x.n}`} plain dimColor={x !== r} hover={hoverLink(`run:${x.n}`)} label={`#${String(x.n).padEnd(4)}`} onPress={() => update($, selected, () => x.n)} />
               <Text>{x.runner.padEnd(8)}</Text>
               <Text color={x.failed ? 'error' : 'success'}>{score(x, lang).padEnd(8)}</Text>
               <Text dimColor>{`${elapsed(x.durationMs).padStart(6)}  ${clip(x.command, Math.max(10, width - 34))}${x.agentId ? ` (${w.subagent})` : ''}`}</Text>

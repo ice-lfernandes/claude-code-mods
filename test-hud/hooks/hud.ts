@@ -216,6 +216,74 @@ export const flaky = (list: readonly Run[], run: Run, size = FLAKY_RUNS): Set<st
   return out
 }
 
+/** The runs a flaky check reads: the command's last FLAKY_RUNS runs whose failing names are all there. */
+export const flakyWindow = (list: readonly Run[], run: Run, size = FLAKY_RUNS) => sameCommand(list, run).filter(isReadable).slice(-size)
+
+/** A failing test's group: the file, suite, class or module its name starts with, and the test's own name. */
+export type Group = { key: string; isFile: boolean; test: string }
+
+// A path or a file name: no spaces, a slash or a known extension. A key the clip cut (…) is not one.
+const FILE = /^[^\s@]+$/
+const looksLikeFile = (key: string) => FILE.test(key) && !key.endsWith('…') && (/[\\/]/.test(key) || /\.(?:[cm]?[jt]sx?|py|rs|go|rb|java|kt|php|cs|vue|svelte)$/.test(key))
+
+/**
+ * The group of a failing test, from the name as the runner printed it: `file > suite > test`
+ * (vitest), `Suite › test` (jest), `Class > test` (gradle, bun), `file::test` (pytest),
+ * `mod::test` (cargo), `Class.test` (maven). Null when the name carries none (go, rspec).
+ * The key is a real path only for vitest and pytest, so the mod never guesses where a file is.
+ */
+export const groupOf = (runner: string, name: string): Group | null => {
+  const split = /^(.+?) (?:>|›) (.+)$/.exec(name)
+  if (split) return { key: split[1]!, isFile: looksLikeFile(split[1]!), test: split[2]! }
+  if (runner === 'pytest') {
+    const at = name.indexOf('::')
+    if (at > 0) return { key: name.slice(0, at), isFile: looksLikeFile(name.slice(0, at)), test: name.slice(at + 2) }
+  }
+  if (runner === 'cargo') {
+    const at = name.lastIndexOf('::')
+    if (at > 0) return { key: name.slice(0, at), isFile: false, test: name.slice(at + 2) }
+  }
+  if (runner === 'maven') {
+    const at = name.lastIndexOf('.')
+    if (at > 0 && at < name.length - 1) return { key: name.slice(0, at), isFile: false, test: name.slice(at + 1) }
+  }
+  return null
+}
+
+export type Grouped = { key: string; isFile: boolean; tests: { name: string; test: string }[] }
+
+/**
+ * The failing names by group, in the order each group first shows. Null when no name has a group:
+ * the pane keeps its flat list then. Names with none, among others that have one, are `rest`.
+ */
+export const groupsOf = (runner: string, names: readonly string[]): { groups: Grouped[]; rest: string[] } | null => {
+  const groups: Grouped[] = []
+  const rest: string[] = []
+  for (const name of names) {
+    const g = groupOf(runner, name)
+    if (!g) {
+      rest.push(name)
+      continue
+    }
+    const at = groups.find(x => x.key === g.key)
+    if (at) at.tests.push({ name, test: g.test })
+    else groups.push({ key: g.key, isFile: g.isFile, tests: [{ name, test: g.test }] })
+  }
+  return groups.length ? { groups, rest } : null
+}
+
+/** What a run's groups are called in the pane's heading: files when every key is a path. */
+export const kindOf = (runner: string, groups: readonly Grouped[]): 'file' | 'class' | 'suite' | 'module' | 'group' => {
+  if (groups.every(g => g.isFile)) return 'file'
+  if (runner === 'maven' || runner === 'gradle') return 'class'
+  if (runner === 'jest' || runner === 'bun') return 'suite'
+  if (runner === 'cargo') return 'module'
+  return 'group'
+}
+
+/** The test's own name, for a toast: the part after the group. */
+export const testName = (runner: string, name: string) => groupOf(runner, name)?.test ?? name
+
 /** The runners of the runs, in the order they first ran. */
 export const runnersOf = (list: readonly Run[]) => [...new Set(list.map(r => r.runner))]
 
@@ -270,6 +338,17 @@ export const redText = (list: readonly Run[], run: Run, lang: Lang = 'en'): stri
   const prev = previous(list, run)
   if (!prev || prev.failed > 0) return null
   return WORDS[lang].red(score(run, lang), run.runner, run.failed)
+}
+
+/**
+ * The toast for a run that left tests flaky that `told` has not named yet, else null: one toast
+ * per run, with the first name and how many more. The caller adds `names` to `told` once it shows.
+ */
+export const flakyToast = (list: readonly Run[], run: Run, told: ReadonlySet<string>, lang: Lang = 'en'): { text: string; names: string[] } | null => {
+  const names = [...flaky(list, run)].filter(n => !told.has(n))
+  if (names.length === 0) return null
+  const first = clip(testName(run.runner, names[0]!), 30)
+  return { text: WORDS[lang].flakyToast(first, names.length - 1, flakyWindow(list, run).length), names }
 }
 
 /** The command's first line, clipped, for the pane. */

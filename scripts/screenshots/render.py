@@ -265,7 +265,7 @@ green = d['STATUS'][-1]
 open(f'{out}/test-hud.svg', 'w').write(svg([
     ('/test-hud', 'pane:Tests', trim(tree(d['PANE'][-1]))),
     ('status line', 'raw', [plain('  ' + red, dimColor=True), plain('  ' + green, dimColor=True)]),
-    ('toast when the suite turns green', 'toast', [plain(t) for t in d['TOAST']]),
+    ('toasts: a test turns flaky, the suite turns green', 'toast', [plain(t) for t in d['TOAST']]),
 ], 60, 'test-hud'))
 def wrapped(s, cols):
     """A tree laid out with its wrapping rows broken at `cols`, as a terminal that wide shows it."""

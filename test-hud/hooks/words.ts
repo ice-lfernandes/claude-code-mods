@@ -5,6 +5,8 @@ import type { Lang } from './ui'
 
 export const COMMAND = 'test-hud'
 
+export type GroupKind = 'file' | 'class' | 'suite' | 'module' | 'group'
+
 type Words = {
   description: string
   pane: string
@@ -21,6 +23,16 @@ type Words = {
   /** The badge on a test that failed, passed and failed again in the command's last runs. */
   flaky: string
   durationNote: (runs: number, shortest: string, longest: string) => string
+  /** `Failing (5 in 3 files)`: the heading of a pane whose failing tests have groups. */
+  failingIn: (shown: number, of: number, groups: number, kind: GroupKind) => string
+  /** The group header's buttons: `show` puts the file in the prompt, `run` asks for only that group. */
+  viewFile: string
+  runGroup: string
+  /** What those buttons put in the prompt. */
+  askShow: (path: string) => string
+  askRunGroup: (key: string, command: string) => string
+  /** The toast for a test that turned flaky (toasts open with a glyph: ✓ green, ! flaky, ✗ red; the API cannot color them): the first name, how many more, over how many runs. */
+  flakyToast: (name: string, more: number, runs: number) => string
   /** The button back to the runner's latest run, and the note while an earlier one shows. */
   latest: string
   earlier: (n: number) => string
@@ -66,6 +78,12 @@ export const WORDS: Record<Lang, Words> = {
     noNames: 'A saída não nomeou os testes que falharam num formato que este mod lê.',
     isNew: 'nova',
     flaky: 'instável?',
+    failingIn: (shown, of, n, kind) => `Falhando (${shown}${shown < of ? ` de ${of}` : ''} em ${n} ${({ file: ['arquivo', 'arquivos'], class: ['classe', 'classes'], suite: ['suite', 'suites'], module: ['módulo', 'módulos'], group: ['grupo', 'grupos'] } as const)[kind][n === 1 ? 0 : 1]})`,
+    viewFile: 'ver',
+    runGroup: 'rodar',
+    askShow: path => `Mostre os testes que falham em @${path}`,
+    askRunGroup: (key, command) => `Rode só os testes de ${key}, com o mesmo runner de: ${command}`,
+    flakyToast: (name, more, runs) => (more ? `! ${more + 1} testes instáveis: ${name} +${more}` : `! Teste instável: ${name} (${runs} execuções)`),
     durationNote: (runs, lo, hi) => `duração ${runs === 1 ? 'da última execução' : `das últimas ${runs} execuções`} (${lo === hi ? lo : `de ${lo} a ${hi}`})`,
     latest: '↩ última execução',
     earlier: n => `mostrando a execução #${n}`,
@@ -81,8 +99,8 @@ export const WORDS: Record<Lang, Words> = {
     tests: 'testes',
     failedScore: n => `${n} ${n === 1 ? 'falhou' : 'falharam'}`,
     pass: 'ok',
-    green: (score, runner, reds, span) => `Testes verdes: ${score} (${runner}) depois de ${reds} ${reds === 1 ? 'execução vermelha' : 'execuções vermelhas'} em ${span}.`,
-    red: (score, runner, failing) => `Testes ficaram vermelhos: ${score} (${runner}), ${failing} ${failing === 1 ? 'falha' : 'falhas'}.`,
+    green: (score, runner, reds, span) => `✓ Testes verdes: ${score} (${runner}) depois de ${reds} ${reds === 1 ? 'execução vermelha' : 'execuções vermelhas'} em ${span}.`,
+    red: (score, runner, failing) => `✗ Testes ficaram vermelhos: ${score} (${runner}), ${failing} ${failing === 1 ? 'falha' : 'falhas'}.`,
     noRuns: 'Nenhuma execução de teste nesta sessão.',
     lastRun: (runner, score, failed) => `Última execução: ${runner} ${score}${failed ? `, ${failed} ${failed === 1 ? 'falhou' : 'falharam'}` : ''}.`,
     failingList: names => `Falhando: ${names}.`,
@@ -112,6 +130,12 @@ export const WORDS: Record<Lang, Words> = {
     noNames: 'The output named no failing tests in a shape this mod reads.',
     isNew: 'new',
     flaky: 'flaky?',
+    failingIn: (shown, of, n, kind) => `Failing (${shown}${shown < of ? ` of ${of}` : ''} in ${n} ${({ file: ['file', 'files'], class: ['class', 'classes'], suite: ['suite', 'suites'], module: ['module', 'modules'], group: ['group', 'groups'] } as const)[kind][n === 1 ? 0 : 1]})`,
+    viewFile: 'show',
+    runGroup: 'run',
+    askShow: path => `Show the failing tests in @${path}`,
+    askRunGroup: (key, command) => `Run only the tests in ${key}, with the same runner as: ${command}`,
+    flakyToast: (name, more, runs) => (more ? `! ${more + 1} flaky tests: ${name} +${more}` : `! Flaky test: ${name} (${runs} runs)`),
     durationNote: (runs, lo, hi) => `duration of the last ${runs} run${runs === 1 ? '' : 's'} (${lo === hi ? lo : `${lo} to ${hi}`})`,
     latest: '↩ latest run',
     earlier: n => `showing run #${n}`,
@@ -127,8 +151,8 @@ export const WORDS: Record<Lang, Words> = {
     tests: 'tests',
     failedScore: n => `${n} failed`,
     pass: 'pass',
-    green: (score, runner, reds, span) => `Tests green: ${score} (${runner}) after ${reds} red run${reds === 1 ? '' : 's'} in ${span}.`,
-    red: (score, runner, failing) => `Tests turned red: ${score} (${runner}), ${failing} failing.`,
+    green: (score, runner, reds, span) => `✓ Tests green: ${score} (${runner}) after ${reds} red run${reds === 1 ? '' : 's'} in ${span}.`,
+    red: (score, runner, failing) => `✗ Tests turned red: ${score} (${runner}), ${failing} failing.`,
     noRuns: 'No test runs yet this session.',
     lastRun: (runner, score, failed) => `Last run: ${runner} ${score}${failed ? `, ${failed} failed` : ''}.`,
     failingList: names => `Failing: ${names}.`,

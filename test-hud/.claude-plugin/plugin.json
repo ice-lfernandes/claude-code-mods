@@ -1,7 +1,7 @@
 {
   "name": "test-hud",
-  "version": "0.6.0",
-  "description": "Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green",
+  "version": "0.7.0",
+  "description": "Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests grouped by file, and toasts when the suite turns green or a test turns flaky",
   "types": "./types/index.d.ts",
   "userConfig": {
     "enabled": {
@@ -32,6 +32,12 @@
       "title": "Toast when tests turn red",
       "description": "Also show a toast when a runner turns red right after a green run",
       "default": false
+    },
+    "flakyToast": {
+      "type": "boolean",
+      "title": "Toast when a test turns flaky",
+      "description": "Show one toast when a run leaves a test flaky: it failed, passed and failed again in the command's last 10 runs. Each test is announced once per session",
+      "default": true
     },
     "keepHistory": {
       "type": "boolean",
