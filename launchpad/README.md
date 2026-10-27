@@ -50,7 +50,7 @@ session's model and effort in one click, this collection's mods, and the shortcu
     in every language (`⏳ limits-meter`, `🔐 allowlist-coach`, `👀 agent-watch`, `📜 plain-view`, `🧪 test-hud`),
     with a line on what it does and its command. State is color: `on` green, `off` dim, a hidden
     eye amber, the open tab in the accent, the footer verbs in the action color. The name opens the mod's pane. The **toggle**
-    (`[ ● on ]` on the terminal, a green block on Claude Code desktop) runs `/x off` or `/x on`: off
+    (`[ ● on ]` on the terminal, a green track with a knob on Claude Code desktop) runs `/x off` or `/x on`: off
     in every conversation, read from the mod's `enabled` option. The **eye** (`◉`, `◌` when
     hidden) runs `/x hide` or `/x show`: the mod stays on but out of sight. A mod that is off has no
     eye and shows how to turn it on. A mod without the `enabled` option (an older version) shows

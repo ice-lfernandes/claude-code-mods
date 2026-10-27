@@ -845,8 +845,16 @@ export type ModState = 'on' | 'hidden' | 'off' | 'unknown'
  * launchpad last set with the eye: another mod's hide flag is in its own store, which this one cannot
  * read, so a `/x hide` typed by hand shows here only after the next press.
  */
-export const modState = (m: ModInfo, rows: readonly { key: string; value: unknown }[], eyes: readonly string[]): ModState => {
-  const on = toggleOf(m, rows)
+export const modState = (
+  m: ModInfo,
+  rows: readonly { key: string; value: unknown }[],
+  eyes: readonly string[],
+  offs: readonly string[] = [],
+): ModState => {
+  const row = toggleOf(m, rows)
+  // A mod that toggles but has no `enabled` row in this session's /config (a surface that does not list
+  // it): the launchpad's own memory of what it last switched, on by default, so the switch still shows.
+  const on = row ?? (m.toggles ? !offs.includes(m.plugin) : null)
   if (on === null) return 'unknown'
   if (!on) return 'off'
   return eyes.includes(m.plugin) ? 'hidden' : 'on'

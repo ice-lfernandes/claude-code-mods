@@ -72,6 +72,8 @@ declare module 'claude-code' {
       tab: 'mods' | 'shortcuts'
       /** The mods the eye hid from here (the plugin names); the flag itself lives in each mod. */
       eyes: string[]
+      /** The mods the switch turned off here: its state where /config lists no `enabled` row. */
+      offs: string[]
       /** Moves when a row changed what the panel reads, so the panel redraws. */
       rev: number
     }
