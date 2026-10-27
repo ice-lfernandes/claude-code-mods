@@ -1,10 +1,47 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Agent } from '../types'
-import { addStep, adopt, clearOut, finish, fiveHourOf, glyphOf, shares, windowUsed, reconcile, runText, stalls, stallText, summarize, toolEnd, toolStart, total, touch, tree, ZERO } from '../hooks/watch'
+import {
+  addSample,
+  addStep,
+  adopt,
+  clearOut,
+  fillCells,
+  finish,
+  fitRows,
+  fiveHourOf,
+  fiveText,
+  glyphOf,
+  groupsOf,
+  isCompact,
+  isInCard,
+  lastDone,
+  lastStartFor,
+  messageOf,
+  nextSlot,
+  rateOf,
+  reconcile,
+  runText,
+  sevenDayOf,
+  stalls,
+  stallText,
+  stepOf,
+  summarize,
+  summaryOf,
+  toolEnd,
+  toolStart,
+  total,
+  touch,
+  upsert,
+  weekText,
+  windowShare,
+  windowUsed,
+  ZERO,
+} from '../hooks/watch'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
+const near = (a: number | null, b: number) => a !== null && Math.abs(a - b) < 1e-12
 const t = (input: number, output: number, cacheRead = 0) => ({ input, output, cacheRead, cacheWrite: 0 })
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id,
@@ -19,6 +56,7 @@ const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   steps: 0,
   tokens: ZERO,
   isStalled: false,
+  slot: 0,
   ...over,
 })
 
@@ -119,12 +157,6 @@ describe('summary', () => {
     expect(runText(run)).toBe('2 agents, 400 tokens in 6m 00s. Heaviest: Map the API 300 (75%)')
     expect(summarize([], NOW)).toBe(null)
   })
-
-  test('the tree nests children under their parent', async () => {
-    const rows = tree([agent('a', { startedAt: 1 }), agent('c', { parentId: 'a', startedAt: 3 }), agent('b', { startedAt: 2 })])
-    expect(rows.map(r => `${r.prefix}${r.agent.id}`)).toEqual(['├─a', '│ └─c', '└─b'])
-    expect(rows[1]!.rail).toBe('│   ')
-  })
 })
 
 describe('the pane', () => {
@@ -150,15 +182,6 @@ describe('the pane', () => {
 })
 
 describe('stage 2', () => {
-  test('shares add up to the width, heaviest first, the rest together', async () => {
-    const list = ['a', 'b', 'c', 'd', 'e', 'f'].map((id, i) => agent(id, { tokens: t(0, 0, [50, 20, 10, 10, 5, 5][i]) }))
-    const parts = shares(list, 20)
-    expect(parts.map(p => p.agent?.id ?? 'rest')).toEqual(['a', 'b', 'c', 'd', 'rest'])
-    expect(parts.map(p => p.cells)).toEqual([10, 4, 2, 2, 2])
-    expect(parts.reduce((n, p) => n + p.cells, 0)).toBe(20)
-    expect(shares([agent('x')], 20)).toEqual([])
-  })
-
   test('the last five tool calls, each closed with how it went', async () => {
     let list = [agent('a')]
     for (let i = 0; i < 6; i++) {
@@ -175,10 +198,19 @@ describe('stage 2', () => {
     ])
   })
 
-  test('the tree sorts siblings by tokens on request', async () => {
-    const list = [agent('a', { startedAt: 1, tokens: t(1, 0) }), agent('b', { startedAt: 2, tokens: t(9, 0) })]
-    expect(tree(list).map(r => r.agent.id)).toEqual(['a', 'b'])
-    expect(tree(list, 'tokens').map(r => r.agent.id)).toEqual(['b', 'a'])
+  test('groups split running from finished, each by start or by most tokens', async () => {
+    const list = [
+      agent('a', { startedAt: 1, tokens: t(1, 0) }),
+      agent('b', { startedAt: 2, tokens: t(9, 0) }),
+      agent('c', { startedAt: 3, status: 'completed', tokens: t(5, 0) }),
+      agent('d', { startedAt: 4, status: 'failed', tokens: t(7, 0) }),
+    ]
+    const by = groupsOf(list)
+    expect(by.running.map(a => a.id)).toEqual(['a', 'b'])
+    expect(by.finished.map(a => a.id)).toEqual(['c', 'd'])
+    const heavy = groupsOf(list, 'tokens')
+    expect(heavy.running.map(a => a.id)).toEqual(['b', 'a'])
+    expect(heavy.finished.map(a => a.id)).toEqual(['d', 'c'])
   })
 
   test('the share of the 5h window a wave used', async () => {
@@ -191,5 +223,159 @@ describe('stage 2', () => {
     const run = summarize([agent('a', { tokens: t(0, 0, 300), startedAt: NOW, endedAt: NOW + MIN })], NOW)!
     expect(runText({ ...run, windowUsed: 6 })).toContain('. Used ~6% of the 5h window')
     expect(runText({ ...run, windowUsed: 0.4 })).not.toContain('Used')
+  })
+})
+
+describe('identity (G1)', () => {
+  test('agents take the five slots in the order they appear, then start over', async () => {
+    let list: ReturnType<typeof upsert> = []
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) list = upsert(list, id, NOW, {})
+    expect(list.map(a => a.slot)).toEqual([0, 1, 2, 3, 4, 0])
+    expect(nextSlot([])).toBe(0)
+    expect(nextSlot(list)).toBe(1)
+  })
+
+  test('an agent keeps its slot when it is updated, and adopt gives a new one its own', async () => {
+    const list = upsert(upsert([], 'a', NOW, {}), 'b', NOW, {})
+    expect(upsert(list, 'a', NOW + 1, { status: 'completed' })[0]!.slot).toBe(0)
+    expect(adopt(list, {}, 'c', NOW, { label: 'late' }).agents[2]!.slot).toBe(2)
+  })
+})
+
+describe('the card (G2)', () => {
+  test('the step is the model requests so far, one more while a request is out, never below one', async () => {
+    expect(stepOf(agent('a'))).toBe(1)
+    expect(stepOf(agent('a', { steps: 3 }))).toBe(3)
+    expect(stepOf(agent('a', { steps: 3, activity: 'thinking' }))).toBe(4)
+  })
+
+  test('the card keeps the two calls that ended before the current one', async () => {
+    let list = [agent('a')]
+    for (let i = 0; i < 4; i++) {
+      list = toolStart(list, 'a', `call ${i}`, NOW)
+      list = toolEnd(list, 'a', i !== 2, NOW)
+    }
+    list = toolStart(list, 'a', 'call 4', NOW)
+    expect(lastDone(list[0]!).map(r => r.doing)).toEqual(['call 2', 'call 3'])
+    expect(lastDone(list[0]!, 3).map(r => r.doing)).toEqual(['call 1', 'call 2', 'call 3'])
+    expect(lastDone(agent('b'))).toEqual([])
+  })
+
+  test('a bar is the agent\'s tokens against the heaviest, one cell at least', async () => {
+    expect(fillCells(50, 100, 20)).toBe(10)
+    expect(fillCells(100, 100, 20)).toBe(20)
+    expect(fillCells(1, 1000, 20)).toBe(1)
+    expect(fillCells(0, 100, 20)).toBe(0)
+    expect(fillCells(5, 0, 20)).toBe(0)
+  })
+})
+
+describe('compact mode (G4)', () => {
+  test('one line an agent from compactAt agents on', async () => {
+    expect(isCompact(4, 5)).toBe(false)
+    expect(isCompact(5, 5)).toBe(true)
+    expect(isCompact(1, 1)).toBe(true)
+  })
+
+  test('a long list fits as many items as the rows allow, and the wheel stops at the last start', async () => {
+    const heights = [1, 8, 8, 8, 1, 1, 1]
+    expect(fitRows(heights, 0, 20)).toEqual({ start: 0, end: 3 })
+    expect(fitRows(heights, 1, 20)).toEqual({ start: 1, end: 3 })
+    expect(lastStartFor(heights, 20)).toBe(2)
+    expect(fitRows(heights, 99, 20)).toEqual({ start: 2, end: 7 })
+    // A single item taller than the room still shows.
+    expect(fitRows([30, 1], 0, 10)).toEqual({ start: 0, end: 1 })
+    expect(fitRows([], 0, 10)).toEqual({ start: 0, end: 0 })
+  })
+})
+
+describe('the windows (G3)', () => {
+  test('the rate is the points waves moved a window over their tokens, null without any', async () => {
+    expect(rateOf([])).toEqual({ five: null, week: null })
+    const samples = addSample(addSample([], 100_000, 1, 0), 300_000, 3, 0.4)
+    expect(near(rateOf(samples).five, 1 / 100_000)).toBe(true)
+    expect(near(rateOf(samples).week, 0.4 / 400_000)).toBe(true)
+    // A wave that read nothing says nothing; a window that never moved has no rate.
+    expect(addSample([], 100, null, null)).toEqual([])
+    expect(addSample([], 0, 2, 1)).toEqual([])
+    expect(rateOf(addSample([], 100_000, 0, 0))).toEqual({ five: null, week: null })
+  })
+
+  test('only the last ten waves count', async () => {
+    let samples = addSample([], 1000, 90, null)
+    for (let i = 0; i < 10; i++) samples = addSample(samples, 1000, 1, null)
+    expect(samples).toHaveLength(10)
+    expect(near(rateOf(samples).five, 1 / 1000)).toBe(true)
+  })
+
+  test('the card says its share of each window as an estimate, a dash with no rate', async () => {
+    const rate = { five: 1 / 100_000, week: 0.075 / 100_000 }
+    expect(windowShare(130_000, rate)).toBe('~1% of the 5h window · ~0.1% of the week')
+    expect(windowShare(130_000, rate, 'pt-BR')).toBe('~1% da janela 5h · ~0,1% da semana')
+    expect(windowShare(20_000, rate)).toBe('<1% of the 5h window · <0.1% of the week')
+    expect(windowShare(130_000, null)).toBe('— of the 5h window · — of the week')
+    expect(fiveText(2.6)).toBe('~3%')
+    expect(weekText(0.04)).toBe('<0.1%')
+  })
+
+  test('the summary: agents, tokens, time, the measured 5h change and the estimated week', async () => {
+    const list = [agent('a', { startedAt: NOW, endedAt: NOW + 2 * MIN, status: 'completed', tokens: t(0, 0, 130_000) }), agent('b', { startedAt: NOW + MIN, tokens: t(0, 0, 270_000), isStalled: true })]
+    const s = summaryOf(list, NOW + 3 * MIN, 4, { five: null, week: 0.075 / 100_000 })
+    expect(s).toEqual({ agents: '2', tokens: '400k', time: '3m 00s', five: '+4%', week: '+0.3%', stalled: 1 })
+    expect(summaryOf(list, NOW + 3 * MIN, null, null, 'pt-BR')).toMatchObject({ five: '—', week: '—' })
+    expect(summaryOf(list, NOW, 0, { five: null, week: 0.001 / 100_000 }, 'pt-BR').week).toBe('<0,1%')
+  })
+
+  test('the weekly window is read the way the 5h one is', async () => {
+    expect(sevenDayOf({ rateLimits: [{ kind: 'five_hour', percentUsed: 40 }, { kind: 'seven_day', percentUsed: 9 }] })).toBe(9)
+    expect(sevenDayOf(null)).toBe(null)
+  })
+})
+
+describe('the message (G6)', () => {
+  const run = { endedAt: NOW, count: 3, durationMs: 114_000, total: 627_000, top: null }
+
+  test('a running wave: progress, the agent that moved last, its action and a gradient bar', () => {
+    const list = [agent('a', { label: 'Research', status: 'completed', slot: 0 }), agent('b', { label: 'Pre-outline', slot: 1, activity: 'tool', doing: 'writing pre-outline.md', lastAt: NOW }), agent('c', { label: 'Script', slot: 2, activity: 'tool', doing: 'reading guide.md', lastAt: NOW - 1000 })]
+    const m = messageOf(list, null, false, NOW, 'dark', 'en')
+    expect(m).toMatchObject({ kind: 'run', label: 'Agents', count: '1/3', glyph: '■', color: '#61afef', name: 'Pre-outline', action: 'Writing pre-outline.md', stalled: null })
+    const bar = (m as { bar: { filled: boolean; color: string }[] }).bar
+    expect(bar).toHaveLength(10)
+    expect(bar.filter(c => c.filled)).toHaveLength(3)
+    expect(bar[0]!.color).toBe('#d97757')
+  })
+
+  test('a stalled agent comes first and the message says for how long', () => {
+    const list = [agent('a', { label: 'Tests', isStalled: true, lastAt: NOW - 6 * MIN, activity: 'tool', doing: 'running npm test' }), agent('b', { label: 'Docs', lastAt: NOW })]
+    expect(messageOf(list, null, false, NOW, 'dark', 'en')).toMatchObject({ name: 'Tests', stalled: 'Tests quiet for 6m 00s' })
+    expect(messageOf(list, null, false, NOW, 'dark', 'pt-BR')).toMatchObject({ label: 'Agentes', stalled: 'Tests parado há 6m 00s' })
+  })
+
+  test('a long name is cut in the stalled text, and the thinking state has its word', () => {
+    const long = 'A very long agent description that goes on'
+    expect(messageOf([agent('a', { label: long, isStalled: true, lastAt: NOW - MIN })], null, false, NOW, 'dark', 'en')).toMatchObject({ stalled: 'A very long agent d… quiet for 1m 00s' })
+    expect(messageOf([agent('a', { activity: 'thinking' })], null, false, NOW, 'dark', 'en')).toMatchObject({ action: 'Thinking' })
+    expect(messageOf([agent('a')], null, false, NOW, 'dark', 'en')).toMatchObject({ action: 'Starting' })
+  })
+
+  test('the light theme has its own colors', () => {
+    expect(messageOf([agent('a', { slot: 1 })], null, false, NOW, 'light', 'en')).toMatchObject({ color: '#1f6feb' })
+  })
+
+  test('a wave that is over says the summary only while it is the band, and nothing without a run', () => {
+    const done = [agent('a', { status: 'completed' }), agent('b', { status: 'completed' }), agent('c', { status: 'completed' })]
+    expect(messageOf(done, run, true, NOW, 'dark', 'en')).toEqual({ kind: 'done', text: '3 agents done · 627k · 1m 54s' })
+    expect(messageOf(done, run, true, NOW, 'dark', 'pt-BR')).toEqual({ kind: 'done', text: '3 agentes prontos · 627k · 1m 54s' })
+    expect(messageOf(done, run, false, NOW, 'dark', 'en')).toBeNull()
+    expect(messageOf(done, null, true, NOW, 'dark', 'en')).toBeNull()
+    expect(messageOf([], null, false, NOW, 'dark', 'en')).toBeNull()
+  })
+
+  test('the message lives in the card only when plain-view draws it and its row lists an agent', () => {
+    expect(isInCard(true, [{ id: 'a' }])).toBe(true)
+    expect(isInCard(true, [])).toBe(false)
+    expect(isInCard(false, [{ id: 'a' }])).toBe(false)
+    expect(isInCard(undefined, undefined)).toBe(false)
+    expect(isInCard(true, 'not a list')).toBe(false)
   })
 })

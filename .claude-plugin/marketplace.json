@@ -18,7 +18,7 @@
     {
       "name": "agent-watch",
       "source": "./agent-watch",
-      "description": "Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish"
+      "description": "Subagents at a glance: a card per agent with its mascot, step and tokens, a band above the prompt, a toast when one stalls, and a summary naming the heaviest agent when they finish"
     },
     {
       "name": "test-hud",

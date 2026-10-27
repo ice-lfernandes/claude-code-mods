@@ -24,7 +24,7 @@ Requer Claude Code 2.1.287 ou mais recente.
 | --- | --- | --- |
 | [limits-meter](limits-meter/) | `/limits` | Limites do plano, relógio do cache e contexto acima do prompt: modelo e effort, janelas de 5 horas e semanal com horário de reset, contagem regressiva do cache do prompt com um manter-quente opcional que gasta plano, contexto dividido por grupo (sistema, MCP, mensagens), tokens por turno, e um toast na troca cara de modelo perto do limite |
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Conta os diálogos de permissão por regra; depois de 5 aprovações sem nenhuma recusa, oferece adicionar a regra a `permissions.allow`, perguntando antes de gravar |
-| [agent-watch](agent-watch/) | `/watch` | Subagentes num relance: tokens por agente, um toast quando um trava e um resumo com o agente mais pesado quando terminam |
+| [agent-watch](agent-watch/) | `/watch` | Subagentes num relance: um cartão por agente com mascote, passo e tokens, uma faixa acima do prompt, um toast quando um trava e um resumo com o agente mais pesado quando terminam |
 | [test-hud](test-hud/) | `/test-hud` | Execuções de teste num relance: aprovados sobre o total na status line, um sparkline das falhas entre execuções, os testes que falham e um toast quando a suíte fica verde |
 | [launchpad](launchpad/) | `/pad` | Um menu de ações de um clique sob o cabeçalho, acima do prompt ou num painel: cada botão roda um comando, skill ou agente instalado. `◆ pad` abre um painel de controle: modelo e esforço em um clique, os mods desta coleção, os atalhos. Escolha e ordene até 8 em `/pad configuration`, ou distribua os de um time no repositório |
 | [plain-view](plain-view/) | `/plain-view` | Transcript sem ruído: as linhas de tool saem da frente e o plano do agente aparece num cartão acima do prompt, com o passo atual, barras de progresso e um resumo no fim do turno |
@@ -120,10 +120,10 @@ Ou para uma sessão, a partir de um clone: `claude --plugin-dir ./allowlist-coac
 
 ### agent-watch
 
-A status line e os toasts aparecem sozinhos enquanto subagentes rodam. Comandos:
+A faixa acima do prompt, a status line e os toasts aparecem sozinhos enquanto subagentes rodam. Comandos:
 
 ```
-/watch              abre o painel: árvore de agentes com tokens, tool calls e o que cada um está fazendo
+/watch              abre o painel: um cartão por agente com passo, últimas ações e tokens
 /watch demo         adiciona três agentes falsos, um deles travado, para ver o painel
 /watch clear        remove agentes terminados e de demo
 /watch clear done   remove só os agentes terminados
@@ -134,9 +134,12 @@ A status line e os toasts aparecem sozinhos enquanto subagentes rodam. Comandos:
 /watch help         lista os comandos
 ```
 
-Agentes terminados se recolhem numa linha no painel; clique nela para abri-los. Uma barra mostra
-a fatia de tokens de cada agente, o nome abre as últimas tool calls dele, e um agente travado tem
-um botão `investigate` que pergunta sobre ele no prompt.
+Cada agente tem um cartão com mascote e cor, o passo em que está, as duas chamadas anteriores, uma
+barra dos tokens dele contra o agente mais pesado e uma estimativa da fatia dele na janela de 5h e
+na semana. Os cartões ficam em dois grupos, Rodando e Concluídos; uma barra que vai até a borda do painel
+recolhe o grupo. A partir de cinco agentes (opção `compactAt`) cada um vira uma linha em caixa, e
+o nome abre o cartão. Um
+agente travado tem um botão `investigate` que pergunta sobre ele no prompt.
 
 ![agent-watch: o painel /watch, a status line e seus toasts](screenshots/agent-watch.svg)
 
@@ -222,7 +225,9 @@ sempre aparecem inteiros. Acima do prompt, um cartão acompanha o pedido: o tít
 de tool, por isso o `~`. No fim do turno o cartão fica verde, com o tempo que levou e os
 arquivos mudados e lidos, ou cinza no Esc; o próximo pedido começa um novo, e o `[-]` recolhe.
 Os agentes a quem o turno principal passa trabalho aparecem numa linha do cartão (`◇ 1 agente
-rodando · code-review · 3m 12s`, com o `/watch` do agent-watch quando ele está instalado), e sem
+rodando · code-review · 3m 12s`, com o `/watch` do agent-watch quando ele está instalado, e a
+mensagem da faixa do agent-watch embaixo: `└ Agentes 0/3 ░░░░░░░░░░ · ▲ Pré-roteiro · Escrevendo
+pre-outline.md`), e sem
 lista de tarefas o cartão espera por eles (`Esperando 1 agente`). Um turno sem lista que chamou
 tools ou agentes termina num cartão verde pequeno (`✓ Pronto`, o tempo, os arquivos e os
 agentes); uma conversa simples não deixa cartão.

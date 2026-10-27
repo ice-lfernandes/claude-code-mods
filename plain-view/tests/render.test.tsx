@@ -1442,3 +1442,147 @@ test('110 columns: the overall bar leaves room for "· list not updated", so the
   expect(drawn).not.toContain('"columns":86')
   expect(drawn.match(/"flexShrink":0/g)!.length).toBeGreaterThan(1)
 })
+
+// G6 (prototype agent-watch-0.7.1): agent-watch's band message, a child of the agents row, and the
+// `cardOn` atom that tells agent-watch its band can step aside.
+const BAR = Array.from({ length: 10 }, (_, i) => ({ filled: i < 3, color: i < 3 ? '#d97757' : '#5c5c68' }))
+const RUNNING_MSG = { kind: 'run', label: 'Agentes', count: '0/1', bar: BAR, glyph: '▲', color: '#d97757', name: 'code-review', action: 'Lendo routes.ts', stalled: null }
+// agent-watch's `message`, as its atom would answer: the test's handle has no `$.state`, so the read is mocked.
+const withMessage = (on: any, message: unknown) => {
+  const box = { message }
+  on('state.get', (_$: any, e: any, next: any) =>
+    e.plugin === 'agent-watch' && e.key === 'message' ? ({ value: { value: box.message, version: box.message === null || box.message === undefined ? 0 : 1 } } as never) : next(e),
+  )
+  return box
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`G6 running: agent-watch's message is a child of the agents row on ${surface}`, ON, async ($, on) => {
+    const w = engine(on)
+    withMessage(on, RUNNING_MSG)
+    w.listed = [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'running' }]
+    await start($, surface)
+    await delegate($)
+    await w.clock.advance(5000)
+    const drawn = await card($, surface)
+    const text = drawn.split('\n')[1]!
+    expect(text).toContain('1 agente rodando')
+    // The row first, its child right under it: the label, the count, the bar and the current agent.
+    expect(text.indexOf('1 agente rodando')).toBeLessThan(text.indexOf('└ Agentes'))
+    expect(text).toContain('└ Agentes 0/1')
+    expect(text).toContain('█░░░░░░░'.slice(0, 1))
+    expect(text).toContain('▲ code-review · Lendo routes.ts')
+    expect(drawn).toContain('"color":"#d97757"')
+    expect(drawn).toContain('"color":"#5c5c68"')
+  })
+}
+
+test('G6 stalled: the child says it in warning, with the shape in warning too', ON, async ($, on) => {
+  const w = engine(on)
+  withMessage(on, { ...RUNNING_MSG, stalled: 'code-review parado há 6m 00s' })
+  w.listed = [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'running' }]
+  await start($)
+  await delegate($)
+  const drawn = await card($)
+  expect(drawn.split('\n')[1]).toContain('▲ code-review parado há 6m 00s')
+  expect(drawn).toContain('"color":"warning"')
+})
+
+test('G6 done: the summary is the child of the finished row', ON, async ($, on) => {
+  const w = engine(on)
+  withMessage(on, { kind: 'done', text: '1 agente pronto · 44k · 1m 54s' })
+  w.listed = [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'running' }]
+  await start($)
+  await delegate($)
+  await end($)
+  w.listed = [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'completed' }]
+  await agentDone($)
+  await ask($, NOTICE)
+  const text = (await card($)).split('\n')[1]!
+  expect(text).toContain('1 agente terminou')
+  expect(text).toContain('└ ✓ 1 agente pronto · 44k · 1m 54s')
+})
+
+test('G6 without agent-watch, or with nothing to say, there is no child', ON, async ($, on) => {
+  const w = engine(on)
+  const box = withMessage(on, undefined)
+  w.listed = [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'running' }]
+  await start($)
+  await delegate($)
+  // Not installed: the value was never written.
+  expect(await card($)).not.toContain('└')
+  // Installed, its band silent (hidden, quiet): null.
+  box.message = null
+  expect(await card($)).not.toContain('└')
+})
+
+test('G6 no agents row, no child: a turn without agents and a demo card stay as they were', ON, async ($, on) => {
+  engine(on)
+  withMessage(on, RUNNING_MSG)
+  await start($)
+  await ask($, REQUEST)
+  expect(await card($)).not.toContain('└')
+  await run($, 'demo')
+  expect(await card($)).not.toContain('└')
+})
+
+test('G6 80 columns: a long name and action are cut, and the child fits the card', { options: { enabled: true, language: 'pt-BR', icons: 'symbol' } }, async ($, on) => {
+  const w = engine(on)
+  withMessage(on, { ...RUNNING_MSG, name: 'revisar todo o código do repositório', action: 'Lendo um arquivo com um nome muito longo em um diretório muito fundo.ts' })
+  w.listed = [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'running' }]
+  await start($)
+  await delegate($)
+  const drawn = await card($, 'terminal', 80)
+  const text = drawn.split('\n')[1]!
+  const child = text.slice(text.indexOf('└ Agentes'))
+  expect(child).toContain('…')
+  expect(child).not.toContain('muito fundo.ts')
+  // Inside the card's 76 columns, with the engine row that follows it in the same string left out.
+  expect(child.replace(/engine row.*$/, '').length).toBeLessThanOrEqual(76)
+})
+
+test('G6 cardOn: written true while the card can draw, false when hidden, and back on show', ON, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  const seen: boolean[] = []
+  on('state.set', (_$: any, e: any, next: any) => {
+    if (e.plugin === 'plain-view' && e.key === 'cardOn') seen.push(e.value)
+    return next(e)
+  })
+  await start($)
+  expect(seen).toEqual([true])
+  await run($, 'hide')
+  await run($, 'show')
+  expect(seen).toEqual([true, false, true])
+  // Hiding twice writes nothing new.
+  await run($, 'show')
+  expect(seen).toEqual([true, false, true])
+})
+
+test('G6 cardOn: quiet keeps it false', { options: { enabled: true, quiet: true } }, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  const seen: boolean[] = []
+  on('state.set', (_$: any, e: any, next: any) => {
+    if (e.plugin === 'plain-view' && e.key === 'cardOn') seen.push(e.value)
+    return next(e)
+  })
+  await start($)
+  // false is the atom's start value: nothing to write.
+  expect(seen).toEqual([])
+  await run($, 'show')
+  expect(seen).toEqual([])
+})
+
+test('G6 cardOn: off by default, and /plain-view show does not turn it on', { options: { language: 'pt-BR' } }, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  const seen: boolean[] = []
+  on('state.set', (_$: any, e: any, next: any) => {
+    if (e.plugin === 'plain-view' && e.key === 'cardOn') seen.push(e.value)
+    return next(e)
+  })
+  await start($)
+  await run($, 'show')
+  expect(seen).toEqual([])
+})

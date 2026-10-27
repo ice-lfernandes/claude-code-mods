@@ -59,6 +59,21 @@ export type Flash =
 /** What stays of the agent's words in the transcript while the mod is on. */
 export type AgentText = 'final' | 'none' | 'card' | 'all'
 
+/** What agent-watch's band says, as its `message` atom gives it: plain-view draws it under the agents row. */
+export type WatchMessage =
+  | { kind: 'done'; text: string }
+  | {
+      kind: 'run'
+      label: string
+      count: string
+      bar: { filled: boolean; color: string }[]
+      glyph: string
+      color: string
+      name: string
+      action: string
+      stalled: string | null
+    }
+
 declare module 'claude-code' {
   interface PluginState {
     'plain-view': {
@@ -82,6 +97,12 @@ declare module 'claude-code' {
       reopenAt: number
       /** A reset from the pane under way: the next load goes on with the options left. */
       resetting: boolean
+      /** True while the card is drawn: the mod on, and neither hidden nor quiet. agent-watch reads it to place its band's message. */
+      cardOn: boolean
+    }
+    /** What plain-view reads of agent-watch. */
+    'agent-watch': {
+      message: WatchMessage | null
     }
   }
 }

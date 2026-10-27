@@ -90,6 +90,9 @@ const tab = atom({ plugin: 'plain-view', key: 'tab' } as const, 0)
 const flash = atom({ plugin: 'plain-view', key: 'flash' } as const, null as Flash | null)
 const reopenAt = atom({ plugin: 'plain-view', key: 'reopenAt' } as const, 0)
 const resetting = atom({ plugin: 'plain-view', key: 'resetting' } as const, false)
+const cardOn = atom({ plugin: 'plain-view', key: 'cardOn' } as const, false)
+// agent-watch's, read only: what its band says, which the card draws under the agents row.
+const AW_MESSAGE = { plugin: 'agent-watch', key: 'message' } as const
 
 /** The settings pane. */
 const PANE = 'plain-view-settings'
@@ -163,6 +166,12 @@ const settle = async ($: EngineInterface) => {
   const t = await read($, turn)
   if (t?.isDemo && t.end === undefined) return
   if ((!t || t.end !== undefined) && runningOf(await read($, agents)).length === 0) stopTicking()
+}
+
+/** Tells agent-watch whether the card is drawn, so its band's message goes under the agents row and not above the prompt. */
+const syncCard = async ($: EngineInterface) => {
+  const want = isOn && !isHidden && !isQuiet
+  if ((await read($, cardOn)) !== want) await update($, cardOn, () => want)
 }
 
 /** Whether agent-watch's /watch is among the commands the person can run. */
@@ -273,6 +282,7 @@ const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: st
       const s = switchWords(lang, COMMAND)
       isHidden = switchOf(verb) === 'hide'
       await $.store.set(KEY_HIDDEN, isHidden)
+      await syncCard($)
       return { text: isHidden ? s.hidden : s.shown }
     }
     case 'on':
@@ -358,6 +368,7 @@ export const register: Register = (on, options) => {
       immediate: true,
     })
     isHidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
+    await syncCard($)
     const rows = await $.config.list().catch(() => [])
     theme = rows.find(r => r.key === 'theme')?.value ?? theme
     // A reload in the middle of a turn: the shine goes on. A demo cut by the reload ends here,
@@ -518,6 +529,8 @@ export const register: Register = (on, options) => {
     const card = cardOf(t, await read($, items), await $.clock.now(), lang, agentText === 'card', team, view)
     if (!card) return next(e)
     const n = await read($, tick)
+    // agent-watch's band message, once it is installed and has one; a demo's card has no agents row.
+    const message = t?.isDemo ? null : ((await $.state.get(AW_MESSAGE).catch(() => undefined))?.value ?? null)
     const isWorking = (t !== null && t.end === undefined) || runningOf(team).length > 0
     // Rasters only on the terminal; another surface's table draws one as an empty box.
     const all = $.ui.resolve(e)
@@ -529,6 +542,7 @@ export const register: Register = (on, options) => {
       icons: style,
       answerLabel: WORDS[lang].answer,
       ...(hasWatch ? { onWatch: () => quietly($.command.run({ command: WATCH, args: '' })) } : {}),
+      ...(message ? { message } : {}),
       request: { more: WORDS[lang].moreLines, show: WORDS[lang].showRequest, fold: WORDS[lang].foldRequest },
       onRequest: () => quietly(update($, unfolded, v => !v)),
     })

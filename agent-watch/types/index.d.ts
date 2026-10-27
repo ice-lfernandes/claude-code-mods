@@ -37,6 +37,8 @@ export type Agent = {
   tokens: Tokens
   /** True once the stall toast fired; activity re-arms it. */
   isStalled: boolean
+  /** Which of the five looks (mascot and color) the agent has, in the order agents appeared. */
+  slot: number
   /** The last tool calls, oldest first: what each did, and whether it worked (null while it runs). */
   recent?: { doing: string; ok: boolean | null }[]
 }
@@ -53,6 +55,30 @@ export type Run = {
   windowUsed?: number | null
 }
 
+/**
+ * What the band above the prompt says, as data: plain-view draws it as a child of its agents row
+ * when it is on. Strings come localized; colors are hex for the person's theme.
+ */
+export type Message =
+  | { kind: 'done'; text: string }
+  | {
+      kind: 'run'
+      /** `Agents`. */
+      label: string
+      /** `0/3`: agents finished of all. */
+      count: string
+      /** The bar's cells, each filled or not, with its color. */
+      bar: { filled: boolean; color: string }[]
+      /** The current agent's one-cell shape and its color. */
+      glyph: string
+      color: string
+      name: string
+      /** What it does now, capitalized. */
+      action: string
+      /** `Name quiet for 6m` when the current agent is stalled, else null. */
+      stalled: string | null
+    }
+
 declare module 'claude-code' {
   interface PluginState {
     'agent-watch': {
@@ -68,8 +94,6 @@ declare module 'claude-code' {
       lastRun: Run | null
       /** Moves while agents run, so the pane's clocks and spinners redraw. */
       tick: number
-      /** Whether the pane lists finished agents, or folds them into one line. */
-      showDone: boolean
       /** Agents a clear removed: kept out though the listing still names them. */
       dropped: string[]
       /** Agent rows the pane shows opened, with their recent tool calls. */
@@ -79,6 +103,21 @@ declare module 'claude-code' {
       offset: number
       /** The 5-hour window's percent when the current wave started. */
       waveStart: number | null
+      /** The weekly window's percent when the current wave started. */
+      waveStartWeek: number | null
+      /** The 5-hour window's percent at the last refresh while agents ran, for the summary's live figure. */
+      windowNow: number | null
+      /** Groups the pane shows folded to their header: `running`, `finished`. */
+      folded: string[]
+      /** True from a wave's end to the next prompt: the band says the agents are done. */
+      bandDone: boolean
+      /** The band's message, or null while the band says nothing (hidden, quiet, no agents). plain-view reads it. */
+      message: Message | null
+    }
+    /** What agent-watch reads of plain-view: whether its card is drawn, and the agents its row lists. */
+    'plain-view': {
+      cardOn: boolean
+      agents: { id: string; endedAt?: number }[]
     }
   }
 }

@@ -8,7 +8,7 @@ CW, LH, FS = 8.4, 20, 14
 
 def merge(style, props):
     s = dict(style)
-    for k in ('bold', 'dimColor', 'color'):
+    for k in ('bold', 'dimColor', 'color', 'backgroundColor'):
         if k in props and props[k] is not None and props[k] is not False:
             s[k] = props[k]
         elif props.get(k) is False:
@@ -19,7 +19,8 @@ def spans(node, style):
     if node is None or isinstance(node, bool): return []
     if isinstance(node, (str, int, float)): return [(str(node), style)]
     p = node.get('props') or {}
-    if node['type'] == 'Button':
+    # A Button whose children paint a background (a group header) draws them; any other draws its label.
+    if node['type'] == 'Button' and 'label' in p and not any(isinstance(c, dict) and (c.get('props') or {}).get('backgroundColor') for c in node.get('children') or []):
         # A5: a primary is `[ label ]` in the accent color, a secondary `[ label ]` in the text color; plain is bare text.
         look = {'color': 'claude'} if p.get('variant') == 'primary' else {} if p.get('variant') == 'secondary' else {'dimColor': True} if p.get('dimColor') else {'color': 'cyan'}
         return [(p['label'] if p.get('plain') else f"[ {p['label']} ]", merge(style, look))]
@@ -44,6 +45,9 @@ ROUND = '╭╮╰╯─│'
 
 # The terminal's width for a row that wraps (flexWrap), when a section sets one; None: no wrap.
 WRAP = None
+# The width a pane gives its rows, when a section sets one: a Box with a fill, or a bordered row
+# that spreads its parts (`space-between`), then runs to the right edge, as in the terminal.
+STRETCH = None
 
 def lines(node, style=None, avail=None):
     """Rows of spans for a tree. `avail` is the width a flexGrow Box stretches to."""
@@ -61,9 +65,16 @@ def lines(node, style=None, avail=None):
         return [row[r * cols:(r + 1) * cols] for r in range(p['rows'])]
     border = p.get('borderStyle')
     pad, right = p.get('paddingX', 0), p.get('paddingRight', 0)
-    own = p['width'] if isinstance(p.get('width'), int) else (avail if p.get('flexGrow') else None)
+    spread_pad = bool(STRETCH and avail and p.get('flexDirection', 'row') == 'row' and (p.get('backgroundColor') or (p.get('borderStyle') and p.get('justifyContent') == 'space-between')))
+    # A stretched Box keeps its right padding too, so its last part stops short of the edge.
+    if spread_pad and not border: right += pad
+    is_row = p.get('flexDirection', 'row') == 'row'
+    spreads = STRETCH and avail and is_row and (p.get('backgroundColor') or (border and p.get('justifyContent') == 'space-between'))
+    own = p['width'] if isinstance(p.get('width'), int) else (avail if p.get('flexGrow') or spreads else None)
     inner = own - right - (pad * 2 + 2 if border else pad) if own else None
-    kids = [lines(c, style, inner) for c in node.get('children') or [] if c not in (None, False, True)]
+    # Under a stretch, a Box with no width of its own hands its children what is left of its own width.
+    below = inner if inner is not None else (avail - pad * 2 if STRETCH and avail and not border else None)
+    kids = [lines(c, style, below) for c in node.get('children') or [] if c not in (None, False, True)]
     kids = [k for k in kids if k]
     gap = p.get('gap', 0)
     # With no width to spread over, space-between keeps two cells between its parts.
@@ -88,11 +99,15 @@ def lines(node, style=None, avail=None):
         for run in runs:
             h = max((len(k) for k in run), default=0)
             rows = [[] for _ in range(h)]
+            # space-between with a width: the last part goes to the right edge, the others stay together.
+            extra = 0
+            if spreads and p.get('justifyContent') == 'space-between' and len(run) > 1 and inner:
+                extra = max(0, inner - sum(max((width(l) for l in k), default=0) for k in run) - gap * (len(run) - 1))
             for i, k in enumerate(run):
                 w = max((width(l) for l in k), default=0)
                 for r in range(h):
                     l = k[r] if r < len(k) else []
-                    if i and gap: rows[r].append((' ' * gap, {}))
+                    if i and gap: rows[r].append((' ' * (gap + (extra if i == len(run) - 1 else 0)), {}))
                     rows[r] += l + [(' ' * (w - width(l)), {})]
             out += rows
     if inner is not None:
@@ -106,6 +121,12 @@ def lines(node, style=None, avail=None):
                [[(bl + hz * w + br, b)]])
         pad = 0
     if pad or right: out = [[(' ' * pad, {})] + l + [(' ' * right, {})] for l in out]
+    # A fill covers the Box's whole width, padding included.
+    if p.get('backgroundColor') and STRETCH:
+        fill = {'backgroundColor': p['backgroundColor']}
+        out = [[(t, {**fill, **sp}) for t, sp in l] for l in out]
+    # A blank row above, as `marginTop` asks.
+    if p.get('marginTop') and STRETCH: out = [[] for _ in range(p['marginTop'])] + out
     return out
 
 def text_el(x, y, line):
@@ -114,16 +135,22 @@ def text_el(x, y, line):
     box = lambda t: any(c in ROUND for c in t)
     wide = any(cells(t) != len(t) or box(t) for t, _ in line)
     at = 0
+    # A span with a backgroundColor (a group header) is a filled rectangle under its text.
+    ground, pos = [], 0
+    for t, s in line:
+        if s.get('backgroundColor') and t:
+            ground.append(f'<rect x="{x + pos * CW:.1f}" y="{y - 15}" width="{cells(t) * CW:.1f}" height="{LH}" fill="{COLORS.get(s["backgroundColor"], s["backgroundColor"])}"/>')
+        pos += cells(t)
     for t, s in line:
         sx = f' x="{x + at * CW:.1f}"' if wide else ''
         if box(t): sx += f' textLength="{cells(t) * CW:.1f}" lengthAdjust="spacingAndGlyphs"'
         at += cells(t)
         if not t: continue
-        fill = COLORS.get(s.get('color'), s.get('color')) if s.get('color') else (DIM if s.get('dimColor') else FG)
+        fill = BG if s.get('color') == 'inverseText' else COLORS.get(s.get('color'), s.get('color')) if s.get('color') else (DIM if s.get('dimColor') else FG)
         if s.get('dimColor') and s.get('color'): fill = DIM
         w = ' font-weight="700"' if s.get('bold') else ''
         parts.append(f'<tspan{sx} fill="{fill}"{w}>{escape(t)}</tspan>')
-    return f'<text x="{x}" y="{y}" xml:space="preserve">{"".join(parts)}</text>' if parts else ''
+    return ''.join(ground) + (f'<text x="{x}" y="{y}" xml:space="preserve">{"".join(parts)}</text>' if parts else '')
 
 def plain(t, **s): return [(t, s)]
 
@@ -180,6 +207,14 @@ def load(path):
 
 def tree(s): return lines(json.loads(s))
 
+def stretched(s, cols=None):
+    """A pane tree laid out so its bars and spread rows run to the right edge: `cols` wide, or as wide as its own widest row."""
+    global STRETCH
+    if cols is None: cols = max((width(l) for l in lines(json.loads(s))), default=80)
+    STRETCH = cols
+    try: return trim(lines(json.loads(s), None, cols))
+    finally: STRETCH = None
+
 def trim(ls):
     while ls and width(ls[-1]) == 0: ls = ls[:-1]
     return [[(t.rstrip() if i == len(l) - 1 else t, s) for i, (t, s) in enumerate(l)] for l in ls]
@@ -216,7 +251,9 @@ open(f'{out}/allowlist-coach.svg', 'w').write(svg([
 d = load(f'{snap}/agent-watch.txt')
 status = [plain('  ' + [x for x in d['STATUS'] if 'stalled' in x][-1], dimColor=True)]
 open(f'{out}/agent-watch.svg', 'w').write(svg([
-    ('/watch', 'pane:Agents', trim(tree(d['TREE'][-1]))),
+    ('/watch', 'pane:Agents', stretched(d['TREE'][0])),
+    ('/watch with eight agents: a bar for each group and a boxed line each', 'pane:Agents', stretched(d['TREE'][1])),
+    ('above the prompt while agents run', 'raw', trim(tree(d['BAND'][0]))),
     ('status line while agents run', 'raw', status),
     ('toasts', 'toast', [plain(t) for t in d['TOAST']]),
 ], 60, 'agent-watch'))
