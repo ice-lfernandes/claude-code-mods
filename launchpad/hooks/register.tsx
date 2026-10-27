@@ -562,7 +562,8 @@ async function pressQuiet($: EngineInterface) {
 
 /** Opens the control panel, with the model read fresh. Opened by the person, it seats at any width. */
 async function openPanel($: EngineInterface) {
-  await load($)
+  // Fresh: the other mods register their commands in their own session.start, which may run after this one read the catalog.
+  await load($, true)
   const now = await $.session.model().catch(() => '')
   if (now) await update($, model, () => now)
   return $.ui.open({ id: PANEL, title: WORDS[lang].panel.title, focus: true, closeOnEscape: true }).catch(() => null)
