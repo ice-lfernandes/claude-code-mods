@@ -47,7 +47,7 @@ session's model and effort in one click, this collection's mods, and the shortcu
     marked. With the 5-hour window at 70% or more, `opus` and `max` turn yellow and a line says so; a
     press still switches at once.
   - **Mods** tab, a switchboard: one row per mod of this collection installed, named as the plugin
-    in every language (`⏳ limits-meter`, `🔐 allowlist-coach`, `👀 agent-watch`, `📜 plain-view`),
+    in every language (`⏳ limits-meter`, `🔐 allowlist-coach`, `👀 agent-watch`, `📜 plain-view`, `🧪 test-hud`),
     with a line on what it does and its command. State is color: `on` green, `off` dim, a hidden
     eye amber, the open tab in the accent, the footer verbs in the action color. The name opens the mod's pane. The **toggle**
     (`[ ● on ]` on the terminal, a green block on Claude Code desktop) runs `/x off` or `/x on`: off
@@ -58,7 +58,7 @@ session's model and effort in one click, this collection's mods, and the shortcu
     launchpad last set; a `/x hide` typed by hand shows after the next press. Below the rows, a
     `◦ quiet` toggle runs `/pad quiet`, the same as the chip on the hint line; then each mod missing, which
     puts its `/plugin install` command in the prompt, and the rules: off means off in every chat,
-    hidden keeps it on but out of sight. test-hud is left out: it is a tool for developers.
+    hidden keeps it on but out of sight.
   - **Hover:** a boxed button fills with the accent under the pointer, its label inverted, as the
     menu tiles do. On the terminal that is the shortcuts and `Fechar`; the model and effort controls are
     plain text there and boxes with the fill on Claude Code desktop. A link (no brackets: the tabs, the

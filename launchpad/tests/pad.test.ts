@@ -305,11 +305,11 @@ const fromPlugin = (name: string, plugin?: string): Target => ({ kind: 'command'
 test('mods: found by command and plugin; a command without a plugin name counts, another plugin\'s does not', async () => {
   const { installed, missing } = modsOf([fromPlugin('limits', 'limits-meter'), fromPlugin('watch'), fromPlugin('allowlist', 'someone-else')])
   expect(installed.map(m => m.plugin)).toEqual(['limits-meter', 'agent-watch'])
-  expect(missing.map(m => m.plugin)).toEqual(['allowlist-coach', 'plain-view'])
+  expect(missing.map(m => m.plugin)).toEqual(['allowlist-coach', 'plain-view', 'test-hud'])
   expect(modsOf([]).installed).toEqual([])
   expect(MODS.map(m => m.plugin)).not.toContain('launchpad')
-  expect(MODS.map(m => m.plugin)).not.toContain('test-hud') // for developers; leaves the collection after plan v2
-  expect(modsOf([fromPlugin('test-hud', 'test-hud')]).installed).toEqual([])
+  expect(MODS.map(m => m.plugin)).toContain('test-hud') // back in 0.10.0: it stays in this collection
+  expect(modsOf([fromPlugin('test-hud', 'test-hud')]).installed.map(m => m.plugin)).toEqual(['test-hud'])
 })
 
 test('mods: the install command for the prompt', async () => {
@@ -317,8 +317,8 @@ test('mods: the install command for the prompt', async () => {
 })
 
 test('mods: the plugin name in every language, with its command\'s icon in each style', async () => {
-  expect(MODS.map(m => modLabel(m, 'emoji'))).toEqual(['⏳ limits-meter', '🔐 allowlist-coach', '👀 agent-watch', '📜 plain-view'])
-  expect(MODS.map(m => modLabel(m, 'symbol'))).toEqual(['◔ limits-meter', '⊘ allowlist-coach', '◈ agent-watch', '§ plain-view'])
+  expect(MODS.map(m => modLabel(m, 'emoji'))).toEqual(['⏳ limits-meter', '🔐 allowlist-coach', '👀 agent-watch', '📜 plain-view', '🧪 test-hud'])
+  expect(MODS.map(m => modLabel(m, 'symbol'))).toEqual(['◔ limits-meter', '⊘ allowlist-coach', '◈ agent-watch', '§ plain-view', '✓ test-hud'])
   expect(Math.max(...MODS.map(m => cells(modLabel(m, 'emoji'))))).toBe(18) // the panel's 20-column tile holds it with a space each side
   expect(modLabel({ plugin: 'new-mod', command: 'new', toggles: false }, 'emoji')).toBe('🧩 new-mod') // no row yet: a plugin's icon
 })
