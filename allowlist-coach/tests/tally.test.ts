@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Entry } from '../types'
-import { addAllow, exampleOf, holdsSecret, isRisky, keyAt, noticeFor, progress, record, removeAllow, riskOf, rulesFor, setThreshold, shows, stable, status, summary, THRESHOLD, zero } from '../hooks/tally'
+import { addAllow, DEMO_CONFIGURED, demoEntries, exampleOf, holdsSecret, isRisky, keyAt, noticeFor, progress, record, removeAllow, riskOf, rulesFor, setThreshold, shows, stable, status, summary, THRESHOLD, zero } from '../hooks/tally'
 import { WORDS } from '../hooks/words'
 
 const NONE = { allow: [], ask: [], deny: [] }
@@ -219,5 +219,22 @@ describe('stage 2', () => {
     expect(progress(5)).toBe('█████ 5/5')
     setThreshold(undefined)
     expect(status(entry({ approved: THRESHOLD - 1 }), NONE)).toBe('counting')
+  })
+})
+
+describe('demo', () => {
+  test('the sample rules hold every status the pane draws, whatever the threshold', () => {
+    for (const t of [2, 5, 20]) {
+      setThreshold(t)
+      const found = Object.values(demoEntries(0)).map(e => status(e, DEMO_CONFIGURED)).sort()
+      expect(found).toEqual(['allowed', 'counting', 'ready', 'ready', 'refused', 'risky'])
+    }
+    setThreshold(undefined)
+  })
+
+  test('the sample rules are dated before now and none is a real rule of the project', () => {
+    const now = Date.parse('2026-10-27T12:00:00Z')
+    for (const e of Object.values(demoEntries(now))) expect(e.lastAt).toBeLessThan(now)
+    expect(DEMO_CONFIGURED).toEqual({ allow: [], ask: [], deny: [] })
   })
 })
