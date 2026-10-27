@@ -724,6 +724,19 @@ test('panel: some mods missing, their install buttons after the installed ones; 
   expect(drawn).not.toContain('"key":"install:limits-meter"')
 })
 
+test('panel: a mod whose command registered after the session started counts as installed once the panel opens', async ($, on) => {
+  const commands = [...COMMANDS, MOD_COMMANDS[0]!]
+  world(on, files, undefined, commands)
+  await start($)
+  commands.push(MOD_COMMANDS[1]!, MOD_COMMANDS[2]!) // /allowlist and /watch land after launchpad read the list
+  await pad($, 'panel')
+  const drawn = JSON.stringify(await (await panel($)).drawn())
+  expect(drawn).toContain('"key":"mod:allowlist-coach"')
+  expect(drawn).toContain('"key":"mod:agent-watch"')
+  expect(drawn).not.toContain('"key":"install:allowlist-coach"')
+  expect(drawn).not.toContain('"key":"install:agent-watch"')
+})
+
 test('panel and /pad configuration: every mod installed, /pad configuration says so', async ($, on) => {
   world(on, files, undefined, [...COMMANDS, ...MOD_COMMANDS])
   await start($)
