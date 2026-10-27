@@ -18,6 +18,7 @@ export const ICONS: Record<string, { emoji: string; symbol: string }> = {
   shield: { emoji: '🔐', symbol: '⊘' },
   agents: { emoji: '👀', symbol: '◈' },
   scroll: { emoji: '📜', symbol: '§' },
+  tests: { emoji: '🧪', symbol: '✓' },
   // commands
   compress: { emoji: '📦', symbol: '⇲' },
   chart: { emoji: '📊', symbol: '▥' },
@@ -50,6 +51,7 @@ export const COMMAND_ICONS: Record<string, string> = {
   allowlist: 'shield',
   watch: 'agents',
   'plain-view': 'scroll',
+  'test-hud': 'tests',
   // built-in commands
   clear: 'broom',
   compact: 'compress',

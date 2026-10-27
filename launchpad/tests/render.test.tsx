@@ -403,8 +403,7 @@ const band = ($: any, surface = 'terminal', hasSurvey = false) =>
   $.ui.mount({ plugin: 'launchpad', surface, component: 'AbovePrompt', props: { bodyColumns: 122, hasSurvey }, viewport: { columns: 122, rows: 40 } } as never)
 const panel = ($: any, surface = 'terminal') =>
   $.ui.mount({ plugin: 'launchpad', surface, component: 'Pane', requestId: 'launchpad-panel', props: { title: 'Painel', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }, viewport: { columns: 102, rows: 40 } } as never)
-// /model and /effort are built in; this collection's mods by their plugins, and test-hud, which the
-// panel leaves out.
+// /model and /effort are built in; this collection's mods by their plugins.
 const CONTROLS = [
   { name: 'model', description: 'Set the AI model', source: 'builtin' },
   { name: 'effort', description: 'Set the effort level', source: 'builtin' },
@@ -567,7 +566,7 @@ test('start: ◆ pad on the desktop is the surface\'s own button', async ($, on)
 })
 
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`panel: model and effort chips, the mods but test-hud, the shortcuts less /model, on ${surface}`, async ($, on) => {
+  test(`panel: model and effort chips, the mods, the shortcuts less /model, on ${surface}`, async ($, on) => {
     const w = world(on, files, undefined, [...COMMANDS, ...CONTROLS, ...MOD_COMMANDS, { name: 'help', description: 'Help', source: 'builtin' }])
     await start($)
     await step($, 'claude-opus-5-5', 'high')
@@ -582,9 +581,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(drawn).toContain('● high')
     expect(drawn).not.toContain('"key":"model:opus"') // the current one is not a button
     for (const m of ['limits-meter', 'allowlist-coach', 'agent-watch']) expect(drawn).toContain(`"key":"mod:${m}"`)
-    expect(drawn).not.toContain('"key":"mod:test-hud"')
+    expect(drawn).toContain('"key":"mod:test-hud"') // back in 0.10.0
     // each mod by its plugin's name, the same in every language, with its command's icon
-    for (const l of ['⏳ limits-meter', '🔐 allowlist-coach', '👀 agent-watch', '📜 plain-view']) expect(drawn).toContain(l)
+    for (const l of ['⏳ limits-meter', '🔐 allowlist-coach', '👀 agent-watch', '📜 plain-view', '🧪 test-hud']) expect(drawn).toContain(l)
     for (const l of ['⏱️ limites', '🛡️ permissões', '🛰️ agentes', 'transcript limpo']) expect(drawn).not.toContain(l)
     expect(drawn).toContain('Relógio do cache, limites de 5h e da semana, contexto') // P3: what each mod does
     expect(drawn).toContain('Atalhos')
@@ -759,7 +758,7 @@ test('/pad configuration: the mods installed, and the missing ones as install co
   expect(drawn).toContain('agent-watch')
   expect(drawn).toContain('Faltam (o comando vai para o prompt; Enter instala):')
   expect(drawn).toContain('"key":"install:allowlist-coach"')
-  expect(drawn).not.toContain('"key":"install:test-hud"')
+  expect(drawn).toContain('"key":"install:test-hud"') // missing like the others, since 0.10.0
   expect(drawn).not.toContain('"key":"install:limits-meter"')
   await ui.press({ key: 'install:allowlist-coach' })
   expect(w.fills.map(f => f.text)).toEqual(['/plugin install allowlist-coach --marketplace ice-lfernandes/claude-code-mods'])
@@ -961,7 +960,7 @@ test('quiet: no menu at the start and /pad show says it is still quiet', { optio
 })
 
 // P1 to P3 (prototype launchpad-0.9.0, variant A): the panel is a switchboard.
-const ENABLED = ['limits-meter', 'allowlist-coach', 'agent-watch', 'plain-view'].map(p => ({ key: `${p}.enabled`, value: p !== 'agent-watch' }))
+const ENABLED = ['limits-meter', 'allowlist-coach', 'agent-watch', 'plain-view', 'test-hud'].map(p => ({ key: `${p}.enabled`, value: p !== 'agent-watch' }))
 const SB_COMMANDS = [...COMMANDS, ...CONTROLS, ...MOD_COMMANDS]
 const sbWorld = (on: On, env?: Record<string, string>) => world(on, files, env, SB_COMMANDS, undefined, { rows: [...ENABLED, ...QUIET_ROWS] })
 
@@ -972,7 +971,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await panel($, surface)
     const tree = await ui.drawn()
     const drawn = JSON.stringify(tree)
-    for (const m of ['limits-meter', 'allowlist-coach', 'plain-view']) {
+    for (const m of ['limits-meter', 'allowlist-coach', 'plain-view', 'test-hud']) {
       expect(drawn).toContain(`"key":"mod:${m}"`)
       expect(drawn).toContain(`"key":"eye:${m}"`)
       expect(drawn).toContain(`"key":"toggle:${m}"`)
@@ -986,7 +985,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(drawn).toContain('"key":"toggle:quiet"')
     expect(drawn).toContain('Desligado vale em toda conversa. Oculto mantém ligado, fora de vista.')
     expect(drawn).toContain('Mod novo da coleção aparece aqui sozinho.')
-    expect(drawn).not.toContain('"key":"mod:test-hud"')
+    expect(drawn).toContain('/test-hud abre · hide oculta') // T4: test-hud has its row, its eye and its toggle
+    expect(drawn).toContain('Testes: contagem, falhas por arquivo, instáveis')
     if (surface === 'terminal') {
       expect(drawn).toContain('"label":"● on"')
       expect(drawn).toContain('"label":"○ off"')
