@@ -34,6 +34,8 @@ declare module 'claude-code' {
       selected: number | null
       /** The runner the pane shows, picked in its tabs; null for the latest run's. */
       tab: string | null
+      /** The failing-test groups the person opened or closed; null until they press one (the first shows open). */
+      opened: string[] | null
     }
   }
 }

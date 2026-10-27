@@ -25,7 +25,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 | [limits-meter](limits-meter/) | `/limits` | Plan limits, cache clock and context above the prompt: model and effort, 5-hour and weekly windows with reset times, a countdown of the prompt cache with an opt-in keep-warm that spends plan, context split by group (system, MCP, messages), tokens per turn, and a toast on a costly model switch near the limit |
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
 | [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: a card per agent with its mascot, step and tokens, a band above the prompt, a toast when one stalls, and a summary naming the heaviest agent when they finish |
-| [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
+| [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total on the hint line under the prompt, colored by the result, a sparkline of failures across runs, the failing tests grouped by file, and toasts when the suite turns green or a test turns flaky |
 | [launchpad](launchpad/) | `/pad` | A menu of one-click actions under the header, above the prompt or in a pane: each button runs an installed command, skill or agent. `◆ pad` opens a control panel: model and effort in one click, this collection's mods, the shortcuts. Pick and order up to 8 in `/pad configuration`, or ship a team's in the repository |
 | [plain-view](plain-view/) | `/plain-view` | A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends |
 
@@ -149,25 +149,31 @@ Or for one session, from a clone: `claude --plugin-dir ./agent-watch`.
 
 ### test-hud
 
-The status line and the toast show on their own each time a test runner runs in Bash. Commands:
+The tests line (atop the hint line under the prompt, red, yellow or green by the result) and the
+toasts show on their own each time a test runner runs in Bash. Commands:
 
 ```
 /test-hud           open the pane: last run, failing tests (new ones marked), fixed tests,
                     sparkline, last 10 runs
 /test-hud demo      add six fake runs that go from red to green
 /test-hud clear     drop the runs
-/test-hud hide      keep counting, with no status line or toast
+/test-hud hide      keep counting, with no tests line or toast
 /test-hud show      bring them back
 /test-hud off | on  turn the mod off or on in every conversation
 /test-hud help      list the commands
 ```
 
-In the pane, press a failing test to ask Claude for a fix, or `run again` to ask for the same
-command: both put the request in the prompt and run nothing. Press a run in the list to see it;
-failing tests that failed, passed and failed again are marked `flaky?`. With the `keepHistory`
-option the runs carry over to the next session in the same project.
+In the pane, failing tests come grouped by file (a class for Maven and Gradle, a suite for jest and
+bun, a module for cargo; go and rspec stay a flat list). The first group is open; press a header to
+open or close one. `show` puts the file in the prompt (`@src/a.test.ts`), only where the group is a
+real path (vitest, pytest); `run` asks for only that group's tests with the same runner. Press a
+failing test to ask Claude for a fix, or `run again` to ask for the same command: all of them put
+the request in the prompt and run nothing. Press a run in the list to see it; failing tests that
+failed, passed and failed again are marked `flaky?`, and one toast names them, once per test
+(`flakyToast` option, on by default). With the `keepHistory` option the runs carry over to the next
+session in the same project.
 
-![test-hud: the /test-hud pane, the status line and the green toast](screenshots/test-hud.svg)
+![test-hud: the /test-hud pane, the tests line and the toasts](screenshots/test-hud.svg)
 
 #### Install
 

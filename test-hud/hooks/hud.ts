@@ -3,7 +3,6 @@
 // (surefire and failsafe), Gradle, skipped counts and failing test names added.
 
 import type { Parsed, Run } from '../types'
-import type { Lang } from './ui'
 import { clip, elapsed } from './ui'
 import { WORDS } from './words'
 
@@ -216,6 +215,74 @@ export const flaky = (list: readonly Run[], run: Run, size = FLAKY_RUNS): Set<st
   return out
 }
 
+/** The runs a flaky check reads: the command's last FLAKY_RUNS runs whose failing names are all there. */
+export const flakyWindow = (list: readonly Run[], run: Run, size = FLAKY_RUNS) => sameCommand(list, run).filter(isReadable).slice(-size)
+
+/** A failing test's group: the file, suite, class or module its name starts with, and the test's own name. */
+export type Group = { key: string; isFile: boolean; test: string }
+
+// A path or a file name: no spaces, a slash or a known extension. A key the clip cut (…) is not one.
+const FILE = /^[^\s@]+$/
+const looksLikeFile = (key: string) => FILE.test(key) && !key.endsWith('…') && (/[\\/]/.test(key) || /\.(?:[cm]?[jt]sx?|py|rs|go|rb|java|kt|php|cs|vue|svelte)$/.test(key))
+
+/**
+ * The group of a failing test, from the name as the runner printed it: `file > suite > test`
+ * (vitest), `Suite › test` (jest), `Class > test` (gradle, bun), `file::test` (pytest),
+ * `mod::test` (cargo), `Class.test` (maven). Null when the name carries none (go, rspec).
+ * The key is a real path only for vitest and pytest, so the mod never guesses where a file is.
+ */
+export const groupOf = (runner: string, name: string): Group | null => {
+  const split = /^(.+?) (?:>|›) (.+)$/.exec(name)
+  if (split) return { key: split[1]!, isFile: looksLikeFile(split[1]!), test: split[2]! }
+  if (runner === 'pytest') {
+    const at = name.indexOf('::')
+    if (at > 0) return { key: name.slice(0, at), isFile: looksLikeFile(name.slice(0, at)), test: name.slice(at + 2) }
+  }
+  if (runner === 'cargo') {
+    const at = name.lastIndexOf('::')
+    if (at > 0) return { key: name.slice(0, at), isFile: false, test: name.slice(at + 2) }
+  }
+  if (runner === 'maven') {
+    const at = name.lastIndexOf('.')
+    if (at > 0 && at < name.length - 1) return { key: name.slice(0, at), isFile: false, test: name.slice(at + 1) }
+  }
+  return null
+}
+
+export type Grouped = { key: string; isFile: boolean; tests: { name: string; test: string }[] }
+
+/**
+ * The failing names by group, in the order each group first shows. Null when no name has a group:
+ * the pane keeps its flat list then. Names with none, among others that have one, are `rest`.
+ */
+export const groupsOf = (runner: string, names: readonly string[]): { groups: Grouped[]; rest: string[] } | null => {
+  const groups: Grouped[] = []
+  const rest: string[] = []
+  for (const name of names) {
+    const g = groupOf(runner, name)
+    if (!g) {
+      rest.push(name)
+      continue
+    }
+    const at = groups.find(x => x.key === g.key)
+    if (at) at.tests.push({ name, test: g.test })
+    else groups.push({ key: g.key, isFile: g.isFile, tests: [{ name, test: g.test }] })
+  }
+  return groups.length ? { groups, rest } : null
+}
+
+/** What a run's groups are called in the pane's heading: files when every key is a path. */
+export const kindOf = (runner: string, groups: readonly Grouped[]): 'file' | 'class' | 'suite' | 'module' | 'group' => {
+  if (groups.every(g => g.isFile)) return 'file'
+  if (runner === 'maven' || runner === 'gradle') return 'class'
+  if (runner === 'jest' || runner === 'bun') return 'suite'
+  if (runner === 'cargo') return 'module'
+  return 'group'
+}
+
+/** The test's own name, for a toast: the part after the group. */
+export const testName = (runner: string, name: string) => groupOf(runner, name)?.test ?? name
+
 /** The runners of the runs, in the order they first ran. */
 export const runnersOf = (list: readonly Run[]) => [...new Set(list.map(r => r.runner))]
 
@@ -241,19 +308,45 @@ export const trail = (list: readonly Run[], size = SPARK_RUNS, runner = list.at(
   runner ? list.filter(r => r.runner === runner).slice(-size) : []
 
 /** "41/43", "2 failed", "pass". */
-export const score = (r: Run, lang: Lang = 'en') =>
-  r.passed === null ? (r.failed ? WORDS[lang].failedScore(r.failed) : WORDS[lang].pass) : `${r.passed}/${r.passed + r.failed}`
+export const score = (r: Run) =>
+  r.passed === null ? (r.failed ? WORDS.failedScore(r.failed) : WORDS.pass) : `${r.passed}/${r.passed + r.failed}`
 
-/** "✗ tests 41/43 ▃▅█▅▂", or undefined before any run. */
-export const statusText = (list: readonly Run[], lang: Lang = 'en') => {
+/** Tests the command's last runs left flaky up to `run`: each failed, passed and failed again in the window. */
+export const flakyNear = (list: readonly Run[], run: Run): Set<string> => {
+  const out = new Set<string>()
+  for (const r of flakyWindow(list, run)) for (const name of flaky(list, r)) out.add(name)
+  return out
+}
+
+/** The tests line under the prompt, in parts: its theme key, glyph, score, note and sparkline. */
+export type TestsLine = { tone: 'success' | 'warning' | 'error'; glyph: string; score: string; note: string; spark: string }
+
+/**
+ * The latest run as the tests line: error with any failure, warning with skipped tests or tests
+ * the command left flaky, success otherwise. Undefined before any run.
+ */
+export const testsLine = (list: readonly Run[]): TestsLine | undefined => {
   const r = list.at(-1)
   if (!r) return undefined
   const line = spark(trail(list))
-  return `${r.failed ? '✗' : '✓'} ${WORDS[lang].tests} ${score(r, lang)}${line.length > 1 ? ` ${line}` : ''}`
+  const shaky = r.failed ? 0 : flakyNear(list, r).size
+  return {
+    tone: r.failed ? 'error' : shaky || r.skipped ? 'warning' : 'success',
+    glyph: r.failed ? '✗' : shaky ? '!' : '✓',
+    score: `${WORDS.tests} ${score(r)}`,
+    note: r.failed ? WORDS.failingCount(r.failed) : shaky ? WORDS.flakyCount(shaky) : r.skipped ? WORDS.skipped(r.skipped) : '',
+    spark: line.length > 1 ? line : '',
+  }
+}
+
+/** "✗ tests 41/43 · 2 failing ▃▅█▅▂", the tests line as one text, or undefined before any run. */
+export const lineText = (list: readonly Run[]) => {
+  const l = testsLine(list)
+  return l && `${l.glyph} ${l.score}${l.note ? ` · ${l.note}` : ''}${l.spark ? ` ${l.spark}` : ''}`
 }
 
 /** The toast for a run that turned its runner green after red runs, else null. */
-export const greenText = (list: readonly Run[], run: Run, lang: Lang = 'en'): string | null => {
+export const greenText = (list: readonly Run[], run: Run): string | null => {
   if (run.failed > 0) return null
   const same = list.filter(r => r.runner === run.runner && r.n < run.n)
   let reds = 0
@@ -261,15 +354,26 @@ export const greenText = (list: readonly Run[], run: Run, lang: Lang = 'en'): st
   if (reds === 0) return null
   const first = same[same.length - reds]!
   const span = elapsed(run.endedAt - (first.endedAt - first.durationMs))
-  return WORDS[lang].green(score(run, lang), run.runner, reds, span)
+  return WORDS.green(score(run), run.runner, reds, span)
 }
 
 /** The toast for a run that turned its runner red right after a green run, else null. */
-export const redText = (list: readonly Run[], run: Run, lang: Lang = 'en'): string | null => {
+export const redText = (list: readonly Run[], run: Run): string | null => {
   if (run.failed === 0) return null
   const prev = previous(list, run)
   if (!prev || prev.failed > 0) return null
-  return WORDS[lang].red(score(run, lang), run.runner, run.failed)
+  return WORDS.red(score(run), run.runner, run.failed)
+}
+
+/**
+ * The toast for a run that left tests flaky that `told` has not named yet, else null: one toast
+ * per run, with the first name and how many more. The caller adds `names` to `told` once it shows.
+ */
+export const flakyToast = (list: readonly Run[], run: Run, told: ReadonlySet<string>): { text: string; names: string[] } | null => {
+  const names = [...flaky(list, run)].filter(n => !told.has(n))
+  if (names.length === 0) return null
+  const first = clip(testName(run.runner, names[0]!), 30)
+  return { text: WORDS.flakyToast(first, names.length - 1, flakyWindow(list, run).length), names }
 }
 
 /** The command's first line, clipped, for the pane. */
