@@ -19,16 +19,18 @@ const RED = ' FAIL  src/a.test.ts > parse > empty\n FAIL  src/a.test.ts > parse 
 const GREEN = '      Tests  43 passed (43)'
 const PYTEST = 'FAILED tests/test_api.py::test_routes\n1 failed, 9 passed in 0.40s'
 
-type World = { toasts: string[]; statuses: (string | undefined)[]; fills: { text: string; decorations?: unknown }[]; logs: string[]; closed: string[]; output: string }
+type World = { opens: string[]; toasts: string[]; statuses: (string | undefined)[]; fills: { text: string; decorations?: unknown }[]; logs: string[]; closed: string[]; output: string }
 
 const world = (on: On, env: Record<string, string> = {}, store = true): { w: World; clock: ReturnType<typeof mock.clock> } => {
   const clock = mock.clock(on, { now: NOW })
-  const w: World = { toasts: [], statuses: [], fills: [], logs: [], closed: [], output: RED }
-  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  const w: World = { opens: [], toasts: [], statuses: [], fills: [], logs: [], closed: [], output: RED }
+  on('ui.open', (_$, e: any) => (w.opens.push(e.id), { value: { isPlaced: true } }) as never)
   on('ui.close', (_$, e: any) => (w.closed.push(e.id), { value: undefined }) as never)
   on('ui.toast', (_$, e: any) => (w.toasts.push(e.text), { value: undefined }) as never)
   on('ui.status', (_$, e: any) => (w.statuses.push(e.text), { value: undefined }) as never)
   on('ui.log', (_$, e: any) => (w.logs.push(e.text), { value: undefined }) as never)
+  // The engine's own hint line, beneath the plugins.
+  on('ui.render', () => ({ type: 'Text', children: ['? for shortcuts'] }) as never)
   on('prompt.fill', (_$, e: any) => (w.fills.push({ text: e.text, decorations: e.decorations }), { isFilled: true, text: e.text, cursor: e.text.length }) as never)
   on('env.get', (_$, e: any) => ({ value: env[e.name] }) as never)
   on('command.register', () => ({ value: undefined }) as never)
@@ -48,15 +50,33 @@ const vitest = ($: any, id: string, extra: object = {}) => $.tool.call({ tool: '
 const mount = ($: any, surface: 'terminal' | 'desktop' = 'terminal') =>
   $.ui.mount({ plugin: 'test-hud', surface, component: 'Pane', requestId: 'test-hud', props: PROPS, viewport: { columns: 102, rows: 40 } } as never)
 
+/** The node of a drawn tree whose props carry `key`, depth first. */
+const find = (n: unknown, key: string): unknown => {
+  if (!n || typeof n !== 'object') return undefined
+  if (Array.isArray(n)) return n.map(x => find(x, key)).find(Boolean)
+  if ((n as { props?: { key?: string } }).props?.key === key) return n
+  return find((n as { children?: unknown }).children, key)
+}
+const hint = ($: any, surface: 'terminal' | 'desktop' = 'terminal') =>
+  $.ui.mount({ plugin: 'test-hud', surface, component: 'PromptHint', props: { isDraft: false, isWorking: false, hint: '? for shortcuts' }, viewport: { columns: 122, rows: 40 } } as never)
+/** The tests line atop the hint line, as text; undefined while test-hud draws none there. */
+const lineOf = async ($: any, surface: 'terminal' | 'desktop' = 'terminal') => {
+  const h = await hint($, surface)
+  const tree = await h.drawn()
+  await h.unmount()
+  const b = find(tree, 'hud:open')
+  return b ? flat(b) : undefined
+}
+
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`status line, pane, fixed tests and green toast on ${surface}`, async ($, on) => {
+  test(`tests line, pane, fixed tests and green toast on ${surface}`, async ($, on) => {
     const { w } = world(on)
     await start($)
     await $.tool.call({ tool: 'Bash', command: 'ls src', tool_use_id: 'tu0' } as never)
-    expect(w.statuses).toEqual([])
+    expect(await lineOf($)).toBeUndefined()
 
     await vitest($, 'tu1')
-    expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+    expect(await lineOf($)).toBe('✗ tests 41/43 · 2 failing')
     await $.command.run(RUN as never)
 
     const pane = await mount($, surface)
@@ -79,7 +99,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     w.output = GREEN
     await vitest($, 'tu3')
-    expect(w.statuses.at(-1)).toBe('✓ tests 43/43 ██▁')
+    expect(await lineOf($)).toBe('✓ tests 43/43 ██▁')
     expect(w.toasts).toEqual(['✓ Tests green: 43/43 (vitest) after 2 red runs in 36s. /test-hud'])
     drawn = JSON.stringify(await pane.drawn())
     expect(flat(JSON.parse(drawn))).toContain('43/43 passing')
@@ -105,7 +125,7 @@ test('a failing test and run again fill the prompt with the whole command; nothi
   expect(w.fills.at(-1)?.text).toBe(`Investigate and fix the failure in src/a.test.ts > parse > empty. Command: ${CMD}`)
   await pane.press({ key: 'rerun' })
   expect(w.fills.at(-1)?.text).toBe(`Run the tests again: ${CMD}`)
-  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+  expect(await lineOf($)).toBe('✗ tests 41/43 · 2 failing')
   await pane.unmount()
 })
 
@@ -129,7 +149,7 @@ test('demo runs red to green, clear removes them', async ($, on) => {
   const { w } = world(on)
   await start($)
   await $.command.run({ ...RUN, args: 'demo' } as never)
-  expect(w.statuses.at(-1)).toBe('✓ tests 43/43 █▆▇▄▂▁')
+  expect(await lineOf($)).toBe('! tests 43/43 · 1 flaky? █▆▇▄▂▁')
   // Run 3 leaves "rounds half up" flaky (red, green, red): the toast names it once, then the green one.
   expect(w.toasts).toEqual(['! Flaky test: totals > rounds half up (3 runs) /test-hud', '✓ Tests green: 43/43 (vitest) after 5 red runs in 7m 44s. /test-hud'])
   const pane = await mount($)
@@ -160,31 +180,6 @@ test('regression toast when a green runner turns red', { options: { regressionTo
   await vitest($, 'tu2')
   await vitest($, 'tu3')
   expect(w.toasts).toEqual(['✗ Tests turned red: 41/43 (vitest), 2 failing. /test-hud'])
-})
-
-test('Portuguese from LANG: status line, pane and prompt', async ($, on) => {
-  const { w } = world(on, { LANG: 'pt_BR.UTF-8' })
-  await start($)
-  await vitest($, 'tu1')
-  expect(w.statuses.at(-1)).toBe('✗ testes 41/43')
-  const pane = await mount($)
-  const drawn = JSON.stringify(await pane.drawn())
-  expect(flat(JSON.parse(drawn))).toContain('41/43 passando')
-  expect(flat(JSON.parse(drawn))).toContain('2 falharam')
-  expect(drawn).toContain('Falhando (2 em 1 arquivo)')
-  expect(drawn).toContain('"label":"ver"')
-  expect(drawn).toContain('"label":"rodar"')
-  expect(drawn).toContain('Fechar')
-  await pane.press({ key: 'rerun' })
-  expect(w.fills.at(-1)?.text).toBe(`Rode os testes de novo: ${CMD}`)
-  await pane.unmount()
-})
-
-test('the language option wins over LANG', { options: { language: 'en' } }, async ($, on) => {
-  const { w } = world(on, { LANG: 'pt_BR.UTF-8' })
-  await start($)
-  await vitest($, 'tu1')
-  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
 })
 
 test('a run in the list shows it, flaky tests are marked, and latest goes back', async ($, on) => {
@@ -221,7 +216,7 @@ test('with two runners, tabs pick which one the pane shows', async ($, on) => {
   await start($)
   await vitest($, 'tu1')
   await $.tool.call({ tool: 'Bash', command: 'pytest -q', tool_use_id: 'tu2' } as never)
-  expect(w.statuses.at(-1)).toBe('✗ tests 9/10')
+  expect(await lineOf($)).toBe('✗ tests 9/10 · 1 failing')
   const pane = await mount($)
   let drawn = JSON.stringify(await pane.drawn())
   expect(drawn).toContain('▸ pytest')
@@ -254,7 +249,7 @@ test('keepHistory: the next session in the project starts with the runs, demo le
   await vitest($, 'tu1')
   await $.command.run({ ...RUN, args: 'demo' } as never)
   await start($) // a new session reads the store
-  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+  expect(await lineOf($)).toBe('✗ tests 41/43 · 2 failing')
   await $.command.run({ ...RUN, args: 'clear' } as never)
   await start($)
   const pane = await mount($)
@@ -269,7 +264,7 @@ test('without keepHistory nothing is stored', async ($, on) => {
   await start($)
   await vitest($, 'tu1')
   expect(writes).toBe(0)
-  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+  expect(await lineOf($)).toBe('✗ tests 41/43 · 2 failing')
 })
 
 test('a saved copy named in the output is read only from tool-results under the config folder', async ($, on) => {
@@ -290,29 +285,29 @@ test('a saved copy named in the output is read only from tool-results under the 
   w.output = 'Output too large. Full output saved to: /repo/tool-results/../../home/u/.ssh/id_ed25519'
   await vitest($, 'tu1')
   expect(read).toEqual([])
-  expect(w.statuses).toEqual([])
+  expect(await lineOf($)).toBeUndefined()
 
   w.output = 'Output too large. Full output saved to: /home/u/.claude/projects/p/s/tool-results/b1.txt'
   await vitest($, 'tu2')
   expect(read).toEqual(['/home/u/.claude/projects/p/s/tool-results/b1.txt'])
-  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+  expect(await lineOf($)).toBe('✗ tests 41/43 · 2 failing')
 })
 
 // /test-hud on, off, hide and show
 
-test('hide: the status line and the green toast go quiet, the run is still counted; show brings them back', async ($, on) => {
+test('hide: the tests line and the green toast go quiet, the run is still counted; show brings them back', async ($, on) => {
   const { w } = world(on)
   await start($)
   await vitest($, 'tu1')
-  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+  expect(await lineOf($)).toBe('✗ tests 41/43 · 2 failing')
   expect((await $.command.run({ ...RUN, args: 'hide' } as never)).text).toBe('test-hud hidden but on · /test-hud show brings it back')
-  expect(w.statuses.at(-1)).toBeUndefined()
+  expect(await lineOf($)).toBeUndefined()
   w.output = GREEN
   await vitest($, 'tu2')
-  expect(w.statuses.at(-1)).toBeUndefined()
+  expect(await lineOf($)).toBeUndefined()
   expect(w.toasts).toEqual([])
   expect((await $.command.run({ ...RUN, args: 'show' } as never)).text).toBe('test-hud shown · /test-hud hide hides it')
-  expect(w.statuses.at(-1)).toBe('✓ tests 43/43 █▁')
+  expect(await lineOf($)).toBe('✓ tests 43/43 █▁')
 })
 
 test('hide is kept for the next session', async ($, on) => {
@@ -321,7 +316,7 @@ test('hide is kept for the next session', async ($, on) => {
   await $.command.run({ ...RUN, args: 'hide' } as never)
   await start($)
   await vitest($, 'tu1')
-  expect(w.statuses.filter(s => s !== undefined)).toEqual([])
+  expect(await lineOf($)).toBeUndefined()
 })
 
 test('on and off write the enabled option', async ($, on) => {
@@ -334,12 +329,12 @@ test('on and off write the enabled option', async ($, on) => {
   expect(sets).toEqual([{ key: 'test-hud.enabled', value: false }])
 })
 
-test('off: runs are not counted and the status line stays empty, but the command still answers', { options: { enabled: false } }, async ($, on) => {
+test('off: runs are not counted and the tests line stays empty, but the command still answers', { options: { enabled: false } }, async ($, on) => {
   const { w } = world(on)
   on('config.set', (_$: any, e: any) => ({ value: e.value }) as never)
   await start($)
   await vitest($, 'tu1')
-  expect(w.statuses).toEqual([])
+  expect(await lineOf($)).toBeUndefined()
   expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('test-hud is already off.')
   expect((await $.command.run({ ...RUN, args: 'on' } as never)).text).toBe('test-hud on · /test-hud off turns it off')
 })
@@ -352,16 +347,16 @@ test('a refused option says why', async ($, on) => {
 })
 
 // The quiet option, set in every mod by /pad quiet: silent like hide, and `show` does not undo it.
-test('quiet: no status line and no toast, the run is still counted, and show does not undo it', { options: { quiet: true } }, async ($, on) => {
+test('quiet: no tests line and no toast, the run is still counted, and show does not undo it', { options: { quiet: true } }, async ($, on) => {
   const { w } = world(on)
   await start($)
   await vitest($, 'tu1')
-  expect(w.statuses.at(-1)).toBeUndefined()
+  expect(await lineOf($)).toBeUndefined()
   w.output = GREEN
   await vitest($, 'tu2')
   expect(w.toasts).toEqual([])
   await $.command.run({ ...RUN, args: 'show' } as never)
-  expect(w.statuses.at(-1)).toBeUndefined()
+  expect(await lineOf($)).toBeUndefined()
   const pane = await mount($)
   expect(flat(JSON.parse(JSON.stringify(await pane.drawn())))).toContain('43/43')
   await pane.unmount()
@@ -414,7 +409,7 @@ test('show puts the file in the prompt, run asks for only that group; nothing ru
   expect(w.fills.at(-1)?.text).toBe('Show the failing tests in @src/b.test.ts')
   await pane.press({ key: 'only:src/b.test.ts' })
   expect(w.fills.at(-1)?.text).toBe(`Run only the tests in src/b.test.ts, with the same runner as: ${CMD}`)
-  expect(w.statuses.at(-1)).toBe('✗ tests 40/43')
+  expect(await lineOf($)).toBe('✗ tests 40/43 · 3 failing')
   await pane.unmount()
 })
 
@@ -536,3 +531,39 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await pane.unmount()
   })
 }
+
+// T5 (prototype test-hud-0.7.1, variant B): the tests line atop the hint line, colored by the result.
+const tonesOf = (tree: unknown) => [...JSON.stringify(find(tree, 'hud:open')).matchAll(/"color":"(\w+)"/g)].map(m => m[1])
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the tests line: red, then green, above the engine's hint, and a press opens the pane on ${surface}`, async ($, on) => {
+    const { w } = world(on)
+    await start($)
+    expect(w.statuses).toEqual([undefined]) // 0.7.0's status line is cleared
+    await vitest($, 'tu1')
+    const h = await hint($, surface)
+    let tree = await h.drawn()
+    expect(new Set(tonesOf(tree))).toEqual(new Set(['error']))
+    expect(flat(tree)).toBe('✗ tests 41/43 · 2 failing? for shortcuts')
+    await h.press({ key: 'hud:open' })
+    expect(w.opens).toEqual(['test-hud'])
+    w.output = GREEN
+    await vitest($, 'tu2')
+    tree = await h.drawn()
+    expect(new Set(tonesOf(tree))).toEqual(new Set(['success']))
+    expect(await lineOf($, surface)).toBe('✓ tests 43/43 █▁')
+    await h.unmount()
+  })
+}
+
+test('the tests line is yellow with skipped tests', async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  w.output = '      Tests  41 passed | 2 skipped (43)'
+  await vitest($, 'tu1')
+  const h = await hint($)
+  const tree = await h.drawn()
+  expect(new Set(tonesOf(tree))).toEqual(new Set(['warning']))
+  expect(await lineOf($)).toBe('✓ tests 41/41 · 2 skipped')
+  await h.unmount()
+})

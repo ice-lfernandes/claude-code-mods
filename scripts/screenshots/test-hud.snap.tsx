@@ -10,7 +10,14 @@ test('snap', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
   on('ui.toast', (_$, e: any) => (console.log('TOAST', e.text), { value: undefined }) as never)
-  on('ui.status', (_$, e: any) => (console.log('STATUS', e.text), { value: undefined }) as never)
+  on('ui.status', () => ({ value: undefined }) as never)
+  // The engine's own hint line, beneath the mod's tests line.
+  on('ui.render', () => ({ type: 'Text', props: { dimColor: true }, children: ['? for shortcuts'] }) as never)
+  const hint = async () => {
+    const h = await $.ui.mount({ plugin: 'test-hud', surface: 'terminal', component: 'PromptHint', props: { isDraft: false, isWorking: false, hint: '? for shortcuts' }, viewport: { columns: 86, rows: 40 } } as never)
+    console.log('TREE', JSON.stringify(await h.drawn()))
+    await h.unmount()
+  }
   let out = ''
   const durations = [44_000, 38_000, 35_000, 33_000]
   let i = 0
@@ -31,6 +38,8 @@ test('snap', async ($, on) => {
   }
   const pane = await $.ui.mount({ plugin: 'test-hud', surface: 'terminal', component: 'Pane', requestId: 'test-hud', props: { title: 'Tests', isFocused: false, bodyColumns: 84, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }, viewport: { columns: 86, rows: 40 } } as never)
   console.log('PANE', JSON.stringify(await pane.drawn()))
+  await hint()
   out = vitest([])
   await $.tool.call({ tool: 'Bash', command: 'npm test', tool_use_id: 'x' } as never)
+  await hint()
 })

@@ -3,8 +3,10 @@
 //   runs     every Bash command that starts a known runner (vitest, jest, pytest, maven, gradle,
 //            cargo, go, bun, mocha, rspec, an npm test script...) is read for its summary:
 //            failed, passed, skipped, and the failing tests by name.
-//   status   "✗ tests 41/43 ▃▅█▅▂": the last run and a sparkline of failures over the runner's
-//            last 8 runs. ▁ is a green run.
+//   line     "✗ tests 41/43 · 2 failing ▃▅█▅▂" atop the hint line under the prompt: the last run
+//            and a sparkline of failures over the runner's last 8 runs (▁ is a green run), in
+//            error with a failure, warning with skipped or flaky tests, success otherwise. A
+//            press opens the pane. Not $.ui.status: it takes text only, drawn as a yellow notice.
 //   toasts   when a runner turns green after red runs, once, with how many red runs it took;
 //            with the `regressionToast` option, also when it turns red after a green run.
 //   /test-hud  opens the pane: the last run, its failing tests (new and flaky ones marked), the
@@ -24,9 +26,9 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { Parsed, Run } from '../types'
-import { commandLine, durationSpark, fixed, flaky, flakyToast, fresh, greenText, groupsOf, kindOf, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, statusText, trail, wholeCommand } from './hud'
-import type { Lang, Verb } from './ui'
-import { PRIMARY, SECONDARY, clip, elapsed, fillArgs, langOf, figLead, linesOf, verbRow } from './ui'
+import { commandLine, durationSpark, fixed, flaky, flakyToast, fresh, greenText, groupsOf, kindOf, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, testsLine, trail, wholeCommand } from './hud'
+import type { Verb } from './ui'
+import { PRIMARY, SECONDARY, clip, elapsed, fillArgs, figLead, linesOf, verbRow } from './ui'
 import { switchOf, switchWords } from './switch'
 import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
@@ -48,9 +50,6 @@ const tab = atom({ plugin: 'test-hud', key: 'tab' } as const, null as string | n
 /** The groups the person opened or closed in the pane; null until they press one, when the first group shows open. */
 const opened = atom({ plugin: 'test-hud', key: 'opened' } as const, null as string[] | null)
 
-let shownStatus: string | undefined
-// Set by register from the options, and by session.start from the system's LANG.
-let lang: Lang = 'en'
 let regressionToast = false
 let keepHistory = false
 /** The `flakyToast` option: one toast when a run leaves tests flaky. */
@@ -59,7 +58,7 @@ let flakyOn = true
 const told = new Set<string>()
 /** The `enabled` option; off, only the command answers. */
 let isOn = true
-/** On but silent: no status line and no toast. The pane still opens. Kept in the store. */
+/** On but silent: no tests line and no toast. The pane still opens. Kept in the store. */
 let isHidden = false
 /** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
 let isQuiet = false
@@ -74,13 +73,6 @@ const save = async ($: EngineInterface, list: readonly Run[]) => {
 
 const isRun = (x: unknown): x is Run =>
   typeof x === 'object' && x !== null && typeof (x as Run).n === 'number' && typeof (x as Run).runner === 'string' && Array.isArray((x as Run).failures)
-
-const show = ($: EngineInterface, list: readonly Run[]) => {
-  const text = isHidden || isQuiet ? undefined : statusText(list, lang)
-  if (text === shownStatus) return
-  shownStatus = text
-  $.ui.status(text)
-}
 
 type BashRecord = { stdout?: string; stderr?: string; interrupted?: boolean; backgroundTaskId?: string; persistedOutputPath?: string }
 
@@ -123,19 +115,18 @@ const add = async ($: EngineInterface, parsed: Parsed, meta: Omit<Run, keyof Par
     list = record(l, run)
     return list
   })
-  show($, list)
   if (!run) return
   if (!run.isDemo) await save($, list)
-  const green = greenText(list, run, lang)
+  const green = greenText(list, run)
   if (green && !isHidden && !isQuiet) $.ui.toast(`${green} /${COMMAND}`, { timeoutMs: 8000 })
   const quiet = isHidden || isQuiet
   // Flaky says more than red: it failed here before, so it takes the red toast's place.
-  const flakes = flakyOn && !quiet ? flakyToast(list, run, told, lang) : null
+  const flakes = flakyOn && !quiet ? flakyToast(list, run, told) : null
   if (flakes) {
     for (const n of flakes.names) told.add(n)
     $.ui.toast(`${flakes.text} /${COMMAND}`, { timeoutMs: 8000 })
   }
-  const red = regressionToast && !flakes ? redText(list, run, lang) : null
+  const red = regressionToast && !flakes ? redText(list, run) : null
   if (red && !quiet) $.ui.toast(`${red} /${COMMAND}`, { timeoutMs: 8000 })
 }
 
@@ -169,7 +160,7 @@ const runDemo = async ($: EngineInterface) => {
   }
 }
 
-const open = ($: EngineInterface) => $.ui.open({ id: PANE, title: WORDS[lang].pane }).catch(() => null)
+const open = ($: EngineInterface) => $.ui.open({ id: PANE, title: WORDS.pane }).catch(() => null)
 
 /** Changes the mod's `enabled` option as /config would; the engine reloads the mod with it. */
 const setEnabled = async ($: EngineInterface, value: boolean): Promise<string | null> => {
@@ -179,7 +170,7 @@ const setEnabled = async ($: EngineInterface, value: boolean): Promise<string | 
 
 /** /test-hud on|off|hide|show: off is the option, in every conversation; hide is a stored flag. */
 const runSwitch = async ($: EngineInterface, choice: Switch): Promise<{ text?: string }> => {
-  const s = switchWords(lang, COMMAND)
+  const s = switchWords('en', COMMAND)
   if (choice === 'on' || choice === 'off') {
     const want = choice === 'on'
     if (want === isOn) return { text: want ? s.alreadyOn : s.alreadyOff }
@@ -188,13 +179,13 @@ const runSwitch = async ($: EngineInterface, choice: Switch): Promise<{ text?: s
   }
   isHidden = choice === 'hide'
   await $.store.set(KEY_HIDDEN, isHidden)
-  show($, await read($, runs))
+  $.ui.invalidate('ui.render')
   return { text: isHidden ? s.hidden : s.shown }
 }
 
 /** /test-hud and its arguments: what the command answers, and what the pane's verbs run. */
 const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
-  const w = WORDS[lang]
+  const w = WORDS
   const choice = switchOf(args)
   if (choice) return runSwitch($, choice)
   switch (args.trim().toLowerCase()) {
@@ -204,7 +195,6 @@ const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: st
       await update($, tab, () => null)
       await update($, opened, () => null)
       told.clear()
-      show($, [])
       await save($, [])
       return { text: w.cleared }
     case 'demo':
@@ -219,7 +209,7 @@ const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: st
       const list = await read($, runs)
       const r = list.at(-1)
       if (!r) return { text: w.noRuns }
-      return { text: `${w.lastRun(r.runner, score(r, lang), r.failed)} ${spark(trail(list))}${r.failures.length ? ` ${w.failingList(r.failures.slice(0, 5).join('; '))}` : ''}` }
+      return { text: `${w.lastRun(r.runner, score(r), r.failed)} ${spark(trail(list))}${r.failures.length ? ` ${w.failingList(r.failures.slice(0, 5).join('; '))}` : ''}` }
     }
     default:
       return { text: w.help }
@@ -241,12 +231,11 @@ const pressVerb = async ($: EngineInterface, v: Verb) => {
     const { text } = await runCommand($, v.verb)
     for (const line of linesOf(text)) $.ui.log(line)
   } catch {
-    $.ui.toast(WORDS[lang].failedToRun(`/${COMMAND} ${v.verb}`))
+    $.ui.toast(WORDS.failedToRun(`/${COMMAND} ${v.verb}`))
   }
 }
 
 export const register: Register = (on, options) => {
-  lang = langOf(options.language)
   regressionToast = options.regressionToast === true
   keepHistory = options.keepHistory === true
   flakyOn = options.flakyToast !== false
@@ -255,21 +244,21 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    lang = langOf(options.language, await $.env.get('LANG').catch(() => undefined))
     await $.command.register({
       name: COMMAND,
-      description: WORDS[lang].description,
+      description: WORDS.description,
       argumentHint: '[on|off|hide|show|clear|demo|help]',
       immediate: true,
     })
     isHidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
+    // 0.7.0 and earlier kept the line in the status line; a reload must not leave it pinned.
+    $.ui.status(undefined)
     if (isOn && keepHistory) {
       root = await $.session.root()
       const stored = await $.store.get(storeKey()).catch(() => undefined)
       const kept = Array.isArray(stored) ? stored.filter(isRun) : []
       if (kept.length) {
         await update($, runs, () => kept)
-        show($, kept)
       }
     }
     return result
@@ -302,9 +291,33 @@ export const register: Register = (on, options) => {
     return ran
   }).catch(($, e, next) => next(e)) // an observer: fail open, the call's result stands
 
+  // The tests line atop the hint line: our row, then what the mods beneath and the engine drew.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const list = await read($, runs)
+    const theirs = await next(e)
+    const l = isHidden || isQuiet ? undefined : testsLine(list)
+    if (!l) return theirs
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const mine = (
+      <Button key="hud:open" plain hover={hoverLink('hud:open')} label={`${l.glyph} ${l.score}`} onPress={() => void open($)}>
+        <Text color={l.tone} bold>{`${l.glyph} `}</Text>
+        <Text color={l.tone}>{l.score}</Text>
+        {l.note !== '' && <Text dimColor> · </Text>}
+        {l.note !== '' && <Text color={l.tone}>{l.note}</Text>}
+        {l.spark !== '' && <Text color={l.tone}>{` ${l.spark}`}</Text>}
+      </Button>
+    )
+    return (
+      <Box key="hud-hint" flexDirection="column" alignItems="flex-start">
+        {mine}
+        {theirs}
+      </Box>
+    )
+  }).catch(($, e, next) => next(e))
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const w = WORDS[lang]
+    const w = WORDS
     const list = await read($, runs)
     const width = Math.max(40, (e.props.bodyColumns || e.viewport?.columns || 80) - 2)
     const footer = (
@@ -468,7 +481,7 @@ export const register: Register = (on, options) => {
               <Text color={x === r ? 'claude' : undefined}>{x === r ? '▸ ' : '  '}</Text>
               <Button key={`run:${x.n}`} plain dimColor={x !== r} hover={hoverLink(`run:${x.n}`)} label={`#${String(x.n).padEnd(4)}`} onPress={() => update($, selected, () => x.n)} />
               <Text>{x.runner.padEnd(8)}</Text>
-              <Text color={x.failed ? 'error' : 'success'}>{score(x, lang).padEnd(8)}</Text>
+              <Text color={x.failed ? 'error' : 'success'}>{score(x).padEnd(8)}</Text>
               <Text dimColor>{`${elapsed(x.durationMs).padStart(6)}  ${clip(x.command, Math.max(10, width - 34))}${x.agentId ? ` (${w.subagent})` : ''}`}</Text>
             </Box>
           ))}

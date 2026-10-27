@@ -19,8 +19,9 @@ def spans(node, style):
     if node is None or isinstance(node, bool): return []
     if isinstance(node, (str, int, float)): return [(str(node), style)]
     p = node.get('props') or {}
-    # A Button whose children paint a background (a group header) draws them; any other draws its label.
-    if node['type'] == 'Button' and 'label' in p and not any(isinstance(c, dict) and (c.get('props') or {}).get('backgroundColor') for c in node.get('children') or []):
+    # A Button whose children paint a background (a group header), or test-hud's tests line (colored by
+    # the result), draws them; any other draws its label.
+    if node['type'] == 'Button' and 'label' in p and p.get('key') != 'hud:open' and not any(isinstance(c, dict) and (c.get('props') or {}).get('backgroundColor') for c in node.get('children') or []):
         # A5: a primary is `[ label ]` in the accent color, a secondary `[ label ]` in the text color; plain is bare text.
         look = {'color': 'claude'} if p.get('variant') == 'primary' else {} if p.get('variant') == 'secondary' else {'dimColor': True} if p.get('dimColor') else {'color': 'cyan'}
         return [(p['label'] if p.get('plain') else f"[ {p['label']} ]", merge(style, look))]
@@ -260,11 +261,9 @@ open(f'{out}/agent-watch.svg', 'w').write(svg([
 
 # test-hud
 d = load(f'{snap}/test-hud.txt')
-red = [x for x in d['STATUS'] if x.startswith('✗')][-1]
-green = d['STATUS'][-1]
 open(f'{out}/test-hud.svg', 'w').write(svg([
     ('/test-hud', 'pane:Tests', trim(tree(d['PANE'][-1]))),
-    ('status line', 'raw', [plain('  ' + red, dimColor=True), plain('  ' + green, dimColor=True)]),
+    ('hint line under the prompt: red with a failure, yellow with a flaky test', 'raw', trim(tree(d['TREE'][0])) + trim(tree(d['TREE'][1]))),
     ('toasts: a test turns flaky, the suite turns green', 'toast', [plain(t) for t in d['TOAST']]),
 ], 60, 'test-hud'))
 def wrapped(s, cols):

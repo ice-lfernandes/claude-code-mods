@@ -3,7 +3,6 @@
 // (surefire and failsafe), Gradle, skipped counts and failing test names added.
 
 import type { Parsed, Run } from '../types'
-import type { Lang } from './ui'
 import { clip, elapsed } from './ui'
 import { WORDS } from './words'
 
@@ -309,19 +308,45 @@ export const trail = (list: readonly Run[], size = SPARK_RUNS, runner = list.at(
   runner ? list.filter(r => r.runner === runner).slice(-size) : []
 
 /** "41/43", "2 failed", "pass". */
-export const score = (r: Run, lang: Lang = 'en') =>
-  r.passed === null ? (r.failed ? WORDS[lang].failedScore(r.failed) : WORDS[lang].pass) : `${r.passed}/${r.passed + r.failed}`
+export const score = (r: Run) =>
+  r.passed === null ? (r.failed ? WORDS.failedScore(r.failed) : WORDS.pass) : `${r.passed}/${r.passed + r.failed}`
 
-/** "✗ tests 41/43 ▃▅█▅▂", or undefined before any run. */
-export const statusText = (list: readonly Run[], lang: Lang = 'en') => {
+/** Tests the command's last runs left flaky up to `run`: each failed, passed and failed again in the window. */
+export const flakyNear = (list: readonly Run[], run: Run): Set<string> => {
+  const out = new Set<string>()
+  for (const r of flakyWindow(list, run)) for (const name of flaky(list, r)) out.add(name)
+  return out
+}
+
+/** The tests line under the prompt, in parts: its theme key, glyph, score, note and sparkline. */
+export type TestsLine = { tone: 'success' | 'warning' | 'error'; glyph: string; score: string; note: string; spark: string }
+
+/**
+ * The latest run as the tests line: error with any failure, warning with skipped tests or tests
+ * the command left flaky, success otherwise. Undefined before any run.
+ */
+export const testsLine = (list: readonly Run[]): TestsLine | undefined => {
   const r = list.at(-1)
   if (!r) return undefined
   const line = spark(trail(list))
-  return `${r.failed ? '✗' : '✓'} ${WORDS[lang].tests} ${score(r, lang)}${line.length > 1 ? ` ${line}` : ''}`
+  const shaky = r.failed ? 0 : flakyNear(list, r).size
+  return {
+    tone: r.failed ? 'error' : shaky || r.skipped ? 'warning' : 'success',
+    glyph: r.failed ? '✗' : shaky ? '!' : '✓',
+    score: `${WORDS.tests} ${score(r)}`,
+    note: r.failed ? WORDS.failingCount(r.failed) : shaky ? WORDS.flakyCount(shaky) : r.skipped ? WORDS.skipped(r.skipped) : '',
+    spark: line.length > 1 ? line : '',
+  }
+}
+
+/** "✗ tests 41/43 · 2 failing ▃▅█▅▂", the tests line as one text, or undefined before any run. */
+export const lineText = (list: readonly Run[]) => {
+  const l = testsLine(list)
+  return l && `${l.glyph} ${l.score}${l.note ? ` · ${l.note}` : ''}${l.spark ? ` ${l.spark}` : ''}`
 }
 
 /** The toast for a run that turned its runner green after red runs, else null. */
-export const greenText = (list: readonly Run[], run: Run, lang: Lang = 'en'): string | null => {
+export const greenText = (list: readonly Run[], run: Run): string | null => {
   if (run.failed > 0) return null
   const same = list.filter(r => r.runner === run.runner && r.n < run.n)
   let reds = 0
@@ -329,26 +354,26 @@ export const greenText = (list: readonly Run[], run: Run, lang: Lang = 'en'): st
   if (reds === 0) return null
   const first = same[same.length - reds]!
   const span = elapsed(run.endedAt - (first.endedAt - first.durationMs))
-  return WORDS[lang].green(score(run, lang), run.runner, reds, span)
+  return WORDS.green(score(run), run.runner, reds, span)
 }
 
 /** The toast for a run that turned its runner red right after a green run, else null. */
-export const redText = (list: readonly Run[], run: Run, lang: Lang = 'en'): string | null => {
+export const redText = (list: readonly Run[], run: Run): string | null => {
   if (run.failed === 0) return null
   const prev = previous(list, run)
   if (!prev || prev.failed > 0) return null
-  return WORDS[lang].red(score(run, lang), run.runner, run.failed)
+  return WORDS.red(score(run), run.runner, run.failed)
 }
 
 /**
  * The toast for a run that left tests flaky that `told` has not named yet, else null: one toast
  * per run, with the first name and how many more. The caller adds `names` to `told` once it shows.
  */
-export const flakyToast = (list: readonly Run[], run: Run, told: ReadonlySet<string>, lang: Lang = 'en'): { text: string; names: string[] } | null => {
+export const flakyToast = (list: readonly Run[], run: Run, told: ReadonlySet<string>): { text: string; names: string[] } | null => {
   const names = [...flaky(list, run)].filter(n => !told.has(n))
   if (names.length === 0) return null
   const first = clip(testName(run.runner, names[0]!), 30)
-  return { text: WORDS[lang].flakyToast(first, names.length - 1, flakyWindow(list, run).length), names }
+  return { text: WORDS.flakyToast(first, names.length - 1, flakyWindow(list, run).length), names }
 }
 
 /** The command's first line, clipped, for the pane. */

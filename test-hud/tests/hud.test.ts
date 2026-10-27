@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Run } from '../types'
-import { durationSpark, failingNames, fixed, flaky, flakyToast, fresh, greenText, groupOf, groupsOf, kindOf, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, statusText, trail, wholeCommand } from '../hooks/hud'
+import { durationSpark, failingNames, fixed, flaky, flakyToast, fresh, greenText, groupOf, groupsOf, kindOf, parseRun, quietPass, record, redText, runnerOf, runnersOf, lineText, score, spark, testsLine, trail, wholeCommand } from '../hooks/hud'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
@@ -139,13 +139,24 @@ describe('runs', () => {
     expect(spark([])).toBe('')
   })
 
-  test('the status line follows the latest runner', async () => {
+  test('the tests line follows the latest runner', async () => {
     const list = [run(1, 0, { runner: 'pytest' }), run(2, 4), run(3, 2)]
     expect(trail(list).map(r => r.n)).toEqual([2, 3])
-    expect(statusText(list)).toBe('✗ tests 41/43 █▅')
-    expect(statusText([run(1, 0)])).toBe('✓ tests 43/43')
-    expect(statusText([run(1, 0, { runner: 'gradle', passed: null })])).toBe('✓ tests pass')
-    expect(statusText([])).toBe(undefined)
+    expect(lineText(list)).toBe('✗ tests 41/43 · 2 failing █▅')
+    expect(lineText([run(1, 0)])).toBe('✓ tests 43/43')
+    expect(lineText([run(1, 0, { runner: 'gradle', passed: null })])).toBe('✓ tests pass')
+    expect(lineText([])).toBe(undefined)
+  })
+
+  // T5 (prototype test-hud-0.7.1): error with a failure, warning with skipped or flaky tests, success otherwise.
+  test('the tests line is colored by the result', async () => {
+    const A = 'src/a.test.ts > x > y'
+    expect(testsLine([run(1, 0)])?.tone).toBe('success')
+    expect(testsLine([run(1, 0, { skipped: 2 })])).toEqual({ tone: 'warning', glyph: '✓', score: 'tests 43/43', note: '2 skipped', spark: '' })
+    const shaky = [run(1, 1, { failures: [A] }), run(2, 0), run(3, 1, { failures: [A] }), run(4, 0, { skipped: 1 })]
+    expect(testsLine(shaky)).toMatchObject({ tone: 'warning', glyph: '!', note: '1 flaky?' })
+    // A failure wins over skipped and flaky.
+    expect(testsLine([...shaky, run(5, 2, { skipped: 1 })])).toMatchObject({ tone: 'error', glyph: '✗', note: '2 failing' })
   })
 
   test('green after red toasts once, with the streak', async () => {
@@ -176,14 +187,6 @@ describe('runs', () => {
     expect(redText(list, list[2]!)).toBe(null)
     expect(redText(list, list[0]!)).toBe(null)
     expect(redText([run(1, 2)], run(1, 2))).toBe(null)
-  })
-
-  test('texts in Portuguese', async () => {
-    const list = [run(1, 0), run(2, 2)]
-    expect(statusText(list, 'pt-BR')).toBe('✗ testes 41/43 ▁█')
-    expect(score(run(1, 2, { passed: null }), 'pt-BR')).toBe('2 falharam')
-    expect(score(run(1, 0, { passed: null }), 'pt-BR')).toBe('ok')
-    expect(redText(list, list[1]!, 'pt-BR')).toBe('✗ Testes ficaram vermelhos: 41/43 (vitest), 2 falhas.')
   })
 
   test('the whole command is kept, cut only past 2000 characters', async () => {
@@ -290,14 +293,12 @@ describe('flaky toast', () => {
   const B = 'src/cart.test.ts > totals > applies the coupon'
   const list = [run(1, 2, { failures: [A, B] }), run(2, 0), run(3, 2, { failures: [A, B] })]
 
-  test('names the first test and how many more, over the runs read, in both languages', async () => {
-    expect(flakyToast(list, list[2]!, new Set(), 'en')).toEqual({ text: '! 2 flaky tests: totals > rounds half up +1', names: [A, B] })
-    expect(flakyToast(list, list[2]!, new Set(), 'pt-BR')?.text).toBe('! 2 testes instáveis: totals > rounds half up +1')
+  test('names the first test and how many more, over the runs read, ', async () => {
+    expect(flakyToast(list, list[2]!, new Set())).toEqual({ text: '! 2 flaky tests: totals > rounds half up +1', names: [A, B] })
   })
 
   test('a test already announced is left out, and one name reads with its run count', async () => {
-    expect(flakyToast(list, list[2]!, new Set([A]), 'en')).toEqual({ text: '! Flaky test: totals > applies the coupon (3 runs)', names: [B] })
-    expect(flakyToast(list, list[2]!, new Set([A]), 'pt-BR')?.text).toBe('! Teste instável: totals > applies the coupon (3 execuções)')
+    expect(flakyToast(list, list[2]!, new Set([A]))).toEqual({ text: '! Flaky test: totals > applies the coupon (3 runs)', names: [B] })
     expect(flakyToast(list, list[2]!, new Set([A, B]))).toBeNull()
   })
 
@@ -308,18 +309,16 @@ describe('flaky toast', () => {
 })
 
 describe('toast glyphs', () => {
-  // A toast cannot be colored, so each opens with a glyph that says the state, in both languages.
+  // A toast cannot be colored, so each opens with a glyph that says the state.
   const A = 'src/a.test.ts > x > y'
   const green = [run(1, 1, { failures: [A] }), run(2, 0)]
   const red = [run(1, 0), run(2, 1, { failures: [A] })]
   const flakyList = [run(1, 1, { failures: [A] }), run(2, 0), run(3, 1, { failures: [A] })]
 
   test('green opens with ✓, red with ✗, flaky with !', async () => {
-    for (const lang of ['en', 'pt-BR'] as const) {
-      expect(greenText(green, green[1]!, lang)?.startsWith('✓ ')).toBe(true)
-      expect(redText(red, red[1]!, lang)?.startsWith('✗ ')).toBe(true)
-      expect(flakyToast(flakyList, flakyList[2]!, new Set(), lang)?.text.startsWith('! ')).toBe(true)
-    }
+    expect(greenText(green, green[1]!)?.startsWith('✓ ')).toBe(true)
+    expect(redText(red, red[1]!)?.startsWith('✗ ')).toBe(true)
+    expect(flakyToast(flakyList, flakyList[2]!, new Set())?.text.startsWith('! ')).toBe(true)
   })
 
   test('the glyph is not doubled and the text stays one line', async () => {

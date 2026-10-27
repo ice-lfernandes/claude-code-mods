@@ -25,7 +25,7 @@ Requer Claude Code 2.1.287 ou mais recente.
 | [limits-meter](limits-meter/) | `/limits` | Limites do plano, relógio do cache e contexto acima do prompt: modelo e effort, janelas de 5 horas e semanal com horário de reset, contagem regressiva do cache do prompt com um manter-quente opcional que gasta plano, contexto dividido por grupo (sistema, MCP, mensagens), tokens por turno, e um toast na troca cara de modelo perto do limite |
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Conta os diálogos de permissão por regra; depois de 5 aprovações sem nenhuma recusa, oferece adicionar a regra a `permissions.allow`, perguntando antes de gravar |
 | [agent-watch](agent-watch/) | `/watch` | Subagentes num relance: um cartão por agente com mascote, passo e tokens, uma faixa acima do prompt, um toast quando um trava e um resumo com o agente mais pesado quando terminam |
-| [test-hud](test-hud/) | `/test-hud` | Execuções de teste num relance: aprovados sobre o total na status line, um sparkline das falhas entre execuções, os testes que falham agrupados por arquivo e toasts quando a suíte fica verde ou um teste fica instável |
+| [test-hud](test-hud/) | `/test-hud` | Execuções de teste num relance: aprovados sobre o total na linha de dica abaixo do prompt, colorida pelo resultado, um sparkline das falhas entre execuções, os testes que falham agrupados por arquivo e toasts quando a suíte fica verde ou um teste fica instável |
 | [launchpad](launchpad/) | `/pad` | Um menu de ações de um clique sob o cabeçalho, acima do prompt ou num painel: cada botão roda um comando, skill ou agente instalado. `◆ pad` abre um painel de controle: modelo e esforço em um clique, os mods desta coleção, os atalhos. Escolha e ordene até 8 em `/pad configuration`, ou distribua os de um time no repositório |
 | [plain-view](plain-view/) | `/plain-view` | Transcript sem ruído: as linhas de tool saem da frente e o plano do agente aparece num cartão acima do prompt, com o passo atual, barras de progresso e um resumo no fim do turno |
 
@@ -153,14 +153,16 @@ Ou para uma sessão, a partir de um clone: `claude --plugin-dir ./agent-watch`.
 
 ### test-hud
 
-A status line e o toast aparecem sozinhos cada vez que um test runner roda no Bash. Comandos:
+A linha de testes (no topo da linha de dica abaixo do prompt, vermelha, amarela ou verde conforme o
+resultado) e os toasts aparecem sozinhos cada vez que um test runner roda no Bash. As mensagens e os
+botões do mod são só em inglês. Comandos:
 
 ```
 /test-hud           abre o painel: última execução, testes que falham (os novos marcados),
                     testes corrigidos, sparkline, últimas 10 execuções
 /test-hud demo      adiciona seis execuções falsas que vão de vermelho a verde
 /test-hud clear     remove as execuções
-/test-hud hide      segue contando, sem linha de status nem toast
+/test-hud hide      segue contando, sem linha de testes nem toast
 /test-hud show      traz os avisos de volta
 /test-hud off | on  desliga ou liga o mod em todas as conversas
 /test-hud help      lista os comandos
@@ -168,15 +170,15 @@ A status line e o toast aparecem sozinhos cada vez que um test runner roda no Ba
 
 No painel, os testes que falham vêm agrupados por arquivo (por classe no Maven e no Gradle, por
 suite no jest e no bun, por módulo no cargo; go e rspec seguem em lista plana). O primeiro grupo
-vem aberto; clique no cabeçalho para abrir ou fechar. `ver` coloca o arquivo no prompt
-(`@src/a.test.ts`), só onde o grupo é um caminho de verdade (vitest, pytest); `rodar` pede só os
+vem aberto; clique no cabeçalho para abrir ou fechar. `show` coloca o arquivo no prompt
+(`@src/a.test.ts`), só onde o grupo é um caminho de verdade (vitest, pytest); `run` pede só os
 testes daquele grupo, com o mesmo runner. Clique num teste que falha para pedir uma correção ao
 Claude, ou em `run again` para pedir o mesmo comando: todos colocam o pedido no prompt e não rodam
 nada. Clique numa execução da lista para vê-la; testes que falharam, passaram e falharam de novo
 são marcados `flaky?`, e um toast os nomeia, uma vez por teste (opção `flakyToast`, ligada por
 padrão). Com a opção `keepHistory`, as execuções seguem para a próxima sessão no mesmo projeto.
 
-![test-hud: o painel /test-hud, a status line e o toast verde](screenshots/test-hud.svg)
+![test-hud: o painel /test-hud, a linha de testes e os toasts](screenshots/test-hud.svg)
 
 #### Instalação
 
