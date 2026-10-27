@@ -10,6 +10,7 @@ import type { AgentsRow, Card, RequestView, Row } from './plan'
 import type { Stops } from './palettes'
 import { hex, mix, titleColor } from './palettes'
 import type { IconStyle } from './ui'
+import type { WatchMessage } from '../types'
 import { clip, glyph } from './ui'
 
 const FULL = 0x2588 // █
@@ -100,6 +101,8 @@ export type DrawOptions = {
   answerLabel?: string
   /** Opens agent-watch's pane: the agents row shows `/watch` only when this is given. */
   onWatch?: () => void
+  /** What agent-watch's band says, drawn as a child of the agents row; agent-watch's own band steps aside then. */
+  message?: WatchMessage
   /** A request of several lines: `+5 linhas`, and the button that unfolds it (shown only with `onRequest`). */
   request?: { more: (n: number) => string; show: string; fold: string }
   onRequest?: () => void
@@ -145,12 +148,42 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
     )
   }
 
-  // One row for the main loop's agents: `◇ 1 agente rodando · code-review · 3m 12s   /watch`.
+  // What agent-watch's band says, under the agents row: `└ Agentes 0/3 ░░░░░░░░░░ · ■ Pré-roteiro · Escrevendo pre-outline.md`.
+  const watchLine = (m: WatchMessage) => {
+    if (m.kind === 'done') {
+      return (
+        <Text key="agents-child">
+          <Text dimColor>{'  └ '}</Text>
+          <Text color="success" bold>{'✓ '}</Text>
+          <Text bold>{clip(m.text, Math.max(10, inner - 8))}</Text>
+        </Text>
+      )
+    }
+    // The label, the count, the bar and the shape take 4 + label + count + 10 + 8 columns; the rest is the action.
+    const room = Math.max(10, inner - m.label.length - m.count.length - 24)
+    return (
+      <Text key="agents-child">
+        <Text dimColor>{'  └ '}</Text>
+        <Text bold>{`${m.label} `}</Text>
+        <Text bold color="success">{m.count}</Text>
+        <Text>{' '}</Text>
+        {m.bar.map((c, i) => (
+          <Text key={`agents-bar:${i}`} color={c.color}>{c.filled ? '█' : '░'}</Text>
+        ))}
+        <Text dimColor>{' · '}</Text>
+        <Text bold color={m.stalled ? 'warning' : m.color}>{`${m.glyph} `}</Text>
+        <Text color={m.stalled ? 'warning' : undefined}>{clip(m.stalled ?? `${clip(m.name, 20)} · ${m.action}`, room)}</Text>
+      </Text>
+    )
+  }
+
+  // One row for the main loop's agents: `◇ 1 agente rodando · code-review · 3m 12s   /watch`, and
+  // agent-watch's message under it when there is one.
   const agentsLine = (a: AgentsRow) => {
     const onWatch = o.onWatch
     const watch = onWatch !== undefined && Button !== undefined
     const room = inner - a.text.length - (a.time ? a.time.length + 3 : 0) - (watch ? 9 : 0) - 6
-    return (
+    const row = (
       <Box key="agents" flexDirection="row">
         <Text>
           <Text color={a.isRunning ? 'claude' : 'success'}>◇ </Text>
@@ -159,6 +192,13 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
         </Text>
         {watch ? <Text>   </Text> : null}
         {onWatch && Button ? <Button key="watch" plain dimColor label="/watch" onPress={() => onWatch()} /> : null}
+      </Box>
+    )
+    if (o.message === undefined) return row
+    return (
+      <Box key="agents-group" flexDirection="column">
+        {row}
+        {watchLine(o.message)}
       </Box>
     )
   }

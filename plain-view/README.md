@@ -78,6 +78,9 @@ Five short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
     `◇ 1 agent finished · code-review` once they end. Only the count, the name and the time:
     tokens and cost are agent-watch's. With agent-watch installed, the row ends in `/watch`,
     which opens its pane. An agent that another agent starts does not count, nor a workflow's.
+    With agent-watch installed, its band's message goes under this row (`└ Agents 0/3 ░░░░░░░░░░
+    · ▲ Pre-outline · Writing pre-outline.md`, or `└ ✓ 3 agents done · 627k · 1m 54s` at the end),
+    and agent-watch's band above the prompt steps aside while the card shows.
 - **Waiting for an agent:** when the main turn ends with an agent still running in the
   background and no task list, the card stays: `◐ Waiting for 1 agent` with a moving bar, and
   the agents row. With a task list, the plan card shows its end and keeps the agents row. The
@@ -195,6 +198,9 @@ request from `turn.start`, and the agent's answer at the end of each step from `
 a checklist. It counts the agents the main turn starts from `agent.spawn` (their name and start
 time) and their end from `turn.complete`; while one runs it asks `$.agent.list()` at most every
 2 seconds for an end it missed, and `$.command.list()` whether agent-watch's `/watch` is there.
+It reads agent-watch's `message` state value (through `$.state.get`) to draw its child row, and
+writes its own `cardOn` value, true while the card can draw (on, not hidden, not quiet), which
+agent-watch reads.
 Its `agent.spawn` hook only observes: the spawn goes on whatever happens after it. That hook passes every response through unchanged. With `askForTasks` on (the
 default), its `prompt.compose` hook adds one line to the system prompt while the mod is on. Under
 `agentText` it hides the agent's messages from the drawing only; the session keeps them. Its `tool.call` hook only observes: if it fails, the call goes on, and
